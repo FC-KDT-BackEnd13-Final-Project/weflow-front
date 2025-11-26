@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* weflow Brand Colors - Vibrant Blue Accent */
+    --background: 0 0% 100%;
+    --foreground: 240 8% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 8% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 8% 15%;
+
+    /* Primary - Signature Blue #3B82F6 */
+    --primary: 217 92% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 217 92% 52%;
+    --primary-light: 217 100% 94%;
+
+    /* Secondary - Soft gray tones */
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 25%;
+
+    /* Muted backgrounds and text */
+    --muted: 240 5% 96.5%;
+    --muted-foreground: 240 4% 60%;
+
+    /* Accent - soft sky blue */
+    --accent: 213 100% 96%;
+    --accent-foreground: 217 70% 40%;
+
+    /* Destructive - soft red */
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 217 92% 60%;
+
+    /* Status Colors */
+    --status-pending: 35 100% 50%;
+    --status-pending-bg: 35 100% 95%;
+    --status-progress: 210 100% 56%;
+    --status-progress-bg: 210 100% 95%;
+    --status-complete: 142 76% 36%;
+    --status-complete-bg: 142 76% 95%;
+    --status-rejected: 0 70% 60%;
+    --status-rejected-bg: 0 70% 95%;
+
+    --radius: 0.5rem;
+
+    /* Shadows for depth */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08);
+
+    /* Sidebar colors */
+    --sidebar-background: 0 0% 99%;
+    --sidebar-foreground: 240 6% 25%;
+    --sidebar-primary: 217 92% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 100% 97%;
+    --sidebar-accent-foreground: 217 70% 35%;
+    --sidebar-border: 240 6% 92%;
+    --sidebar-ring: 217 92% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+@layer components {
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-md hover:border-primary/20;
+  }
+
+  /* Status badge base */
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+}
