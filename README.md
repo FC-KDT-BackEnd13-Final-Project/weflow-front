@@ -1,4 +1,5 @@
-# Weflow Front-End
+# weflow-front
+bn-3팀 프론트
 
 ## 실행
 ```
