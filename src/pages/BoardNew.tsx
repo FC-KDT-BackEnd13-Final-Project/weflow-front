@@ -14,12 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, X } from "lucide-react";
+import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 
-const categories = ["계약", "진행", "납품", "유지보수"];
-const tags = ["요구사항 정의", "화면설계", "디자인", "퍼블리싱", "개발", "검수"];
+const status = ["계약", "진행", "납품", "유지보수"];
+const step = ["요구사항 정의", "화면설계", "디자인", "퍼블리싱", "개발", "검수"];
 
 const postSchema = z.object({
   title: z.string()
@@ -30,10 +30,10 @@ const postSchema = z.object({
     .trim()
     .min(1, { message: "내용을 입력해주세요" })
     .max(5000, { message: "내용은 5000자 이내로 입력해주세요" }),
-  category: z.string()
-    .min(1, { message: "카테고리를 선택해주세요" }),
-  tag: z.string()
-    .min(1, { message: "태그를 선택해주세요" }),
+  status: z.string()
+    .min(1, { message: "프로젝트 상태를 선택해주세요" }),
+  step: z.string()
+    .min(1, { message: "단계를 선택해주세요" }),
 });
 
 type PostFormData = z.infer<typeof postSchema>;
@@ -46,11 +46,14 @@ export default function BoardNew() {
   const [formData, setFormData] = useState<PostFormData>({
     title: "",
     content: "",
-    category: "",
-    tag: "",
+    status: "",
+    step: "",
   });
   
   const [files, setFiles] = useState<File[]>([]);
+  const [links, setLinks] = useState<string[]>([]);
+  const [linkInput, setLinkInput] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +65,34 @@ export default function BoardNew() {
 
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddLink = () => {
+    const trimmedLink = linkInput.trim();
+    if (!trimmedLink) {
+      setLinkError("링크를 입력해주세요");
+      return;
+    }
+
+    try {
+      new URL(trimmedLink);
+    } catch {
+      setLinkError("올바른 URL을 입력해주세요");
+      return;
+    }
+
+    if (links.includes(trimmedLink)) {
+      setLinkError("이미 추가된 링크입니다");
+      return;
+    }
+
+    setLinks(prev => [...prev, trimmedLink]);
+    setLinkInput("");
+    setLinkError(null);
+  };
+
+  const removeLink = (index: number) => {
+    setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,6 +114,7 @@ export default function BoardNew() {
     setErrors({});
     
     // TODO: API 호출로 데이터 저장
+    // console.log({ ...formData, files, links });
     toast({
       title: "게시글 작성 완료",
       description: "게시글이 성공적으로 작성되었습니다.",
@@ -123,49 +155,49 @@ export default function BoardNew() {
               <CardTitle>새 게시글</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Category */}
+              {/* Status */}
               <div className="space-y-2">
-                <Label htmlFor="category">카테고리 *</Label>
+                <Label htmlFor="status">상태 *</Label>
                 <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+                  value={formData.status}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
                 >
-                  <SelectTrigger id="category">
-                    <SelectValue placeholder="카테고리를 선택하세요" />
+                  <SelectTrigger id="status">
+                    <SelectValue placeholder="프로젝트 상태를 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
+                    {status.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.category && (
-                  <p className="text-sm text-destructive">{errors.category}</p>
+                {errors.status && (
+                  <p className="text-sm text-destructive">{errors.status}</p>
                 )}
               </div>
 
-              {/* Tag */}
+              {/* Step */}
               <div className="space-y-2">
-                <Label htmlFor="tag">태그 *</Label>
+                <Label htmlFor="step">단계 *</Label>
                 <Select
-                  value={formData.tag}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, tag: value }))}
+                  value={formData.step}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, step: value }))}
                 >
-                  <SelectTrigger id="tag">
-                    <SelectValue placeholder="태그를 선택하세요" />
+                  <SelectTrigger id="step">
+                    <SelectValue placeholder="단계를 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>
-                        {tag}
+                    {step.map((step) => (
+                      <SelectItem key={step} value={step}>
+                        {step}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {errors.tag && (
-                  <p className="text-sm text-destructive">{errors.tag}</p>
+                {errors.step && (
+                  <p className="text-sm text-destructive">{errors.step}</p>
                 )}
               </div>
 
@@ -256,6 +288,61 @@ export default function BoardNew() {
                           size="icon"
                           className="h-8 w-8 flex-shrink-0"
                           onClick={() => removeFile(index)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Links */}
+              <div className="space-y-2">
+                <Label htmlFor="link">관련 링크</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="link"
+                    type="url"
+                    placeholder="https://example.com"
+                    value={linkInput}
+                    onChange={(e) => {
+                      setLinkInput(e.target.value);
+                      setLinkError(null);
+                    }}
+                  />
+                  <Button type="button" variant="outline" onClick={handleAddLink}>
+                    추가
+                  </Button>
+                </div>
+                {linkError && (
+                  <p className="text-sm text-destructive">{linkError}</p>
+                )}
+
+                {links.length > 0 && (
+                  <div className="space-y-2 mt-3">
+                    {links.map((link, index) => (
+                      <div
+                        key={`${link}-${index}`}
+                        className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Link2 className="h-4 w-4 flex-shrink-0" />
+                          <a
+                            href={link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm truncate underline-offset-2 hover:underline"
+                          >
+                            {link}
+                          </a>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 flex-shrink-0"
+                          onClick={() => removeLink(index)}
                         >
                           <X className="h-4 w-4" />
                         </Button>
