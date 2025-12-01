@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2 } from "lucide-react";
+import { Paperclip, Link as LinkIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StepRequestStatus = "REQUESTED" | "APPROVED" | "REJECTED";
@@ -58,8 +58,6 @@ const statusConfig: Record<StepRequestStatus, { label: string; dot: string; badg
   REJECTED: { label: "반려", dot: "bg-red-500", badge: "bg-red-500 text-white" },
 };
 
-const formatDateTime = (value: string) => new Date(value).toLocaleString("ko-KR", { hour12: false });
-
 export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -67,10 +65,69 @@ export default function Approvals() {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [pendingFiles, setPendingFiles] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
-  const [fileInput, setFileInput] = useState("");
   const [linkInput, setLinkInput] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openDialog = (step: string) => {
+    setSelectedStep(step);
+    setTitle("");
+    setDescription("");
+    setPendingFiles([]);
+    setPendingLinks([]);
+    setLinkInput("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const resetDialog = () => {
+    setSelectedStep(null);
+    setTitle("");
+    setDescription("");
+    setPendingFiles([]);
+    setPendingLinks([]);
+    setLinkInput("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files) return;
+    setPendingFiles(prev => [...prev, ...Array.from(event.target.files)]);
+    event.target.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addLink = () => {
+    if (!linkInput.trim()) return;
+    setPendingLinks(prev => [...prev, linkInput.trim()]);
+    setLinkInput("");
+  };
+
+  const removeLink = (index: number) => {
+    setPendingLinks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = () => {
+    if (!selectedStep || !title.trim() || !description.trim()) {
+      toast({ title: "필수 항목을 입력하세요." });
+      return;
+    }
+    console.log("승인 요청 생성", {
+      step: selectedStep,
+      title: title.trim(),
+      description: description.trim(),
+      files: pendingFiles.map(file => ({ name: file.name, size: file.size })),
+      links: pendingLinks,
+    });
+    toast({
+      title: "승인 요청이 등록되었습니다.",
+      description: "요청이 성공적으로 생성되었습니다.",
+    });
+    resetDialog();
+  };
 
   const getRequestsForStep = (step: string) =>
     stepRequestSummaries.filter((request) => request.step === step);
@@ -130,38 +187,14 @@ export default function Approvals() {
                       <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3">
                         <p>승인 요청이 없습니다.</p>
                         {stepStatus.label !== "완료" && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedStep(category);
-                              setTitle("");
-                              setDescription("");
-                              setPendingFiles([]);
-                              setPendingLinks([]);
-                              setFileInput("");
-                              setLinkInput("");
-                            }}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => openDialog(category)}>
                             승인 요청 생성
                           </Button>
                         )}
                       </div>
                     )}
                     {stepStatus.label !== "완료" && requests.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedStep(category);
-                          setTitle("");
-                          setDescription("");
-                          setPendingFiles([]);
-                          setPendingLinks([]);
-                          setFileInput("");
-                          setLinkInput("");
-                        }}
-                      >
+                      <Button variant="outline" size="sm" onClick={() => openDialog(category)}>
                         승인 요청 생성
                       </Button>
                     )}
@@ -177,13 +210,7 @@ export default function Approvals() {
         open={selectedStep !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedStep(null);
-            setTitle("");
-            setDescription("");
-            setPendingFiles([]);
-            setPendingLinks([]);
-            setFileInput("");
-            setLinkInput("");
+            resetDialog();
           }
         }}
       >
@@ -205,28 +232,44 @@ export default function Approvals() {
               <Textarea placeholder="승인 요청에 대한 설명을 입력하세요" className="min-h-[120px]" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>첨부파일</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="예: UI_가이드.pdf"
-                  value={fileInput}
-                  onChange={(event) => setFileInput(event.target.value)}
+              <Label>파일 첨부</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileChange}
                 />
-                <Button type="button" onClick={() => {
-                  if (!fileInput.trim()) return;
-                  setPendingFiles(prev => [...prev, fileInput.trim()]);
-                  setFileInput("");
-                }}>
-                  추가
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4" />
+                  파일 선택
                 </Button>
+                <span className="text-sm text-muted-foreground">
+                  {pendingFiles.length}개 파일 선택됨
+                </span>
               </div>
               {pendingFiles.length > 0 && (
                 <div className="space-y-2">
                   {pendingFiles.map((file, index) => (
-                    <div key={`${file}-${index}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30">
-                      <span>{file}</span>
-                      <Button variant="ghost" size="sm" onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== index))}>
-                        <Trash2 className="h-4 w-4" />
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Paperclip className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </Badge>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => removeFile(index)}>
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
@@ -235,18 +278,14 @@ export default function Approvals() {
             </div>
 
             <div className="space-y-2">
-              <Label>링크</Label>
+              <Label>관련 링크</Label>
               <div className="flex gap-2">
                 <Input
                   placeholder="https://example.com"
                   value={linkInput}
                   onChange={(event) => setLinkInput(event.target.value)}
                 />
-                <Button type="button" onClick={() => {
-                  if (!linkInput.trim()) return;
-                  setPendingLinks(prev => [...prev, linkInput.trim()]);
-                  setLinkInput("");
-                }}>
+                <Button type="button" variant="outline" onClick={addLink}>
                   추가
                 </Button>
               </div>
@@ -254,9 +293,19 @@ export default function Approvals() {
                 <div className="space-y-2">
                   {pendingLinks.map((link, index) => (
                     <div key={`${link}-${index}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30">
-                      <span className="truncate">{link}</span>
-                      <Button variant="ghost" size="sm" onClick={() => setPendingLinks(prev => prev.filter((_, i) => i !== index))}>
-                        <Trash2 className="h-4 w-4" />
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <LinkIcon className="h-4 w-4 flex-shrink-0" />
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate underline-offset-2 hover:underline"
+                        >
+                          {link}
+                        </a>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => removeLink(index)}>
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
@@ -265,43 +314,10 @@ export default function Approvals() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setSelectedStep(null);
-              setTitle("");
-              setDescription("");
-              setPendingFiles([]);
-              setPendingLinks([]);
-              setFileInput("");
-              setLinkInput("");
-            }}>
+            <Button variant="outline" onClick={resetDialog}>
               취소
             </Button>
-            <Button
-              onClick={() => {
-                if (!title.trim() || !description.trim() || !selectedStep) {
-                  toast({ title: "필수 항목을 입력하세요." });
-                  return;
-                }
-                console.log("승인 요청 생성", {
-                  step: selectedStep,
-                  title,
-                  description,
-                  files: pendingFiles,
-                  links: pendingLinks,
-                });
-                toast({
-                  title: "승인 요청이 등록되었습니다.",
-                  description: "요청이 성공적으로 생성되었습니다.",
-                });
-                setSelectedStep(null);
-                setTitle("");
-                setDescription("");
-                setPendingFiles([]);
-                setPendingLinks([]);
-                setFileInput("");
-                setLinkInput("");
-              }}
-            >
+            <Button onClick={handleSubmit}>
               등록
             </Button>
           </DialogFooter>
