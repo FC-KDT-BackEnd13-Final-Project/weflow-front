@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderKanban, Users, Building2, Settings } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Bell, ClipboardCheck, Settings } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -17,8 +17,8 @@ import {
 const menuItems = [
   { title: "대시보드", url: "/dashboard", icon: LayoutDashboard },
   { title: "프로젝트", url: "/projects", icon: FolderKanban },
-  { title: "팀원", url: "/team", icon: Users },
-  { title: "회사 관리", url: "/companies", icon: Building2 },
+  { title: "알림", url: "/notifications", icon: Bell },
+  { title: "승인 요청", url: "/approval-requests", icon: ClipboardCheck },
   { title: "설정", url: "/settings", icon: Settings },
 ];
 
