@@ -10,6 +10,8 @@ import ProjectDetail from "./pages/ProjectDetail";
 import ProjectDashboard from "./pages/ProjectDashboard";
 import Notifications from "./pages/Notifications";
 import ApprovalRequests from "./pages/ApprovalRequests";
+import Settings from "./pages/Settings";
+import ChangePassword from "./pages/ChangePassword";
 import Board from "./pages/Board";
 import BoardNew from "./pages/BoardNew";
 import BoardDetail from "./pages/BoardDetail";
@@ -37,6 +39,8 @@ const App = () => (
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/approval-requests" element={<ApprovalRequests />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/password" element={<ChangePassword />} />
           
           {/* Project Member Routes */}
           <Route path="/project/:id/dashboard" element={<ProjectDashboard />} />
