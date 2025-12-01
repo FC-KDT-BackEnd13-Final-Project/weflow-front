@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Paperclip, MessageSquare } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
-
-type PostStatus = "progress" | "complete";
-type QuestionStatus = "request" | "approved";
+import { mockProjectSteps, projectStepMap } from "@/mocks/projectSteps";
+import {
+  boardStatusLabels,
+  boardStatusStyles,
+  BoardPostStatus,
+  BoardApprovalStatus,
+} from "@/constants/boardStatus";
 
 interface BoardPost {
   id: number;
@@ -18,127 +21,112 @@ interface BoardPost {
   date: string;
   attachments: number;
   comments: number;
-  category: string;
-  tags: string[];
-  status: PostStatus;
-  questionStatus: QuestionStatus;
+  projectStatus: string;
+  stepId: number;
+  status: BoardPostStatus;
+  questionStatus: BoardApprovalStatus;
 }
 
 const mockPosts: BoardPost[] = [
   {
-    id: 1,
+    id: 42,
     title: "요구사항 문서",
     author: "박민수",
     date: "2024-01-11",
     attachments: 5,
     comments: 10,
-    category: "진행",
-    tags: ["요구사항 정의"],
+    projectStatus: "진행",
+    stepId: 21,
     status: "progress",
     questionStatus: "request",
   },
   {
-    id: 2,
+    id: 43,
     title: "화면 설계 검토 요청",
     author: "김지현",
     date: "2024-01-10",
     attachments: 3,
     comments: 7,
-    category: "진행",
-    tags: ["화면설계"],
+    projectStatus: "진행",
+    stepId: 22,
     status: "progress",
     questionStatus: "request",
   },
   {
-    id: 3,
+    id: 44,
     title: "디자인 시안 1차",
     author: "이서연",
     date: "2024-01-09",
     attachments: 8,
     comments: 12,
-    category: "진행",
-    tags: ["디자인"],
+    projectStatus: "진행",
+    stepId: 23,
     status: "complete",
     questionStatus: "approved",
   },
   {
-    id: 4,
+    id: 45,
     title: "요구사항 수정 요청 드립니다",
     author: "김개발",
     date: "2024-01-08",
     attachments: 2,
     comments: 3,
-    category: "계약",
-    tags: ["요구사항 정의"],
+    projectStatus: "계약",
+    stepId: 21,
     status: "complete",
-    questionStatus: "request",
+    questionStatus: "rejected",
   },
 ];
 
-const categories = ["전체", "계약", "진행", "납품", "유지보수"];
-const categoryTags: Record<string, string[]> = {
-  전체: ["전체", "요구사항 정의", "화면설계", "디자인", "퍼블리싱", "개발", "검수"],
-  계약: ["전체", "요구사항 정의"],
-  진행: ["전체", "요구사항 정의", "화면설계", "디자인"],
-  납품: ["전체", "퍼블리싱", "개발", "검수"],
-  유지보수: ["전체", "개발", "검수"],
-};
-
-const statusStyles: Record<PostStatus, string> = {
-  progress: "bg-blue-100 text-blue-700 border-blue-200",
-  complete: "bg-green-100 text-green-700 border-green-200",
-};
-
-const statusLabels: Record<PostStatus, string> = {
-  progress: "진행중",
-  complete: "완료",
-};
-
-const questionStatusStyles: Record<QuestionStatus, string> = {
-  request: "!bg-[#FFE899] !text-[#7A4A00] !border-[#F5CA6A]",
-  approved: "!bg-[#D3F9D8] !text-[#1B5E20] !border-[#A5E4AE]",
-};
-
-const questionLabels: Record<QuestionStatus, string> = {
-  request: "승인 요청",
-  approved: "승인",
+const projectStatuses = ["전체", "계약", "진행", "납품", "유지보수"];
+const statusStepMap: Record<string, number[]> = {
+  전체: mockProjectSteps.map((step) => step.id),
+  계약: [21],
+  진행: [21, 22, 23, 24],
+  납품: [24, 25],
+  유지보수: [25],
 };
 
 export default function Board() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [activeCategory, setActiveCategory] = useState("전체");
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [activeProjectStatus, setActiveProjectStatus] = useState("전체");
+  const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const posts = mockPosts;
   const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
   const pageSize = 5;
 
-  const availableTags = categoryTags[activeCategory] || categoryTags["전체"];
+  const stepsForActiveStatus = statusStepMap[activeProjectStatus] || statusStepMap["전체"];
+  const stepOptions = stepsForActiveStatus
+    .map((stepId) => projectStepMap[stepId])
+    .filter((step): step is NonNullable<typeof step> => Boolean(step))
+    .map((step) => ({ id: step.id, name: step.name }));
+  const availableSteps = [{ id: null, name: "전체" }, ...stepOptions];
 
   useEffect(() => {
-    const tagsForCategory = categoryTags[activeCategory] || categoryTags["전체"];
-    if (selectedTag && !tagsForCategory.includes(selectedTag)) {
-      setSelectedTag(null);
+    const stepsForStatus = statusStepMap[activeProjectStatus] || statusStepMap["전체"];
+    if (selectedStepId !== null && !stepsForStatus.includes(selectedStepId)) {
+      setSelectedStepId(null);
     }
-  }, [activeCategory, selectedTag]);
+  }, [activeProjectStatus, selectedStepId]);
 
-  const toggleTag = (tag: string) => {
-    if (tag === "전체") {
-      setSelectedTag(null);
+  const toggleStep = (stepId: number | null) => {
+    if (stepId === null) {
+      setSelectedStepId(null);
       setCurrentPage(1);
       return;
     }
-    setSelectedTag(prev => {
-      const next = prev === tag ? null : tag;
+    setSelectedStepId(prev => {
+      const next = prev === stepId ? null : stepId;
       setCurrentPage(1);
       return next;
     });
   };
 
   const filteredPosts = posts.filter(post => {
-    if (activeCategory !== "전체" && post.category !== activeCategory) return false;
-    if (selectedTag && selectedTag !== "전체" && !post.tags.includes(selectedTag)) return false;
+    if (activeProjectStatus !== "전체" && post.projectStatus !== activeProjectStatus) return false;
+    if (selectedStepId !== null && post.stepId !== selectedStepId) return false;
     if (postStatusFilter === "진행중" && post.status !== "progress") return false;
     if (postStatusFilter === "완료" && post.status !== "complete") return false;
     return true;
@@ -152,10 +140,16 @@ export default function Board() {
     setCurrentPage(page);
   };
 
-  const handleCategoryChange = (category: string) => {
-    setActiveCategory(category);
-    setSelectedTag(null);
+  const handleProjectStatusChange = (status: string) => {
+    setActiveProjectStatus(status);
+    setSelectedStepId(null);
     setCurrentPage(1);
+  };
+
+  const getStepName = (stepId: number) => projectStepMap[stepId]?.name ?? "미정 단계";
+
+  const handlePostClick = (postId: number) => {
+    navigate(`/project/${id}/board/${postId}`);
   };
 
   return (
@@ -172,18 +166,18 @@ export default function Board() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-wrap gap-2 mt-1">
-              {categories.map((category) => (
+              {projectStatuses.map((status) => (
                 <button
-                  key={category}
-                  onClick={() => handleCategoryChange(category)}
+                  key={status}
+                  onClick={() => handleProjectStatusChange(status)}
                   className={cn(
                     "cursor-pointer px-4 py-2 text-sm rounded-full border transition-colors",
-                    activeCategory === category
+                    activeProjectStatus === status
                       ? "bg-primary text-white border-primary"
                       : "text-muted-foreground border-input hover:text-foreground"
                   )}
                 >
-                  {category}
+                  {status}
                 </button>
               ))}
             </div>
@@ -193,18 +187,18 @@ export default function Board() {
 
             <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
               <div className="flex flex-wrap gap-3">
-                {availableTags.map((tag) => {
-                  const isSelected = selectedTag ? selectedTag === tag : tag === "전체";
+                {availableSteps.map((stepOption) => {
+                  const isSelected = selectedStepId === stepOption.id || (stepOption.id === null && selectedStepId === null);
                   return (
                     <button
-                      key={tag}
-                      onClick={() => toggleTag(tag)}
+                      key={stepOption.id ?? "all"}
+                      onClick={() => toggleStep(stepOption.id)}
                       className={cn(
                         "pb-1 border-b-2 transition-colors",
                         isSelected ? "text-primary border-primary font-semibold" : "text-muted-foreground border-transparent hover:text-foreground"
                       )}
                     >
-                      {tag}
+                      {stepOption.name}
                     </button>
                   );
                 })}
@@ -232,7 +226,16 @@ export default function Board() {
               {paginatedPosts.map((post) => (
                 <Card
                   key={post.id}
-                  className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl"
+                  className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => handlePostClick(post.id)}
+                  tabIndex={0}
+                  role="button"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handlePostClick(post.id);
+                    }
+                  }}
                 >
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
@@ -241,10 +244,10 @@ export default function Board() {
                       <div
                         className={cn(
                           "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                          statusStyles[post.status]
+                          boardStatusStyles[post.status]
                         )}
                       >
-                        {statusLabels[post.status]}
+                        {boardStatusLabels[post.status]}
                       </div>
 
                       {/* 제목/작성자 */}
@@ -254,6 +257,10 @@ export default function Board() {
                           <span>{post.author}</span>
                           <span>•</span>
                           <span>{post.date}</span>
+                          <span>•</span>
+                          <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground bg-muted/40">
+                            {getStepName(post.stepId)}
+                          </span>
                         </div>
                       </div>
 
@@ -263,10 +270,10 @@ export default function Board() {
                         <div
                           className={cn(
                             "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                            questionStatusStyles[post.questionStatus]
+                            boardStatusStyles[post.questionStatus]
                           )}
                         >
-                          {questionLabels[post.questionStatus]}
+                          {boardStatusLabels[post.questionStatus]}
                         </div>
 
                         <div className="flex items-center gap-3 text-muted-foreground">

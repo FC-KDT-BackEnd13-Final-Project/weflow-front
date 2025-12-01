@@ -9,6 +9,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Dashboard from "./pages/Dashboard";
 import Board from "./pages/Board";
 import BoardNew from "./pages/BoardNew";
+import BoardDetail from "./pages/BoardDetail";
 import Checklist from "./pages/Checklist";
 import ChecklistDetail from "./pages/ChecklistDetail";
 import Approvals from "./pages/Approvals";
@@ -35,6 +36,7 @@ const App = () => (
           <Route path="/project/:id/dashboard" element={<Dashboard />} />
           <Route path="/project/:id/board" element={<Board />} />
           <Route path="/project/:id/board/new" element={<BoardNew />} />
+          <Route path="/project/:id/board/:postId" element={<BoardDetail />} />
           <Route path="/project/:id/checklist" element={<Checklist />} />
           <Route path="/project/:id/checklist/:checklistId" element={<ChecklistDetail />} />
           <Route path="/project/:id/approvals" element={<Approvals />} />
