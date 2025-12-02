@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Paperclip, Link as LinkIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type StepRequestStatus = "REQUESTED" | "APPROVED" | "REJECTED";
 
@@ -21,6 +22,7 @@ interface StepRequestSummary {
   requestedBy: number;
   createdAt: string;
   step: string;
+  projectStatus: "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 }
 
 const stepRequestSummaries: StepRequestSummary[] = [
@@ -31,6 +33,7 @@ const stepRequestSummaries: StepRequestSummary[] = [
     requestedBy: 17,
     createdAt: "2025-02-05T11:00:00",
     step: "디자인",
+    projectStatus: "IN_PROGRESS",
   },
   {
     id: 502,
@@ -39,6 +42,7 @@ const stepRequestSummaries: StepRequestSummary[] = [
     requestedBy: 21,
     createdAt: "2025-02-04T16:30:00",
     step: "퍼블리싱",
+    projectStatus: "DELIVERY",
   },
   {
     id: 503,
@@ -47,10 +51,25 @@ const stepRequestSummaries: StepRequestSummary[] = [
     requestedBy: 18,
     createdAt: "2025-02-02T09:45:00",
     step: "개발",
+    projectStatus: "IN_PROGRESS",
   },
 ];
 
 const stepCategories = ["요구사항 정의", "화면 설계", "디자인", "퍼블리싱", "개발", "검수"];
+const projectStatusTabs = [
+  { value: "ALL", label: "전체" },
+  { value: "CONTRACT", label: "계약" },
+  { value: "IN_PROGRESS", label: "진행중" },
+  { value: "DELIVERY", label: "납품" },
+  { value: "MAINTENANCE", label: "유지보수" },
+];
+
+const projectStatusLabels: Record<StepRequestSummary["projectStatus"], string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행중",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
 
 const statusConfig: Record<StepRequestStatus, { label: string; dot: string; badge: string }> = {
   REQUESTED: { label: "요청 중", dot: "bg-yellow-500", badge: "bg-yellow-500 text-white" },
@@ -62,6 +81,7 @@ export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
+  const [projectStatusFilter, setProjectStatusFilter] = useState<string>("ALL");
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -130,7 +150,11 @@ export default function Approvals() {
   };
 
   const getRequestsForStep = (step: string) =>
-    stepRequestSummaries.filter((request) => request.step === step);
+    stepRequestSummaries.filter(
+      (request) =>
+        request.step === step &&
+        (projectStatusFilter === "ALL" || request.projectStatus === projectStatusFilter)
+    );
 
   const getStepStatus = (requests: StepRequestSummary[]) => {
     if (requests.some((r) => r.status === "REQUESTED")) {
@@ -151,6 +175,16 @@ export default function Approvals() {
             <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인 상태를 확인하세요</p>
           </div>
         </div>
+
+        <Tabs value={projectStatusFilter} onValueChange={setProjectStatusFilter}>
+          <TabsList className="flex flex-wrap justify-start">
+            {projectStatusTabs.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value} className="text-sm">
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {stepCategories.map((category) => {
@@ -174,9 +208,14 @@ export default function Approvals() {
                           onClick={() => navigate(`/project/${id}/approvals/${request.id}`)}
                           className="w-full p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-muted/40 text-left flex items-center justify-between"
                         >
-                          <div className="flex items-center gap-2">
-                            <span className={cn("w-3 h-3 rounded-full", statusConfig[request.status].dot)} />
-                            <span className="font-medium text-sm">{request.title}</span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className={cn("w-3 h-3 rounded-full", statusConfig[request.status].dot)} />
+                              <span className="font-medium text-sm">{request.title}</span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {projectStatusLabels[request.projectStatus]}
+                            </span>
                           </div>
                           <Badge className={statusConfig[request.status].badge}>
                             {statusConfig[request.status].label}

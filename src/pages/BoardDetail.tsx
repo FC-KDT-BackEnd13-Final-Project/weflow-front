@@ -473,17 +473,32 @@ export default function BoardDetail() {
       : activeDialogQuestion?.buttonLabels.no ?? "반려"
     : "";
 
+  const handleReply = () => {
+    navigate(`/project/${id}/board/new`, {
+      state: {
+        parentPostId: post.id,
+        parentTitle: post.title,
+      },
+    });
+  };
+
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-5xl mx-auto">
-        <Button
-          variant="ghost"
-          className="-ml-2 w-fit"
-          onClick={() => navigate(`/project/${id}/board`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          목록으로
-        </Button>
+      <div className="space-y-6 max-w-7xl mx-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            className="-ml-2 w-fit"
+            onClick={() => navigate(`/project/${id}/board`)}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            목록으로
+          </Button>
+          <Button className="gap-2" onClick={handleReply}>
+            <MessageSquare className="h-4 w-4" />
+            답글 작성
+          </Button>
+        </div>
 
         <Card>
           <CardHeader className="space-y-2 border-b">
