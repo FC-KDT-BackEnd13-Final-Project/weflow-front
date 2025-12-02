@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -44,23 +44,29 @@ const stepRequests = [
     id: 501,
     title: "디자인 시안 승인 요청드립니다",
     status: "REQUESTED",
-    requestedBy: "김서현(디자이너)",
+    requestedBy: { name: "김서현", role: "디자이너" },
     createdAt: "2025-02-05T11:00:00"
   },
   {
     id: 502,
-    title: "퍼블리싱 QA 요청",
-    status: "DRAFT",
-    requestedBy: "이현우(개발리드)",
+    title: "퍼블리싱 결과물 승인 요청",
+    status: "APPROVED",
+    requestedBy: { name: "박고객", role: "CUSTOMER" },
     createdAt: "2025-02-04T16:30:00"
+  },
+  {
+    id: 503,
+    title: "테스트 시나리오 승인 요청",
+    status: "REJECTED",
+    requestedBy: { name: "이개발", role: "QA" },
+    createdAt: "2025-02-02T09:45:00"
   }
 ];
 
 const requestStatusMap: Record<string, { label: string; className: string }> = {
   REQUESTED: { label: "승인 대기", className: "bg-blue-100 text-blue-700" },
   APPROVED: { label: "승인 완료", className: "bg-emerald-100 text-emerald-700" },
-  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" },
-  DRAFT: { label: "작성중", className: "bg-slate-200 text-slate-700" }
+  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" }
 };
 
 const formatRequestDate = (dateString: string) =>
@@ -74,6 +80,7 @@ const formatRequestDate = (dateString: string) =>
 
 export default function ProjectDashboard() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
   return (
     <ProjectLayout>
@@ -218,19 +225,37 @@ export default function ProjectDashboard() {
 
         {/* Approval Requests */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">최근 승인 요청</CardTitle>
+            <button
+              className="text-sm text-primary flex items-center gap-1"
+              onClick={() => navigate(`/project/${id}/approvals`)}
+            >
+              더보기 <ArrowRight className="h-4 w-4" />
+            </button>
           </CardHeader>
           <CardContent className="space-y-4">
             {stepRequests.map((request) => {
               const status = requestStatusMap[request.status] || requestStatusMap.REQUESTED;
               return (
-                <div key={request.id} className="rounded-lg border bg-muted/20 p-4">
+                <div
+                  key={request.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/project/${id}/approvals/${request.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/project/${id}/approvals/${request.id}`);
+                    }
+                  }}
+                  className="rounded-lg border bg-muted/20 p-4 cursor-pointer hover:bg-muted/40 transition"
+                >
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <p className="font-semibold">{request.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {request.requestedBy} · {formatRequestDate(request.createdAt)}
+                        {request.requestedBy.name} ({request.requestedBy.role}) · {formatRequestDate(request.createdAt)}
                       </p>
                     </div>
                     <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", status.className)}>
@@ -255,7 +280,10 @@ export default function ProjectDashboard() {
               <CardTitle className="text-base">최근 활동</CardTitle>
               <p className="text-sm text-muted-foreground">프로젝트 구성원 소식</p>
             </div>
-            <button className="text-sm text-primary flex items-center gap-1">
+            <button
+              className="text-sm text-primary flex items-center gap-1"
+              onClick={() => navigate(`/project/${id}/history`)}
+            >
               더보기 <ArrowRight className="h-4 w-4" />
             </button>
           </CardHeader>

@@ -381,6 +381,18 @@ export default function ChecklistDetail() {
             )}
           </CardContent>
         </Card>
+
+        {checklist.status === "pending" && (
+          <div className="flex justify-end">
+            <Button
+              size="lg"
+              className="px-8"
+              onClick={() => navigate(`/project/${id}/checklist`)}
+            >
+              체크리스트 제출
+            </Button>
+          </div>
+        )}
       </div>
     </ProjectLayout>
   );
