@@ -1,33 +1,32 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Building2, FolderKanban, Bell, Plus, UserPlus, Building, FileText } from "lucide-react";
+import { Users, Building2, FolderKanban, UserPlus, Building, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const stats = [
     {
       title: "전체 회원 수",
       value: "123명",
       icon: Users,
       color: "bg-purple-100 text-purple-600",
+      link: "/admin/members",
     },
     {
       title: "등록된 회사 수",
       value: "12개",
       icon: Building2,
       color: "bg-pink-100 text-pink-600",
+      link: "/admin/companies",
     },
     {
       title: "전체 프로젝트",
       value: "34개",
       icon: FolderKanban,
       color: "bg-blue-100 text-blue-600",
-    },
-    {
-      title: "신규 요청",
-      value: "8건",
-      icon: Bell,
-      color: "bg-yellow-100 text-yellow-600",
+      link: "/admin/projects",
     },
   ];
 
@@ -57,9 +56,13 @@ const Dashboard = () => {
       </div>
 
       {/* 통계 카드 */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat, index) => (
-          <Card key={index} className="border-2 hover:shadow-lg transition-shadow">
+          <Card
+            key={index}
+            className="border-2 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate(stat.link)}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 {stat.title}
@@ -84,7 +87,12 @@ const Dashboard = () => {
               최근 활동 로그
             </CardTitle>
           </div>
-          <Button variant="ghost" size="sm" className="text-primary">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary"
+            onClick={() => navigate("/admin/logs")}
+          >
             + 전체 로그 보기
           </Button>
         </CardHeader>
@@ -113,15 +121,30 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            <Button size="lg" className="gap-2">
+            <Button
+              size="lg"
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate("/admin/members/create")}
+            >
               <UserPlus className="h-4 w-4" />
               회원 생성
             </Button>
-            <Button size="lg" variant="outline" className="gap-2">
+            <Button
+              size="lg"
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate("/admin/companies/create")}
+            >
               <Building className="h-4 w-4" />
               회사 추가
             </Button>
-            <Button size="lg" variant="outline" className="gap-2">
+            <Button
+              size="lg"
+              variant="outline"
+              className="gap-2"
+              onClick={() => navigate("/admin/projects/create")}
+            >
               <FileText className="h-4 w-4" />
               프로젝트 생성
             </Button>

@@ -26,8 +26,9 @@ const items = [
   { title: "회원 관리", url: "/admin/members", icon: Users },
   { title: "회사 관리", url: "/admin/companies", icon: Building2 },
   { title: "프로젝트 관리", url: "/admin/projects", icon: FolderKanban },
+  { title: "체크리스트 템플릿 생성", url: "/admin/checklist-templates", icon: FolderKanban },
   { title: "로그 / 활동 기록", url: "/admin/logs", icon: Activity },
-  { title: "시스템 설정", url: "/admin/settings", icon: Settings },
+  { title: "관리자 계정 관리", url: "/admin/admin-users", icon: Settings },
 ];
 
 export function AdminAppSidebar() {
