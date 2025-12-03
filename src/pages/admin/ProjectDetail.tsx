@@ -13,7 +13,6 @@ const ProjectDetail = () => {
     description: "고객사 웹 리뉴얼 프로젝트",
     company: "ClientA Corporation",
     stage: "디자인",
-    pm: "김철수",
     startDate: "2025-11-12",
     endDate: "2025-12-12",
     contract: "contract_v1.pdf",
@@ -34,17 +33,13 @@ const ProjectDetail = () => {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>프로젝트 정보</CardTitle>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => navigate("/admin/projects/checklist/create")}
-            >
-              체크리스트 생성
-            </Button>
             <Button variant="outline" className="gap-2" onClick={() => navigate("/admin/projects")}>
               목록
             </Button>
             <Button className="gap-2" onClick={() => navigate("/admin/projects/1/edit")}>수정</Button>
+            <Button variant="destructive" className="gap-2">
+              삭제
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -78,12 +73,6 @@ const ProjectDetail = () => {
                 <span className="text-muted-foreground">{project.stage}</span>
               </div>
 
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  개발 PM
-                </Badge>
-                <span className="font-medium">{project.pm}</span>
-              </div>
             </div>
 
             <div>
@@ -110,12 +99,6 @@ const ProjectDetail = () => {
             </div>
           </div>
 
-          <div className="pt-6 border-t">
-            <Button variant="destructive" className="gap-2">
-              <Trash2 className="h-4 w-4" />
-              삭제
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

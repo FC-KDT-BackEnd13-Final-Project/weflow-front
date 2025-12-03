@@ -1,16 +1,9 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,49 +15,87 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useNavigate } from "react-router-dom";
+import {
+  deleteAdminUser,
+  getAdminUserById,
+  upsertAdminUser,
+  type AdminUser,
+} from "@/lib/adminUsersStore";
 
-const AdminMemberDetail = () => {
+const AdminUserDetail = () => {
   const navigate = useNavigate();
-  const [role, setRole] = useState("developer");
-  const [company, setCompany] = useState("devcorp");
+  const { id } = useParams();
+  const numericId = useMemo(() => Number(id), [id]);
+  const [user, setUser] = useState<AdminUser | null>(null);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const fetched = getAdminUserById(numericId);
+    if (!fetched) return;
+    setUser(fetched);
+    setName(fetched.name);
+    setPhone(fetched.phone ?? "");
+    setEmail(fetched.email);
+  }, [numericId]);
 
   const handleDelete = () => {
     setIsDeleteDialogOpen(false);
-    navigate("/admin/members");
+    if (!user) return;
+    deleteAdminUser(user.id);
+    navigate("/admin/admin-users");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/admin/members");
+    if (!user) return;
+    upsertAdminUser({
+      ...user,
+      name,
+      phone,
+      email,
+      role: "system_admin",
+    });
+    navigate("/admin/admin-users");
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">회원 상세</h1>
+          <h1 className="text-3xl font-bold">관리자 계정 상세</h1>
           <p className="text-muted-foreground mt-1">
-            회원 관리 {'>'} 회원 목록 {'>'} 회원 상세
+            관리자 계정 {'>'} 목록 {'>'} 상세 (ID: {id})
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>회원 정보</CardTitle>
+          <CardTitle>관리자 정보</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="name">이름</Label>
-                <Input id="name" defaultValue="홍길동" placeholder="이름 입력" />
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="이름 입력"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">전화번호</Label>
-                <Input id="phone" defaultValue="010-1234-5678" placeholder="전화번호 입력" />
+                <Input
+                  id="phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="전화번호 입력"
+                />
               </div>
             </div>
 
@@ -73,41 +104,17 @@ const AdminMemberDetail = () => {
               <Input
                 id="email"
                 type="email"
-                defaultValue="hong@devcorp.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="이메일 입력"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="company">소속 회사</Label>
-              <Select value={company} onValueChange={setCompany}>
-                <SelectTrigger>
-                  <SelectValue placeholder="선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="devcorp">DevCorp</SelectItem>
-                  <SelectItem value="clienta">ClientA</SelectItem>
-                  <SelectItem value="weflow">weflow</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-3">
               <Label>역할</Label>
-              <RadioGroup value={role} onValueChange={setRole}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="developer" id="developer" />
-                  <Label htmlFor="developer" className="font-normal cursor-pointer">
-                    개발사 담당자
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="client" id="client" />
-                  <Label htmlFor="client" className="font-normal cursor-pointer">
-                    고객사 담당자
-                  </Label>
-                </div>
-              </RadioGroup>
+              <div className="p-3 border rounded-md bg-muted/50 text-sm">
+                시스템 관리자
+              </div>
             </div>
 
             <div className="flex gap-3 justify-end pt-4">
@@ -119,9 +126,9 @@ const AdminMemberDetail = () => {
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>회원 삭제</AlertDialogTitle>
+                    <AlertDialogTitle>관리자 삭제</AlertDialogTitle>
                     <AlertDialogDescription>
-                      정말로 이 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                      이 관리자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -133,7 +140,7 @@ const AdminMemberDetail = () => {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => navigate("/admin/members")}
+                onClick={() => navigate("/admin/admin-users")}
               >
                 목록
               </Button>
@@ -146,4 +153,4 @@ const AdminMemberDetail = () => {
   );
 };
 
-export default AdminMemberDetail;
+export default AdminUserDetail;

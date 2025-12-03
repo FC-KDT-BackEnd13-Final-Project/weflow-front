@@ -33,11 +33,16 @@ import AdminProjects from "./pages/admin/Projects";
 import AdminProjectCreate from "./pages/admin/ProjectCreate";
 import AdminProjectDetail from "./pages/admin/ProjectDetail";
 import AdminProjectEdit from "./pages/admin/ProjectEdit";
-import AdminChecklistCreate from "./pages/admin/ChecklistCreate";
+import TemplateList from "./pages/admin/TemplateList";
+import TemplateCreate from "./pages/admin/TemplateCreate";
+import TemplateDetail from "./pages/admin/TemplateDetail";
+import TemplateEdit from "./pages/admin/TemplateEdit";
 import AdminMemberCreate from "./pages/admin/MemberCreate";
 import AdminMemberDetail from "./pages/admin/MemberDetail";
 import AdminLogs from "./pages/admin/Logs";
-import AdminSettings from "./pages/admin/Settings";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminUserCreate from "./pages/admin/AdminUserCreate";
+import AdminUserDetail from "./pages/admin/AdminUserDetail";
 
 const queryClient = new QueryClient();
 
@@ -72,7 +77,7 @@ const App = () => (
           
           {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
           <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<AdminDashboard />} />
+            <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="members" element={<AdminMembers />} />
             <Route path="members/create" element={<AdminMemberCreate />} />
@@ -84,9 +89,15 @@ const App = () => (
             <Route path="projects/create" element={<AdminProjectCreate />} />
             <Route path="projects/:id" element={<AdminProjectDetail />} />
             <Route path="projects/:id/edit" element={<AdminProjectEdit />} />
-            <Route path="projects/checklist/create" element={<AdminChecklistCreate />} />
+            <Route path="checklist-templates" element={<TemplateList />} />
+            <Route path="checklist-templates/create" element={<TemplateCreate />} />
+            <Route path="checklist-templates/:templateId" element={<TemplateDetail />} />
+            <Route path="checklist-templates/:templateId/edit" element={<TemplateEdit />} />
             <Route path="logs" element={<AdminLogs />} />
-            <Route path="settings" element={<AdminSettings />} />
+            <Route path="admin-users" element={<AdminUsers />} />
+            <Route path="admin-users/create" element={<AdminUserCreate />} />
+            <Route path="admin-users/:id" element={<AdminUserDetail />} />
+
           </Route>
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
