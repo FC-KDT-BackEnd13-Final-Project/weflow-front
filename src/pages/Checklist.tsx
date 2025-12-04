@@ -19,6 +19,14 @@ interface ChecklistItem {
   count: number;
 }
 
+interface ProjectStep {
+  id: number;
+  title: string;
+  description?: string;
+  status: string;
+  orderIndex: number;
+}
+
 export const mockChecklists: ChecklistItem[] = [
   {
     id: 1,
@@ -43,14 +51,15 @@ export const mockChecklists: ChecklistItem[] = [
   },
 ];
 
-const categories: ChecklistCategory[] = ["전체", "요구사항 정의", "화면 설계", "디자인", "개발", "검수"];
-
 export default function Checklist() {
   const [selectedCategory, setSelectedCategory] = useState<ChecklistCategory>("전체");
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("전체");
   const [checklists, setChecklists] = useState<ChecklistItem[]>(mockChecklists);
+  const [steps, setSteps] = useState<ProjectStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isStepLoading, setIsStepLoading] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { id } = useParams();
 
@@ -90,6 +99,36 @@ export default function Checklist() {
     return () => controller.abort();
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    const fetchSteps = async () => {
+      try {
+        setIsStepLoading(true);
+        setStepError(null);
+        const response = await api.get(`/api/projects/${id}/steps`, { signal: controller.signal });
+        const stepData = response.data?.data?.steps ?? response.data?.data;
+        if (Array.isArray(stepData)) {
+          const sorted = [...stepData].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+          setSteps(sorted);
+        } else {
+          throw new Error("잘못된 단계 응답입니다.");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setStepError("단계 정보를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsStepLoading(false);
+      }
+    };
+    fetchSteps();
+    return () => controller.abort();
+  }, [id]);
+
+  const stepNames = steps.map((step) => step.title);
+  const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];
+
   const baseChecklists = selectedCategory === "전체"
     ? checklists
     : checklists.filter(item => item.category === selectedCategory);
@@ -128,7 +167,7 @@ export default function Checklist() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-wrap gap-2 mt-3">
-              {categories.map((category) => (
+              {categoryTabs.map((category) => (
                 <Button
                   key={category}
                   variant={selectedCategory === category ? "default" : "outline"}
@@ -139,6 +178,12 @@ export default function Checklist() {
                   {category}
                 </Button>
               ))}
+              {isStepLoading && (
+                <span className="text-xs text-muted-foreground">단계를 불러오는 중...</span>
+              )}
+              {stepError && !isStepLoading && (
+                <span className="text-xs text-destructive">{stepError}</span>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
