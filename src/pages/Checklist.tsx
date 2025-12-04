@@ -15,7 +15,7 @@ interface ChecklistItem {
   id: number;
   title: string;
   category: ChecklistCategory;
-  status: "complete" | "pending";
+  locked: boolean;
   count: number;
 }
 
@@ -27,34 +27,12 @@ interface ProjectStep {
   orderIndex: number;
 }
 
-export const mockChecklists: ChecklistItem[] = [
-  {
-    id: 1,
-    title: "기획 단계 사전 질문지",
-    category: "요구사항 정의",
-    status: "complete",
-    count: 12,
-  },
-  {
-    id: 2,
-    title: "디자인 가이드 입력",
-    category: "화면 설계",
-    status: "pending",
-    count: 9,
-  },
-  {
-    id: 3,
-    title: "개발 환경 요구사항",
-    category: "개발",
-    status: "pending",
-    count: 10,
-  },
-];
+export const mockChecklists: ChecklistItem[] = [];
 
 export default function Checklist() {
   const [selectedCategory, setSelectedCategory] = useState<ChecklistCategory>("전체");
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("전체");
-  const [checklists, setChecklists] = useState<ChecklistItem[]>(mockChecklists);
+  const [checklists, setChecklists] = useState<ChecklistItem[]>([]);
   const [steps, setSteps] = useState<ProjectStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -80,7 +58,7 @@ export default function Checklist() {
             id: item.checklistId,
             title: item.title,
             category: item.stepName,
-            status: item.locked ? "complete" : "pending",
+            locked: Boolean(item.locked),
             count: item.questionCount,
           })) as ChecklistItem[];
           setChecklists(mapped);
@@ -134,8 +112,8 @@ export default function Checklist() {
     : checklists.filter(item => item.category === selectedCategory);
 
   const filteredChecklists = baseChecklists.filter((item) => {
-    if (selectedStatus === "완료") return item.status === "complete";
-    if (selectedStatus === "대기") return item.status === "pending";
+    if (selectedStatus === "완료") return item.locked === true;
+    if (selectedStatus === "대기") return item.locked === false;
     return true;
   });
 
@@ -234,11 +212,12 @@ export default function Checklist() {
                         variant="outline"
                         className={cn(
                           "rounded-full px-2 py-0.5 whitespace-nowrap",
-                          item.status === "complete" && "bg-status-complete-bg text-status-complete border-status-complete",
-                          item.status === "pending" && "bg-blue-50 text-blue-600 border-blue-200"
+                          item.locked
+                            ? "bg-status-complete-bg text-status-complete border-status-complete"
+                            : "bg-blue-50 text-blue-600 border-blue-200"
                         )}
                       >
-                        {item.status === "complete" ? "완료" : "대기"}
+                        {item.locked ? "완료" : "대기"}
                       </Badge>
                       <div className="flex-1">
                         <h3 className="font-medium">{item.title}</h3>
