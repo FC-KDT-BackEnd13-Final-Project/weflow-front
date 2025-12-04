@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/apis/api";
+import { useToast } from "@/hooks/use-toast";
 
 type ChecklistQuestionType = "SINGLE" | "MULTI" | "TEXT";
 
@@ -48,6 +49,7 @@ interface ChecklistDetailResponse {
 export default function ChecklistDetail() {
   const { id, checklistId } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [detail, setDetail] = useState<ChecklistDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +57,7 @@ export default function ChecklistDetail() {
 
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | number[] | undefined>>({});
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 🔥 1) API로 상세 조회
   useEffect(() => {
@@ -193,6 +196,79 @@ export default function ChecklistDetail() {
       ...prev,
       [questionId]: value,
     }));
+  };
+
+  const buildAnswerPayload = () => {
+    if (!detail) return [];
+    const payload: Array<{ questionId: number; optionId: number | null; answerText: string | null }> = [];
+
+    detail.questions.forEach((q) => {
+      const selected = selectedAnswers[q.id];
+      const memoInput = customInputs[q.id] ?? null;
+
+      if (q.questionType === "TEXT") {
+        payload.push({
+          questionId: q.id,
+          optionId: null,
+          answerText: memoInput,
+        });
+        return;
+      }
+
+      if (q.questionType === "SINGLE" && typeof selected === "number") {
+        payload.push({
+          questionId: q.id,
+          optionId: selected,
+          answerText: memoInput,
+        });
+        return;
+      }
+
+      if (q.questionType === "MULTI" && Array.isArray(selected)) {
+        selected.forEach((optionId) => {
+          payload.push({
+            questionId: q.id,
+            optionId,
+            answerText: memoInput,
+          });
+        });
+      }
+    });
+
+    return payload;
+  };
+
+  const handleSubmitAnswers = async () => {
+    if (!detail || detail.locked || isSubmitting) return;
+    const answers = buildAnswerPayload();
+    if (answers.length === 0) {
+      toast({
+        title: "답변을 선택해주세요.",
+        description: "제출할 항목을 선택하거나 입력해야 합니다.",
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await api.post(`/api/checklists/answers`, {
+        checklistId: detail.checklistId,
+        answers,
+      });
+      toast({
+        title: "체크리스트 제출 완료",
+        description: "답변이 정상적으로 제출되었습니다.",
+      });
+      navigate(`/project/${id}/checklist`);
+    } catch (error) {
+      toast({
+        title: "제출에 실패했습니다.",
+        description: "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // 🔥 6) 추가 입력창 보여줄지?
@@ -386,8 +462,13 @@ export default function ChecklistDetail() {
 
         {!detail.locked && (
           <div className="flex justify-end">
-            <Button size="lg" className="px-8" onClick={() => navigate(`/project/${id}/checklist`)}>
-              제출하기
+            <Button
+              size="lg"
+              className="px-8"
+              disabled={isSubmitting}
+              onClick={handleSubmitAnswers}
+            >
+              {isSubmitting ? "제출 중..." : "제출하기"}
             </Button>
           </div>
         )}
