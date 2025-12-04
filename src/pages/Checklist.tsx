@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import api from "@/apis/api";
 
-type ChecklistCategory = "전체" | "요구사항 정의" | "화면 설계" | "디자인" | "개발" | "검수";
+type ChecklistCategory = string;
 type StatusFilter = "전체" | "완료" | "대기";
 
 interface ChecklistItem {
@@ -47,18 +48,57 @@ const categories: ChecklistCategory[] = ["전체", "요구사항 정의", "화�
 export default function Checklist() {
   const [selectedCategory, setSelectedCategory] = useState<ChecklistCategory>("전체");
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("전체");
+  const [checklists, setChecklists] = useState<ChecklistItem[]>(mockChecklists);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { id } = useParams();
 
-  let filteredChecklists = selectedCategory === "전체" 
-    ? mockChecklists 
-    : mockChecklists.filter(item => item.category === selectedCategory);
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    const fetchChecklists = async () => {
+      try {
+        setIsLoading(true);
+        setFetchError(null);
+        const response = await api.get("/api/checklists", {
+          params: { projectId: id },
+          signal: controller.signal,
+        });
+        const responseData = response.data?.data;
+        if (Array.isArray(responseData)) {
+          const mapped = responseData.map((item: any) => ({
+            id: item.checklistId,
+            title: item.title,
+            category: item.stepName,
+            status: item.locked ? "complete" : "pending",
+            count: item.questionCount,
+          })) as ChecklistItem[];
+          setChecklists(mapped);
+        } else {
+          throw new Error("잘못된 응답 형식입니다.");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setFetchError("체크리스트를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
+      }
+    };
+    fetchChecklists();
+    return () => controller.abort();
+  }, [id]);
 
-  if (selectedStatus === "완료") {
-    filteredChecklists = filteredChecklists.filter(item => item.status === "complete");
-  } else if (selectedStatus === "대기") {
-    filteredChecklists = filteredChecklists.filter(item => item.status === "pending");
-  }
+  const baseChecklists = selectedCategory === "전체"
+    ? checklists
+    : checklists.filter(item => item.category === selectedCategory);
+
+  const filteredChecklists = baseChecklists.filter((item) => {
+    if (selectedStatus === "완료") return item.status === "complete";
+    if (selectedStatus === "대기") return item.status === "pending";
+    return true;
+  });
 
   const handleViewDetail = (checklistId: number) => {
     navigate(`/project/${id}/checklist/${checklistId}`);
@@ -118,6 +158,21 @@ export default function Checklist() {
                 </button>
               ))}
             </div>
+            {isLoading && (
+              <div className="text-sm text-muted-foreground py-6 text-center">
+                체크리스트를 불러오는 중입니다...
+              </div>
+            )}
+            {fetchError && !isLoading && (
+              <div className="text-sm text-destructive py-6 text-center">
+                {fetchError}
+              </div>
+            )}
+            {!isLoading && filteredChecklists.length === 0 && (
+              <div className="text-sm text-muted-foreground py-6 text-center">
+                조건에 맞는 체크리스트가 없습니다.
+              </div>
+            )}
             {filteredChecklists.map((item) => (
               <Card
                 key={item.id}
