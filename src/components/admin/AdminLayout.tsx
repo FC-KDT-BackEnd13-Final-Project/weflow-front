@@ -1,11 +1,17 @@
+import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminAppSidebar } from "@/components/admin/AdminAppSidebar";
 
 export default function AdminLayout() {
+  useEffect(() => {
+    document.documentElement.classList.add("admin-sidebar-theme");
+    return () => document.documentElement.classList.remove("admin-sidebar-theme");
+  }, []);
+
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full">
+      <div className="admin-sidebar-theme flex min-h-screen w-full">
         <AdminAppSidebar />
         <main className="flex-1 overflow-auto">
           <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-card px-6">
