@@ -59,7 +59,7 @@ export default function ChecklistDetail() {
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🔥 1) API로 상세 조회
+  // 1) API로 상세 조회
   useEffect(() => {
     if (!checklistId) return;
 
@@ -117,7 +117,7 @@ export default function ChecklistDetail() {
     return () => controller.abort();
   }, [checklistId]);
 
-  // 🔥 2) detail 업데이트되면 답변 초기화 (1회)
+  // 2) detail 업데이트되면 답변 초기화 (1회)
   useEffect(() => {
     if (!detail) return;
 
@@ -138,9 +138,9 @@ export default function ChecklistDetail() {
 
     setSelectedAnswers(nextSel);
     setCustomInputs(nextInput);
-  }, [detail?.checklistId]);
+  }, [detail]);
 
-  // 🔥 3) SINGLE 선택
+  // 3) SINGLE 선택
   const handleSingleOptionChange = (questionId: number, value: string) => {
     if (detail?.locked) return;
 
@@ -163,7 +163,7 @@ export default function ChecklistDetail() {
     }
   };
 
-  // 🔥 4) MULTI 선택 처리
+  // 4) MULTI 선택 처리
   const handleMultiOptionToggle = (questionId: number, optionId: number, checked: boolean) => {
     if (detail?.locked) return;
 
@@ -271,7 +271,7 @@ export default function ChecklistDetail() {
     }
   };
 
-  // 🔥 6) 추가 입력창 보여줄지?
+  // 6) 추가 입력창 보여줄지?
   const shouldShowAdditionalInput = (q: ChecklistQuestion) => {
     const selected = selectedAnswers[q.id];
 
@@ -289,7 +289,7 @@ export default function ChecklistDetail() {
     return false;
   };
 
-  // 🔥 로딩 화면
+  // 로딩 화면
   if (isLoading) {
     return (
       <ProjectLayout>
