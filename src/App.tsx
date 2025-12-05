@@ -18,6 +18,8 @@ import BoardDetail from "./pages/BoardDetail";
 import Checklist from "./pages/Checklist";
 import ChecklistDetail from "./pages/ChecklistDetail";
 import ChecklistCreate from "./pages/ChecklistCreate";
+import ChecklistTemplates from "./pages/ChecklistTemplates";
+import ChecklistTemplateDetail from "./pages/ChecklistTemplateDetail";
 import Approvals from "./pages/Approvals";
 import ApprovalDetail from "./pages/ApprovalDetail";
 import TeamMembers from "./pages/TeamMembers";
@@ -71,6 +73,8 @@ const App = () => (
           <Route path="/project/:id/board/:postId" element={<BoardDetail />} />
           <Route path="/project/:id/checklist" element={<Checklist />} />
           <Route path="/project/:id/checklist/create" element={<ChecklistCreate />} />
+          <Route path="/project/:id/checklist/templates" element={<ChecklistTemplates />} />
+          <Route path="/project/:id/checklist/templates/:templateId" element={<ChecklistTemplateDetail />} />
           <Route path="/project/:id/checklist/:checklistId" element={<ChecklistDetail />} />
           <Route path="/project/:id/approvals" element={<Approvals />} />
           <Route path="/project/:id/approvals/:approvalId" element={<ApprovalDetail />} />
