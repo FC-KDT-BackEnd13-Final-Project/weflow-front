@@ -272,23 +272,6 @@ export default function ChecklistDetail() {
   };
 
   // 6) 추가 입력창 보여줄지?
-  const shouldShowAdditionalInput = (q: ChecklistQuestion) => {
-    const selected = selectedAnswers[q.id];
-
-    if (q.questionType === "TEXT") return true;
-
-    if (q.questionType === "SINGLE") {
-      const opt = q.options?.find((o) => o.id === selected);
-      return !!opt?.hasInput;
-    }
-
-    if (q.questionType === "MULTI" && Array.isArray(selected)) {
-      return q.options?.some((o) => selected.includes(o.id) && o.hasInput);
-    }
-
-    return false;
-  };
-
   // 로딩 화면
   if (isLoading) {
     return (
@@ -378,21 +361,31 @@ export default function ChecklistDetail() {
                           className="space-y-3"
                         >
                           {(q.options ?? []).map((opt) => (
-                            <div key={opt.id} className="flex items-center space-x-2">
-                              <RadioGroupItem
-                                value={String(opt.id)}
-                                id={`${q.id}-${opt.id}`}
-                                disabled={detail.locked}
-                              />
-                              <Label
-                                htmlFor={`${q.id}-${opt.id}`}
-                                className={cn(
-                                  "cursor-pointer",
-                                  selectedAnswers[q.id] === opt.id && "font-medium"
-                                )}
-                              >
-                                {opt.optionText}
-                              </Label>
+                            <div key={opt.id} className="space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(opt.id)}
+                                  id={`${q.id}-${opt.id}`}
+                                  disabled={detail.locked}
+                                />
+                                <Label
+                                  htmlFor={`${q.id}-${opt.id}`}
+                                  className={cn(
+                                    "cursor-pointer",
+                                    selectedAnswers[q.id] === opt.id && "font-medium"
+                                  )}
+                                >
+                                  {opt.optionText}
+                                </Label>
+                              </div>
+                              {opt.hasInput && selectedAnswers[q.id] === opt.id && (
+                                <Input
+                                  value={customInputs[q.id] ?? ""}
+                                  placeholder="내용을 입력해주세요"
+                                  onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
+                                  readOnly={detail.locked}
+                                />
+                              )}
                             </div>
                           ))}
                         </RadioGroup>
@@ -407,21 +400,31 @@ export default function ChecklistDetail() {
                               (selectedAnswers[q.id] as number[]).includes(opt.id);
 
                             return (
-                              <div key={opt.id} className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`${q.id}-${opt.id}`}
-                                  checked={selected}
-                                  onCheckedChange={(checked) =>
-                                    handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
-                                  }
-                                  disabled={detail.locked}
-                                />
-                                <Label
-                                  htmlFor={`${q.id}-${opt.id}`}
-                                  className={selected ? "font-medium" : ""}
-                                >
-                                  {opt.optionText}
-                                </Label>
+                              <div key={opt.id} className="space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`${q.id}-${opt.id}`}
+                                    checked={selected}
+                                    onCheckedChange={(checked) =>
+                                      handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
+                                    }
+                                    disabled={detail.locked}
+                                  />
+                                  <Label
+                                    htmlFor={`${q.id}-${opt.id}`}
+                                    className={selected ? "font-medium" : ""}
+                                  >
+                                    {opt.optionText}
+                                  </Label>
+                                </div>
+                                {opt.hasInput && selected && (
+                                  <Input
+                                    value={customInputs[q.id] ?? ""}
+                                    placeholder="내용을 입력해주세요"
+                                    onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
+                                    readOnly={detail.locked}
+                                  />
+                                )}
                               </div>
                             );
                           })}
@@ -439,15 +442,6 @@ export default function ChecklistDetail() {
                       )}
 
                       {/* Additional Input */}
-                      {q.questionType !== "TEXT" && shouldShowAdditionalInput(q) && (
-                        <Input
-                          value={customInputs[q.id] ?? ""}
-                          placeholder="내용을 입력해주세요"
-                          onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
-                          readOnly={detail.locked}
-                          className="mt-3"
-                        />
-                      )}
                     </CardContent>
                   </Card>
                 </div>
