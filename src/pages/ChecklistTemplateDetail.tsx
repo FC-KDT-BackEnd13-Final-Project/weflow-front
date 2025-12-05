@@ -90,10 +90,20 @@ export default function ChecklistTemplateDetail() {
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button variant="ghost" size="sm" className="gap-2" onClick={() => navigate(`/project/${id}/checklist/templates`)}>
             <ArrowLeft className="h-4 w-4" />
             목록으로
+          </Button>
+          <Button
+            disabled={detail.locked}
+            onClick={() =>
+              navigate(`/project/${id}/checklist/create`, {
+                state: { template: detail },
+              })
+            }
+          >
+            템플릿 적용
           </Button>
         </div>
 

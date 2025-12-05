@@ -22,6 +22,7 @@ export default function ChecklistTemplates() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("전체");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,13 +73,32 @@ export default function ChecklistTemplates() {
           <div className="py-12 text-center text-muted-foreground">등록된 템플릿이 없습니다.</div>
         )}
 
+        {templates.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {["전체", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))].map(
+              (category) => (
+                <Button
+                  key={category}
+                  variant={selectedCategory === category ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedCategory(category)}
+                >
+                  {category}
+                </Button>
+              )
+            )}
+          </div>
+        )}
+
         <div className="space-y-4">
-          {templates.map((template) => (
-            <Card
-              key={template.templateId}
-              className="cursor-pointer hover:shadow"
-              onClick={() => navigate(`/project/${id}/checklist/templates/${template.templateId}`)}
-            >
+          {templates
+            .filter((template) => selectedCategory === "전체" || template.category === selectedCategory)
+            .map((template) => (
+              <Card
+                key={template.templateId}
+                className="cursor-pointer hover:shadow"
+                onClick={() => navigate(`/project/${id}/checklist/templates/${template.templateId}`)}
+              >
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>{template.title}</CardTitle>
@@ -94,8 +114,15 @@ export default function ChecklistTemplates() {
                   <p>질문 수 · {template.questionCount}개</p>
                   <p>업데이트 · {format(new Date(template.updatedAt), "yyyy.MM.dd HH:mm")}</p>
                 </div>
-                <Button variant="outline" disabled={template.locked}>
-                  적용하기
+                <Button
+                  variant="outline"
+                  disabled={template.locked}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/project/${id}/checklist/templates/${template.templateId}`);
+                  }}
+                >
+                  상세 보기
                 </Button>
               </CardContent>
             </Card>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,16 +44,34 @@ export default function ChecklistCreate() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
+  const location = useLocation();
+  const templateState = (location.state as { template?: any } | null)?.template;
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const mapTemplateQuestions = (templateQuestions: any[]): Question[] =>
+    templateQuestions.map((question, index) => ({
+      id: index + 1,
+      title: question.questionText,
+      type: question.questionType === "SINGLE" ? "객관식" : question.questionType === "MULTI" ? "복수선택" : "주관식",
+      options:
+        question.questionType === "TEXT"
+          ? []
+          : (question.options ?? []).map((option: any) => ({
+              text: option.optionText,
+              hasInput: question.questionType === "SINGLE" ? option.hasInput : false,
+            })),
+    }));
+
+  const [title, setTitle] = useState(templateState?.title ?? "");
+  const [description, setDescription] = useState(templateState?.description ?? "");
   const [selectedStage, setSelectedStage] = useState("");
 
   const [stages, setStages] = useState<Stage[]>([]);
   const [isStageLoading, setIsStageLoading] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
 
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<Question[]>(
+    templateState?.questions ? mapTemplateQuestions(templateState.questions) : []
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showQuestionDialog, setShowQuestionDialog] = useState(false);
