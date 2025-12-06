@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,9 +29,10 @@ type QuestionType = "객관식" | "복수선택" | "주관식";
 
 interface Question {
   id: number;
+  questionId?: number;
   title: string;
   type: QuestionType;
-  options: { text: string; hasInput: boolean }[];
+  options: { text: string; hasInput: boolean; optionId?: number }[];
 }
 
 interface Stage {
@@ -40,37 +41,133 @@ interface Stage {
   orderIndex: number;
 }
 
+interface QuestionSourceOption {
+  optionId?: number;
+  optionText?: string;
+  hasInput?: boolean;
+  orderIndex?: number;
+}
+
+interface QuestionSource {
+  questionId?: number;
+  questionText?: string;
+  questionType?: "SINGLE" | "MULTI" | "TEXT";
+  options?: QuestionSourceOption[];
+}
+
+interface ChecklistStatePayload {
+  checklistId: number;
+  title: string;
+  description?: string;
+  stepId?: number;
+  questions: QuestionSource[];
+}
+
+type ChecklistBasePayload = {
+  stepId: number;
+  title: string;
+  description: string;
+};
+
+const questionTypeFromApi = (type?: "SINGLE" | "MULTI" | "TEXT"): QuestionType => {
+  switch (type) {
+    case "MULTI":
+      return "복수선택";
+    case "TEXT":
+      return "주관식";
+    default:
+      return "객관식";
+  }
+};
+
+const questionTypeToApi = (type: QuestionType): "SINGLE" | "MULTI" | "TEXT" => {
+  switch (type) {
+    case "복수선택":
+      return "MULTI";
+    case "주관식":
+      return "TEXT";
+    default:
+      return "SINGLE";
+  }
+};
+
+const normalizeQuestionSources = (source?: QuestionSource[]): QuestionSource[] =>
+  (source ?? []).map((question) => ({
+    questionId: question.questionId,
+    questionText: question.questionText,
+    questionType: question.questionType,
+    options: (question.options ?? []).map((option) => ({
+      optionId: option.optionId,
+      optionText: option.optionText,
+      hasInput: option.hasInput,
+      orderIndex: option.orderIndex,
+    })),
+  }));
+
+const mapQuestionsFromSource = (source?: QuestionSource[], includeIds = false): Question[] =>
+  (source ?? []).map((question, index) => {
+    const normalizedType = questionTypeFromApi(question.questionType);
+    const options =
+      normalizedType === "주관식"
+        ? []
+        : (question.options ?? []).map((option) => ({
+            text: option.optionText ?? "",
+            hasInput: normalizedType === "객관식" ? Boolean(option.hasInput) : false,
+            optionId: includeIds ? option.optionId : undefined,
+          }));
+
+    return {
+      id: index + 1,
+      questionId: includeIds ? question.questionId : undefined,
+      title: question.questionText ?? "",
+      type: normalizedType,
+      options,
+    };
+  });
+
+const buildChecklistPayloadFromDetail = (detail: any): ChecklistStatePayload => ({
+  checklistId: detail.checklistId,
+  title: detail.title ?? "",
+  description: detail.description ?? "",
+  stepId: detail.stepId,
+  questions: normalizeQuestionSources(detail.questions ?? []),
+});
+
 export default function ChecklistCreate() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { toast } = useToast();
   const location = useLocation();
-  const templateState = (location.state as { template?: any } | null)?.template;
+  const locationState = (location.state as { template?: { title: string; description: string; questions: QuestionSource[] }; checklist?: ChecklistStatePayload } | null) ?? null;
+  const templateState = locationState?.template;
+  const checklistState = locationState?.checklist;
+  const isEditMode = Boolean(checklistState);
+  const initialOriginalData = checklistState
+    ? {
+        checklistId: checklistState.checklistId,
+        title: checklistState.title,
+        description: checklistState.description,
+        stepId: checklistState.stepId,
+        questions: normalizeQuestionSources(checklistState.questions),
+      }
+    : null;
+  const [originalData, setOriginalData] = useState<ChecklistStatePayload | null>(initialOriginalData);
+  const [isInitialLoading, setIsInitialLoading] = useState(isEditMode);
 
-  const mapTemplateQuestions = (templateQuestions: any[]): Question[] =>
-    templateQuestions.map((question, index) => ({
-      id: index + 1,
-      title: question.questionText,
-      type: question.questionType === "SINGLE" ? "객관식" : question.questionType === "MULTI" ? "복수선택" : "주관식",
-      options:
-        question.questionType === "TEXT"
-          ? []
-          : (question.options ?? []).map((option: any) => ({
-              text: option.optionText,
-              hasInput: question.questionType === "SINGLE" ? option.hasInput : false,
-            })),
-    }));
-
-  const [title, setTitle] = useState(templateState?.title ?? "");
-  const [description, setDescription] = useState(templateState?.description ?? "");
-  const [selectedStage, setSelectedStage] = useState("");
+  const [title, setTitle] = useState(checklistState?.title ?? templateState?.title ?? "");
+  const [description, setDescription] = useState(checklistState?.description ?? templateState?.description ?? "");
+  const [selectedStage, setSelectedStage] = useState(
+    checklistState?.stepId ? String(checklistState.stepId) : ""
+  );
 
   const [stages, setStages] = useState<Stage[]>([]);
   const [isStageLoading, setIsStageLoading] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
 
   const [questions, setQuestions] = useState<Question[]>(
-    templateState?.questions ? mapTemplateQuestions(templateState.questions) : []
+    checklistState?.questions
+      ? mapQuestionsFromSource(checklistState.questions, true)
+      : mapQuestionsFromSource(templateState?.questions)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -113,6 +210,44 @@ export default function ChecklistCreate() {
     return () => controller.abort();
   }, [id]);
 
+  useEffect(() => {
+    if (!isEditMode || !checklistState?.checklistId) {
+      setIsInitialLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const fetchOriginal = async () => {
+      try {
+        setIsInitialLoading(true);
+        const response = await api.get(`/api/checklists/${checklistState.checklistId}`, {
+          signal: controller.signal,
+        });
+        const detail = response.data?.data;
+        if (!detail) throw new Error("체크리스트 정보를 찾을 수 없습니다.");
+
+        const normalized = buildChecklistPayloadFromDetail(detail);
+        setOriginalData(normalized);
+        setTitle(normalized.title ?? "");
+        setDescription(normalized.description ?? "");
+        setSelectedStage(normalized.stepId ? String(normalized.stepId) : "");
+        setQuestions(mapQuestionsFromSource(normalized.questions, true));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          toast({
+            title: "체크리스트 정보를 불러오지 못했습니다.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsInitialLoading(false);
+      }
+    };
+
+    fetchOriginal();
+    return () => controller.abort();
+  }, [isEditMode, checklistState?.checklistId, toast]);
+
   const handleQuestionTypeChange = (value: QuestionType) => {
     setNewQuestion((prev) => {
       const baseOptions =
@@ -136,10 +271,13 @@ export default function ChecklistCreate() {
     if (!newQuestion.title.trim()) return;
     const options =
       newQuestion.type !== "주관식"
-        ? newQuestion.options.filter((option) => option.text.trim() !== "")
+        ? newQuestion.options
+            .filter((option) => option.text.trim() !== "")
+            .map((option) => ({ ...option, optionId: undefined }))
         : [];
+    const nextId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1;
     const question: Question = {
-      id: questions.length + 1,
+      id: nextId,
       title: newQuestion.title,
       type: newQuestion.type,
       options,
@@ -175,27 +313,22 @@ export default function ChecklistCreate() {
 
   const buildQuestionPayload = () =>
     questions.map((question, index) => ({
+      questionId: question.questionId,
       questionText: question.title,
-      questionType:
-        question.type === "객관식" ? "SINGLE" : question.type === "복수선택" ? "MULTI" : "TEXT",
+      questionType: questionTypeToApi(question.type),
       orderIndex: index + 1,
       options:
-        question.type === "객관식"
-          ? question.options.map((option, optIdx) => ({
+        question.type === "주관식"
+          ? []
+          : question.options.map((option, optIdx) => ({
+              optionId: option.optionId,
               optionText: option.text,
-              hasInput: option.hasInput,
+              hasInput: question.type === "객관식" ? option.hasInput : false,
               orderIndex: optIdx + 1,
-            }))
-          : question.type === "복수선택"
-          ? question.options.map((option, optIdx) => ({
-              optionText: option.text,
-              hasInput: false,
-              orderIndex: optIdx + 1,
-            }))
-          : [],
+            })),
     }));
 
-  const handleCreateChecklist = async () => {
+  const handleSubmitChecklist = async () => {
     if (!id) return;
     if (!title.trim() || !description.trim()) {
       toast({ title: "제목과 설명을 입력해주세요." });
@@ -210,16 +343,32 @@ export default function ChecklistCreate() {
       return;
     }
 
-    const payload = {
+    const basePayload = {
       stepId: Number(selectedStage),
       title: title.trim(),
       description: description.trim(),
-      questions: buildQuestionPayload(),
     };
 
     try {
       setIsSubmitting(true);
-      await api.post("/api/checklists", payload);
+      if (!isEditMode) {
+        await handleCreateChecklist(basePayload);
+      } else {
+        await handleEditChecklist(basePayload);
+      }
+    } catch {
+      // 에러 토스트는 각 함수에서 처리
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateChecklist = async (basePayload: ChecklistBasePayload) => {
+    try {
+      await api.post("/api/checklists", {
+        ...basePayload,
+        questions: buildQuestionPayload(),
+      });
       toast({
         title: "체크리스트가 생성되었습니다.",
       });
@@ -230,18 +379,225 @@ export default function ChecklistCreate() {
         description: "잠시 후 다시 시도해주세요.",
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
+      throw error;
     }
   };
+
+  const handleEditChecklist = async (basePayload: ChecklistBasePayload) => {
+    if (!checklistState?.checklistId) return;
+    const checklistId = checklistState.checklistId;
+    try {
+      const metaChanged =
+        !originalData ||
+        originalData.title !== basePayload.title ||
+        (originalData.description ?? "") !== basePayload.description ||
+        (originalData.stepId ?? null) !== basePayload.stepId;
+
+      if (metaChanged) {
+        await api.patch(`/api/checklists/${checklistId}`, {
+          checklistId,
+          ...basePayload,
+        });
+      }
+
+      await applyQuestionDiffs(checklistId);
+
+      toast({
+        title: "체크리스트가 수정되었습니다.",
+      });
+      navigate(`/project/${id}/checklist/${checklistId}`);
+    } catch (error) {
+      toast({
+        title: "체크리스트 수정 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const applyQuestionDiffs = async (checklistId: number) => {
+    const originalQuestions = normalizeQuestionSources(originalData?.questions);
+    const originalMap = new Map<number, QuestionSource>(
+      originalQuestions
+        .filter((question): question is QuestionSource & { questionId: number } => Boolean(question.questionId))
+        .map((question) => [question.questionId!, question])
+    );
+
+    const currentQuestionIds = new Set(
+      questions.filter((question) => question.questionId).map((question) => question.questionId as number)
+    );
+
+    for (const original of originalQuestions) {
+      if (original.questionId && !currentQuestionIds.has(original.questionId)) {
+        await api.delete(`/api/questions/${original.questionId}`);
+      }
+    }
+
+    for (const question of questions) {
+      if (question.questionId) {
+        await updateQuestionIfNeeded(question, originalMap.get(question.questionId), checklistId);
+      } else {
+        const createdId = await createQuestionOnServer(checklistId, question);
+        await createOptionsForQuestion(createdId, question.type, question.options);
+      }
+    }
+  };
+
+  const createQuestionOnServer = async (checklistId: number, question: Question) => {
+    const response = await api.post("/api/questions", {
+      checklistId,
+      questionText: question.title,
+      questionType: questionTypeToApi(question.type),
+    });
+    const createdId = response.data?.data?.questionId ?? response.data?.data?.id;
+    if (typeof createdId !== "number") {
+      throw new Error("질문 ID를 가져올 수 없습니다.");
+    }
+    return createdId;
+  };
+
+  const updateQuestionIfNeeded = async (
+    question: Question,
+    original: QuestionSource | undefined,
+    checklistId: number
+  ) => {
+    const questionId = question.questionId;
+    if (!questionId) return;
+
+    const serverType = questionTypeToApi(question.type);
+    if (
+      !original ||
+      original.questionText !== question.title ||
+      original.questionType !== serverType
+    ) {
+      await api.put(`/api/questions/${questionId}`, {
+        checklistId,
+        questionText: question.title,
+        questionType: serverType,
+      });
+    }
+
+    await syncOptionsForQuestion(
+      questionId,
+      question.type,
+      question.options,
+      original?.options ?? []
+    );
+  };
+
+  const createOptionsForQuestion = async (
+    questionId: number,
+    questionType: QuestionType,
+    options: Question["options"]
+  ) => {
+    if (questionType === "주관식") return;
+    for (const [index, option] of options.entries()) {
+      await createOptionOnServer(questionId, questionType, option, index);
+    }
+  };
+
+  const createOptionOnServer = async (
+    questionId: number,
+    questionType: QuestionType,
+    option: Question["options"][number],
+    index: number
+  ) => {
+    const response = await api.post("/api/options", {
+      questionId,
+      optionText: option.text,
+      hasInput: questionType === "객관식" ? Boolean(option.hasInput) : false,
+      orderIndex: index + 1,
+    });
+    const createdId = response.data?.data?.optionId ?? response.data?.data?.id;
+    if (typeof createdId !== "number") {
+      throw new Error("옵션 ID를 가져올 수 없습니다.");
+    }
+    return createdId;
+  };
+
+  const syncOptionsForQuestion = async (
+    questionId: number,
+    questionType: QuestionType,
+    currentOptions: Question["options"],
+    originalOptions: QuestionSourceOption[] = []
+  ) => {
+    if (questionType === "주관식") {
+      for (const option of originalOptions) {
+        if (option.optionId) {
+          await api.delete(`/api/options/${option.optionId}`);
+        }
+      }
+      return;
+    }
+
+    const existingIds = new Set(
+      currentOptions.filter((option) => option.optionId).map((option) => option.optionId as number)
+    );
+    for (const option of originalOptions) {
+      if (option.optionId && !existingIds.has(option.optionId)) {
+        await api.delete(`/api/options/${option.optionId}`);
+      }
+    }
+
+    const optionIdsForOrder: Array<number | null> = currentOptions.map((option) => option.optionId ?? null);
+    for (const [index, option] of currentOptions.entries()) {
+      if (option.optionId) {
+        const normalizedHasInput = questionType === "객관식" ? Boolean(option.hasInput) : false;
+        const originalOption = originalOptions.find((item) => item.optionId === option.optionId);
+        if (
+          !originalOption ||
+          originalOption.optionText !== option.text ||
+          Boolean(originalOption.hasInput) !== normalizedHasInput
+        ) {
+          await api.put(`/api/options/${option.optionId}`, {
+            questionId,
+            optionText: option.text,
+            hasInput: normalizedHasInput,
+            orderIndex: index + 1,
+          });
+        }
+      } else {
+        const newId = await createOptionOnServer(questionId, questionType, option, index);
+        optionIdsForOrder[index] = newId;
+      }
+    }
+
+    const previousOrder = (originalOptions ?? [])
+      .map((option) => option.optionId)
+      .filter((id): id is number => typeof id === "number");
+    const currentOrder = optionIdsForOrder.filter((id): id is number => typeof id === "number");
+    const orderChanged =
+      previousOrder.length !== currentOrder.length ||
+      previousOrder.some((id, idx) => id !== currentOrder[idx]);
+
+    if (orderChanged && currentOrder.length > 0) {
+      await api.post("/api/options/reorder", {
+        questionId,
+        orderedIds: currentOrder,
+      });
+    }
+  };
+
+  if (isEditMode && isInitialLoading) {
+    return (
+      <ProjectLayout>
+        <div className="py-12 text-center text-muted-foreground">체크리스트 정보를 불러오는 중...</div>
+      </ProjectLayout>
+    );
+  }
 
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto w-full">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">체크리스트 생성</h1>
-            <p className="text-muted-foreground mt-1">프로젝트 체크리스트를 직접 구성해보세요.</p>
+            <h1 className="text-3xl font-bold">
+              {isEditMode ? "체크리스트 수정" : "체크리스트 생성"}
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              {isEditMode ? "체크리스트 내용을 수정할 수 있습니다." : "프로젝트 체크리스트를 직접 구성해보세요."}
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => navigate(`/project/${id}/checklist/templates`)}>
@@ -255,7 +611,9 @@ export default function ChecklistCreate() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-xl font-bold">{title || "체크리스트 제목"}</CardTitle>
+            <CardTitle className="text-xl font-bold">
+              {title || (isEditMode ? "체크리스트 수정" : "체크리스트 제목")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -361,8 +719,8 @@ export default function ChecklistCreate() {
           <Button variant="outline" onClick={() => navigate(`/project/${id}/checklist`)}>
             취소
           </Button>
-          <Button onClick={handleCreateChecklist} disabled={isSubmitting}>
-            {isSubmitting ? "생성 중..." : "생성"}
+          <Button onClick={handleSubmitChecklist} disabled={isSubmitting}>
+            {isSubmitting ? (isEditMode ? "수정 중..." : "생성 중...") : isEditMode ? "수정" : "생성"}
           </Button>
         </div>
       </div>

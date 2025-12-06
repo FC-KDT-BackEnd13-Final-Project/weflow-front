@@ -43,6 +43,7 @@ interface ChecklistDetailResponse {
   locked: boolean;
   questions: ChecklistQuestion[];
   stepName?: string;
+  stepId?: number;
   questionCount?: number;
 }
 
@@ -102,6 +103,7 @@ export default function ChecklistDetail() {
           locked: d.locked === true,
           questions: normalizedQuestions,
           stepName: d.stepName,
+          stepId: d.stepId,
           questionCount: d.questionCount,
         });
       } catch (err) {
@@ -188,7 +190,7 @@ export default function ChecklistDetail() {
     });
   };
 
-  // 🔥 5) INPUT 변경
+  // 5) INPUT 변경
   const handleCustomInputChange = (questionId: number, value: string) => {
     if (detail?.locked) return;
 
@@ -281,7 +283,7 @@ export default function ChecklistDetail() {
     );
   }
 
-  // 🔥 에러 화면
+  // 에러 화면
   if (fetchError || !detail) {
     return (
       <ProjectLayout>
@@ -299,8 +301,7 @@ export default function ChecklistDetail() {
     <ProjectLayout>
       <div className="space-y-6">
 
-        {/* 뒤로가기 */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -310,6 +311,19 @@ export default function ChecklistDetail() {
             <ArrowLeft className="h-4 w-4" />
             목록으로
           </Button>
+          {!detail.locked && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                navigate(`/project/${id}/checklist/create`, {
+                  state: { checklist: detail },
+                })
+              }
+            >
+              체크리스트 수정
+            </Button>
+          )}
         </div>
 
         {/* 본문 */}
@@ -402,14 +416,14 @@ export default function ChecklistDetail() {
                             return (
                               <div key={opt.id} className="space-y-2">
                                 <div className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={`${q.id}-${opt.id}`}
-                                    checked={selected}
-                                    onCheckedChange={(checked) =>
-                                      handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
-                                    }
-                                    disabled={detail.locked}
-                                  />
+                                <Checkbox
+                                  id={`${q.id}-${opt.id}`}
+                                  checked={selected}
+                                  onCheckedChange={(checked) =>
+                                    handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
+                                  }
+                                  disabled={detail.locked}
+                                />
                                   <Label
                                     htmlFor={`${q.id}-${opt.id}`}
                                     className={selected ? "font-medium" : ""}
