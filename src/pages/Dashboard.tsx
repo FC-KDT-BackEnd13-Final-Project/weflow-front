@@ -5,6 +5,8 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, AlertCircle, Calendar, User, Layers3, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { getProjectStepRequests } from "@/lib/stepRequest";
 
 const projectInfo = {
   name: "WeFlow 플랫폼 고도화",
@@ -39,23 +41,6 @@ const activities = [
   { id: 3, content: "디자인 킥오프 회의록이 업로드되었습니다.", time: "11.21 13:02" },
 ];
 
-const stepRequests = [
-  {
-    id: 501,
-    title: "디자인 시안 승인 요청드립니다",
-    status: "REQUESTED",
-    requestedBy: "김서현(디자이너)",
-    createdAt: "2025-02-05T11:00:00"
-  },
-  {
-    id: 502,
-    title: "퍼블리싱 QA 요청",
-    status: "DRAFT",
-    requestedBy: "이현우(개발리드)",
-    createdAt: "2025-02-04T16:30:00"
-  }
-];
-
 const requestStatusMap: Record<string, { label: string; className: string }> = {
   REQUESTED: { label: "승인 대기", className: "bg-blue-100 text-blue-700" },
   APPROVED: { label: "승인 완료", className: "bg-emerald-100 text-emerald-700" },
@@ -74,6 +59,15 @@ const formatRequestDate = (dateString: string) =>
 
 export default function Dashboard() {
   const { id } = useParams();
+  const projectId = Number(id);
+
+  const { data: requestsData, isLoading } = useQuery({
+    queryKey: ["project-step-requests", projectId, "recent"],
+    queryFn: () => getProjectStepRequests(projectId, 0, 5),
+    enabled: !!projectId,
+  });
+
+  const stepRequests = requestsData?.data.stepRequestSummaryResponses ?? [];
 
   return (
     <ProjectLayout>
@@ -222,7 +216,8 @@ export default function Dashboard() {
             <CardTitle className="text-base">최근 승인 요청</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {stepRequests.map((request) => {
+            {isLoading && <p className="text-sm text-muted-foreground">승인 요청을 불러오는 중입니다...</p>}
+            {!isLoading && stepRequests.map((request) => {
               const status = requestStatusMap[request.status] || requestStatusMap.REQUESTED;
               return (
                 <div key={request.id} className="rounded-lg border bg-muted/20 p-4">
@@ -230,7 +225,7 @@ export default function Dashboard() {
                     <div>
                       <p className="font-semibold">{request.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {request.requestedBy} · {formatRequestDate(request.createdAt)}
+                        {request.requestedByName || request.requestedBy || "요청자"} · {formatRequestDate(request.createdAt)}
                       </p>
                     </div>
                     <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", status.className)}>
@@ -240,7 +235,7 @@ export default function Dashboard() {
                 </div>
               );
             })}
-            {stepRequests.length === 0 && (
+            {!isLoading && stepRequests.length === 0 && (
               <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg">
                 표시할 승인 요청이 없습니다.
               </div>

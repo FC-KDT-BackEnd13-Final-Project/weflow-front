@@ -36,6 +36,15 @@ const mockProjects = [
     dueDate: "2024.11.30",
     team: 8,
   },
+  {
+    id: 4,
+    name: "클라우드 포털 고도화",
+    client: "아크레버 테크놀로지스",
+    status: "complete" as const,
+    progress: 10,
+    dueDate: "2025.12.30",
+    team: 7,
+  },
 ];
 
 export default function Projects() {

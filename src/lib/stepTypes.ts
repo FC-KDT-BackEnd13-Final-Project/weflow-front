@@ -1,0 +1,89 @@
+import { ApiResponse } from "./http";
+
+export type StepPhase = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "APPROVED" | string;
+export type StepStatus = "PENDING" | "IN_PROGRESS" | "APPROVED" | "CANCELED" | string;
+
+export interface StepResponse {
+  id: number;
+  phase: StepPhase;
+  title: string;
+  description?: string;
+  orderIndex: number;
+  status: StepStatus;
+  projectId: number;
+  createdBy?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StepListResponse {
+  totalCount: number;
+  page: number;
+  size: number;
+  steps: StepResponse[];
+}
+
+export type StepRequestStatus = "REQUESTED" | "APPROVED" | "REJECTED" | "CANCELED" | "DRAFT" | "CHANGE_REQUESTED" | string;
+
+export interface AttachmentResponse {
+  id: number;
+  name?: string;
+  url?: string;
+  fileName?: string;
+  originalName?: string;
+  path?: string;
+}
+
+export interface StepRequestResponse {
+  id: number;
+  title: string;
+  description?: string;
+  status: StepRequestStatus;
+  decidedAt?: string;
+  stepId: number;
+  projectId: number;
+  requestedBy?: number;
+  requestedByName?: string;
+  decidedBy?: number;
+  decidedByName?: string;
+  decisionReason?: string;
+  files?: AttachmentResponse[];
+  attachments?: AttachmentResponse[]; // 백엔드 응답이 attachments로 내려오는 경우 대비
+  links?: (AttachmentResponse | string)[];
+  createdAt: string;
+}
+
+export interface StepRequestSummaryResponse {
+  id: number;
+  title: string;
+  status: StepRequestStatus;
+  createdAt: string;
+  decidedAt?: string;
+  stepId: number;
+  stepTitle?: string;
+  requestedBy?: number;
+  requestedByName?: string;
+  hasAttachment?: boolean;
+}
+
+export interface StepRequestListResponse {
+  totalCount: number;
+  page: number;
+  size: number;
+  stepRequestSummaryResponses: StepRequestSummaryResponse[];
+}
+
+export type FeedbackResponseType = "APPROVE" | "REJECT" | "CHANGE_REQUEST";
+
+export interface StepRequestAnswerResponse {
+  id: number;
+  response: FeedbackResponseType;
+  requestId: number;
+  respondedBy?: number;
+  respondedByName?: string;
+  reasonText?: string;
+  decidedAt?: string;
+  createdAt: string;
+}
+
+export type StepApiResponse<T> = ApiResponse<T>;

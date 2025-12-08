@@ -7,31 +7,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, Plus, CheckCircle2, Clock, AlertCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-
-const mockSteps = [
-  {
-    id: 1,
-    name: "요구사항 분석",
-    status: "complete" as const,
-    dueDate: "2024.11.15",
-    assignee: "김개발",
-  },
-  {
-    id: 2,
-    name: "디자인 시안",
-    status: "progress" as const,
-    dueDate: "2024.11.25",
-    assignee: "이디자인",
-  },
-  {
-    id: 3,
-    name: "퍼블리싱",
-    status: "pending" as const,
-    dueDate: "2024.12.05",
-    assignee: "박퍼블",
-  },
-];
+import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { getProjectSteps } from "@/lib/step";
+import { StepResponse, StepStatus } from "@/lib/stepTypes";
 
 const mockPosts = [
   {
@@ -52,7 +31,23 @@ const mockPosts = [
 
 export default function ProjectDetail() {
   const navigate = useNavigate();
+  const { id } = useParams();
   const [activeTab, setActiveTab] = useState("steps");
+  const projectId = Number(id);
+
+  const { data: stepsData, isLoading: stepsLoading, isError: stepsError } = useQuery({
+    queryKey: ["project-steps", projectId],
+    queryFn: () => getProjectSteps(projectId),
+    enabled: !!projectId,
+  });
+
+  const steps = stepsData?.data.steps ?? [];
+
+  const stepStatusToBadge = (status: StepStatus) => {
+    if (status === "APPROVED") return { label: "완료", variant: "complete" };
+    if (status === "IN_PROGRESS") return { label: "진행중", variant: "progress" };
+    return { label: "대기", variant: "pending" };
+  };
 
   return (
     <AppLayout>
@@ -129,32 +124,40 @@ export default function ProjectDetail() {
               </Button>
             </div>
             <div className="space-y-3">
-              {mockSteps.map((step) => (
+              {stepsLoading && (
+                <Card>
+                  <CardContent className="p-4 text-sm text-muted-foreground">단계를 불러오는 중입니다...</CardContent>
+                </Card>
+              )}
+              {stepsError && (
+                <Card>
+                  <CardContent className="p-4 text-sm text-destructive">단계를 불러오지 못했습니다.</CardContent>
+                </Card>
+              )}
+              {!stepsLoading && !stepsError && steps.length === 0 && (
+                <Card>
+                  <CardContent className="p-4 text-sm text-muted-foreground">표시할 단계가 없습니다.</CardContent>
+                </Card>
+              )}
+              {steps.map((step: StepResponse) => {
+                const status = stepStatusToBadge(step.status);
+                return (
                 <Card key={step.id} className="card-hover">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1">
-                        <StatusBadge status={step.status}>
-                          {step.status === "complete" && "완료"}
-                          {step.status === "progress" && "진행중"}
-                          {step.status === "pending" && "대기"}
+                        <StatusBadge status={status.variant}>
+                          {status.label}
                         </StatusBadge>
                         <div className="flex-1">
-                          <h3 className="font-medium">{step.name}</h3>
+                          <h3 className="font-medium">{step.title}</h3>
                           <p className="text-sm text-muted-foreground">
-                            마감: {step.dueDate}
+                            정렬: {step.orderIndex} · 단계 상태: {step.status}
                           </p>
+                          {step.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{step.description}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs">
-                              {step.assignee[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">{step.assignee}</span>
-                        </div>
                         <Button variant="outline" size="sm">
                           상세보기
                         </Button>
@@ -162,7 +165,8 @@ export default function ProjectDetail() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           </TabsContent>
 
