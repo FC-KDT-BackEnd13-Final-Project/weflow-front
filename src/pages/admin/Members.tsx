@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,34 +12,59 @@ import {
 } from "@/components/ui/select";
 import { Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { adminApi } from "@/apis/admin";
+import { useToast } from "@/hooks/use-toast";
+
+const roleLabels: Record<string, string> = {
+  SYSTEM_ADMIN: "시스템 관리자",
+  AGENCY: "에이전시",
+  CLIENT: "고객사",
+};
 
 const Members = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
+  const [members, setMembers] = useState<any[]>([]);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const [roleFilter, setRoleFilter] = useState("전체");
   const [companyFilter, setCompanyFilter] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const members = [
-    {
-      name: "김철수",
-      email: "kim@dev.com",
-      role: "개발사",
-      company: "개발사 A",
-    },
-    {
-      name: "이영희",
-      email: "lee@con.com",
-      role: "고객사",
-      company: "ClientA",
-      badge: "A소핑몰"
-    },
-    {
-      name: "박민수",
-      email: "park@dev.com",
-      role: "개발사",
-      company: "DevCorp",
-    },
-  ];
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const response = await adminApi.getUsers(currentPage, 10);
+        if (response.success) {
+          setMembers(response.data.content);
+          setTotalPages(response.data.totalPages);
+          setTotalElements(response.data.totalElements);
+        }
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "회원 목록 조회 실패",
+          description: error.response?.data?.message || "회원 목록을 불러올 수 없습니다.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMembers();
+  }, [currentPage, toast]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -108,36 +133,66 @@ const Members = () => {
 
           {/* 회원 목록 */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-4 gap-4 bg-muted p-4 font-medium text-sm">
+            <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
               <div>이름</div>
               <div>이메일</div>
               <div>역할</div>
               <div>회사명</div>
+              <div>상태</div>
             </div>
             <div className="divide-y">
-              {members.map((member, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-4 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/admin/members/${index + 1}`)}
-                >
-                  <div className="font-medium">{member.name}</div>
-                  <div className="text-muted-foreground">{member.email}</div>
-                  <div>
-                    <Badge variant="outline">{member.role}</Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span>{member.company}</span>
-                    {member.badge && (
-                      <Badge variant="secondary" className="text-xs">
-                        {member.badge}
-                      </Badge>
-                    )}
-                  </div>
+              {members.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  회원이 없습니다.
                 </div>
-              ))}
+              ) : (
+                members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/admin/members/${member.id}`, { state: { member } })}
+                  >
+                    <div className="font-medium">{member.name}</div>
+                    <div className="text-muted-foreground">{member.email}</div>
+                    <div>
+                      <Badge variant="outline">{roleLabels[member.role] || member.role}</Badge>
+                    </div>
+                    <div>{member.companyName || "-"}</div>
+                    <div>
+                      <Badge variant={member.status === "ACTIVE" ? "default" : "secondary"}>
+                        {member.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
+
+          {/* 페이지네이션 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
+                disabled={currentPage === 0}
+              >
+                이전
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                {currentPage + 1} / {totalPages} 페이지 (총 {totalElements}명)
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                disabled={currentPage >= totalPages - 1}
+              >
+                다음
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
