@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
@@ -47,6 +47,11 @@ import AdminUserDetail from "./pages/admin/AdminUserDetail";
 
 const queryClient = new QueryClient();
 
+const AdminProjectEditWrapper = () => {
+  const { id } = useParams();
+  return <AdminProjectEdit key={id} />;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -90,7 +95,7 @@ const App = () => (
             <Route path="projects" element={<AdminProjects />} />
             <Route path="projects/create" element={<AdminProjectCreate />} />
             <Route path="projects/:id" element={<AdminProjectDetail />} />
-            <Route path="projects/:id/edit" element={<AdminProjectEdit />} />
+            <Route path="projects/:id/edit" element={<AdminProjectEditWrapper />} />
             <Route path="checklist-templates" element={<TemplateList />} />
             <Route path="checklist-templates/create" element={<TemplateCreate />} />
             <Route path="checklist-templates/:templateId" element={<TemplateDetail />} />

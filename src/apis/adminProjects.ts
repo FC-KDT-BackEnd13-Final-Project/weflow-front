@@ -67,6 +67,11 @@ export interface AdminProjectMemberListResponse {
   members: AdminProjectMemberListItem[];
 }
 
+export interface ProjectStageRequest {
+  title: string;
+  orderIndex: number;
+}
+
 export interface AdminProjectCreateRequest {
   name: string;
   description?: string;
@@ -76,6 +81,7 @@ export interface AdminProjectCreateRequest {
   contractAmount?: number | null;
   contractFileUrl?: string | null;
   customerCompanyId?: number | null;
+  stages?: ProjectStageRequest[];
 }
 
 export interface AdminProjectUpdateRequest extends AdminProjectCreateRequest {

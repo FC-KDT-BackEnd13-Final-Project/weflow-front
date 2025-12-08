@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type StatusType =
+export type StatusType =
   | "pending"
   | "progress"
   | "complete"
