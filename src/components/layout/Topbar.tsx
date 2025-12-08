@@ -1,14 +1,45 @@
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import api from "@/apis/api";
 
-const currentUser = {
-  name: "홍길동",
-  company: "ABC전자",
-};
+interface CurrentUser {
+  name: string;
+  companyName?: string;
+}
 
 export function Topbar() {
   const navigate = useNavigate();
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchProfile = async () => {
+      try {
+        setIsLoading(true);
+        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const data = response.data?.data;
+        if (data) {
+          setUser({
+            name: data.name ?? "이용자",
+            companyName: data.companyName ?? undefined,
+          });
+        }
+      } catch {
+        // keep fallback user state
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchProfile();
+    return () => controller.abort();
+  }, []);
 
   const handleLogout = () => {
     navigate("/login");
@@ -22,8 +53,12 @@ export function Topbar() {
             <User className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-lg font-semibold tracking-tight">{currentUser.company}</p>
-            <p className="text-sm text-muted-foreground mt-0.5">{currentUser.name}님</p>
+            <p className="text-lg font-semibold tracking-tight">
+              {user?.companyName ?? "weflow workspace"}
+            </p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {isLoading ? "정보 불러오는 중..." : `${user?.name ?? "이용자"}님`}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm">

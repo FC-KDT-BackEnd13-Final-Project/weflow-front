@@ -94,6 +94,7 @@ const Dashboard = () => {
     totalProjects: 0,
   });
   const [recentLogs, setRecentLogs] = useState<DashboardResponse["recentLogs"]>([]);
+  const [adminName, setAdminName] = useState<string>("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -114,6 +115,21 @@ const Dashboard = () => {
       }
     };
     fetchDashboard();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchProfile = async () => {
+      try {
+        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const name = response.data?.data?.name;
+        if (typeof name === "string") setAdminName(name);
+      } catch {
+        // ignore
+      }
+    };
+    fetchProfile();
     return () => controller.abort();
   }, []);
 
@@ -157,7 +173,12 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">관리자</h1>
+        <div>
+          <p className="text-sm text-muted-foreground">
+            {adminName ? `${adminName}님 환영합니다` : "관리자"}
+          </p>
+          <h1 className="text-3xl font-bold">관리자</h1>
+        </div>
       </div>
 
       {/* 통계 카드 */}
