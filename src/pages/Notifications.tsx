@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X } from "lucide-react";
+import api from "@/apis/api";
+import { useToast } from "@/hooks/use-toast";
 
 const notificationResponse = {
   success: true,
@@ -71,9 +73,11 @@ const formatDateTime = (value: string) =>
 
 export default function Notifications() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [notifications, setNotifications] = useState(notificationResponse.data.notifications);
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "IMPORTANT" | "GENERAL">("ALL");
   const [readFilter, setReadFilter] = useState<"ALL" | "READ" | "UNREAD">("ALL");
+  const [isDeleting, setIsDeleting] = useState<Record<number, boolean>>({});
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notification) => {
@@ -86,8 +90,28 @@ export default function Notifications() {
     });
   }, [notifications, categoryFilter, readFilter]);
 
-  const handleDismiss = (id: number) => {
-    setNotifications((prev) => prev.filter((notification) => notification.notificationId !== id));
+  const handleDismiss = async (id: number) => {
+    if (isDeleting[id]) return;
+    setIsDeleting((prev) => ({ ...prev, [id]: true }));
+    try {
+      await api.delete(`/api/notifications/${id}`);
+      setNotifications((prev) => prev.filter((notification) => notification.notificationId !== id));
+      toast({
+        title: "알림을 삭제했어요.",
+      });
+    } catch {
+      toast({
+        title: "알림 삭제에 실패했습니다.",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
   };
 
   return (
@@ -163,8 +187,9 @@ export default function Notifications() {
                       <span>{formatDateTime(notification.createdAt)}</span>
                       <button
                         type="button"
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-50"
                         onClick={() => handleDismiss(notification.notificationId)}
+                        disabled={isDeleting[notification.notificationId]}
                         aria-label="알림 삭제"
                       >
                         <X className="h-4 w-4" />
