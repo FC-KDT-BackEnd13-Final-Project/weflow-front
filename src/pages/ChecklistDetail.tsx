@@ -59,6 +59,7 @@ export default function ChecklistDetail() {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | number[] | undefined>>({});
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [canManageChecklist, setCanManageChecklist] = useState(false);
 
   // 1) API로 상세 조회
   useEffect(() => {
@@ -122,6 +123,21 @@ export default function ChecklistDetail() {
     fetchDetail();
     return () => controller.abort();
   }, [checklistId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchMe = async () => {
+      try {
+        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const role = response.data?.data?.role;
+        setCanManageChecklist(role === "AGENCY");
+      } catch {
+        setCanManageChecklist(false);
+      }
+    };
+    fetchMe();
+    return () => controller.abort();
+  }, []);
 
   // 2) detail 업데이트되면 답변 초기화 (1회)
   useEffect(() => {
@@ -315,18 +331,46 @@ export default function ChecklistDetail() {
             <ArrowLeft className="h-4 w-4" />
             목록으로
           </Button>
-          {!detail.locked && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(`/project/${id}/checklist/create`, {
-                  state: { checklist: detail },
-                })
-              }
-            >
-              체크리스트 수정
-            </Button>
+          {canManageChecklist && (
+            <div className="flex gap-2">
+              {!detail.locked && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate(`/project/${id}/checklist/create`, {
+                        state: { checklist: detail },
+                      })
+                    }
+                  >
+                    체크리스트 수정
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={async () => {
+                      if (!window.confirm("이 체크리스트를 삭제하시겠습니까?")) return;
+                      try {
+                        await api.delete(`/api/checklists/${detail.checklistId}`);
+                        toast({
+                          title: "체크리스트가 삭제되었습니다.",
+                        });
+                        navigate(`/project/${id}/checklist`);
+                      } catch {
+                        toast({
+                          title: "삭제에 실패했습니다.",
+                          description: "잠시 후 다시 시도해주세요.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    체크리스트 삭제
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
 

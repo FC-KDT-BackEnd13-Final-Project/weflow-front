@@ -40,6 +40,7 @@ export default function Checklist() {
   const [stepError, setStepError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { id } = useParams();
+  const [canCreateChecklist, setCanCreateChecklist] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -60,6 +61,7 @@ export default function Checklist() {
             category: item.stepName,
             locked: Boolean(item.locked),
             count: item.questionCount,
+            stepId: item.stepId,
           })) as ChecklistItem[];
           setChecklists(mapped);
         } else {
@@ -104,6 +106,21 @@ export default function Checklist() {
     return () => controller.abort();
   }, [id]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchMe = async () => {
+      try {
+        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const role = response.data?.data?.role;
+        setCanCreateChecklist(role === "AGENCY");
+      } catch {
+        setCanCreateChecklist(false);
+      }
+    };
+    fetchMe();
+    return () => controller.abort();
+  }, []);
+
   const stepNames = steps.map((step) => step.title);
   const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];
 
@@ -133,13 +150,15 @@ export default function Checklist() {
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-3xl font-bold tracking-tight">체크리스트</h1>
-          <Button
-            size="sm"
-            className="sm:w-auto"
-            onClick={() => navigate(`/project/${id}/checklist/create`)}
-          >
-            체크리스트 추가
-          </Button>
+          {canCreateChecklist && (
+            <Button
+              size="sm"
+              className="sm:w-auto"
+              onClick={() => navigate(`/project/${id}/checklist/create`)}
+            >
+              체크리스트 추가
+            </Button>
+          )}
         </div>
         
         <Card>
