@@ -4,18 +4,50 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { authApi } from "@/apis/auth";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate login
-    setTimeout(() => {
-      navigate("/dashboard");
-    }, 1000);
+
+    try {
+      const response = await authApi.login({ email, password });
+
+      if (response.success) {
+        localStorage.setItem("accessToken", response.data.accessToken);
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+
+        toast({
+          title: "로그인 성공",
+          description: response.message,
+        });
+
+        // 역할에 따라 다른 페이지로 이동
+        const userRole = response.data.user.role;
+        if (userRole === "SYSTEM_ADMIN") {
+          navigate("/admin/dashboard");
+        } else {
+          // AGENCY, CLIENT
+          navigate("/dashboard");
+        }
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "로그인 실패",
+        description: error.response?.data?.message || "이메일 또는 비밀번호를 확인해주세요.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -36,6 +68,8 @@ export default function Login() {
                 id="email"
                 type="email"
                 placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
@@ -45,6 +79,8 @@ export default function Login() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>

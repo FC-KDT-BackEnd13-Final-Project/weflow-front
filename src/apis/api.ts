@@ -8,8 +8,7 @@ const api = axios.create({
 // ------------ 요청 인터셉터 ------------
 api.interceptors.request.use(
   (config) => {
-    //const token = localStorage.getItem("accessToken"); // 혹은 Zustand, Recoil 저장소에서 불러오기
-    const token = import.meta.env.VITE_ACCESS_TOKEN;
+    const token = localStorage.getItem("accessToken") || import.meta.env.VITE_ACCESS_TOKEN;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
