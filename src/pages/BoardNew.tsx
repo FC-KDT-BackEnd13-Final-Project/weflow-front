@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,9 +17,12 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { createPost } from "@/apis/postApi";
+import { ProjectStatus } from "@/types/post";
+import { getStepsByProject } from "@/apis/stepApi";
+import type { StepResponse } from "@/types/step";
 
 const status = ["계약", "진행", "납품", "유지보수"];
-const step = ["요구사항 정의", "화면설계", "디자인", "퍼블리싱", "개발", "검수"];
 
 const postSchema = z.object({
   title: z.string()
@@ -45,19 +48,45 @@ export default function BoardNew() {
   const replyInfo = (location.state as { parentPostId?: number; parentTitle?: string } | null) ?? null;
   const isReply = Boolean(replyInfo?.parentPostId);
   const { toast } = useToast();
-  
+
   const [formData, setFormData] = useState<PostFormData>({
     title: replyInfo?.parentTitle ? `Re: ${replyInfo.parentTitle}` : "",
     content: "",
     status: "",
     step: "",
   });
-  
+
   const [files, setFiles] = useState<File[]>([]);
   const [links, setLinks] = useState<string[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
+  const [steps, setSteps] = useState<StepResponse[]>([]);
+  const [isLoadingSteps, setIsLoadingSteps] = useState(false);
+
+  // 프로젝트의 실제 step 목록 가져오기
+  useEffect(() => {
+    const fetchSteps = async () => {
+      if (!id) return;
+
+      setIsLoadingSteps(true);
+      try {
+        const response = await getStepsByProject(Number(id));
+        setSteps(response.steps);
+      } catch (error) {
+        console.error("Step 목록 조회 실패:", error);
+        toast({
+          title: "단계 로딩 실패",
+          description: "단계 목록을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingSteps(false);
+      }
+    };
+
+    fetchSteps();
+  }, [id, toast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -98,11 +127,11 @@ export default function BoardNew() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const result = postSchema.safeParse(formData);
-    
+
     if (!result.success) {
       const fieldErrors: Partial<Record<keyof PostFormData, string>> = {};
       result.error.errors.forEach((error) => {
@@ -115,15 +144,54 @@ export default function BoardNew() {
     }
 
     setErrors({});
-    
-    // TODO: API 호출로 데이터 저장
-    // console.log({ ...formData, files, links, parentPostId: replyInfo?.parentPostId ?? null });
-    toast({
-      title: "게시글 작성 완료",
-      description: "게시글이 성공적으로 작성되었습니다.",
-    });
-    
-    navigate(`/project/${id}/board`);
+
+    // 백엔드 API 호출
+    try {
+      // status 매핑 (임시)
+      const statusMap: Record<string, ProjectStatus> = {
+        "계약": ProjectStatus.IN_PROGRESS,
+        "진행": ProjectStatus.IN_PROGRESS,
+        "납품": ProjectStatus.COMPLETED,
+        "유지보수": ProjectStatus.ON_HOLD,
+      };
+
+      // formData.step은 이제 실제 stepId(문자열)
+      const stepId = Number(formData.step);
+
+      if (!stepId) {
+        toast({
+          title: "유효하지 않은 단계",
+          description: "단계를 다시 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const response = await createPost(Number(id), {
+        title: formData.title,
+        content: formData.content,
+        stepId: stepId,
+        projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+        parentPostId: replyInfo?.parentPostId,
+        links: links.map(url => ({ url })),
+        // 파일 업로드는 별도 구현 필요
+      });
+
+      toast({
+        title: "게시글 작성 완료",
+        description: "게시글이 성공적으로 작성되었습니다.",
+      });
+
+      // 방금 작성한 게시글 상세 페이지로 이동
+      navigate(`/project/${id}/board/${response.postId}`);
+    } catch (error) {
+      console.error("게시글 작성 실패:", error);
+      toast({
+        title: "게시글 작성 실패",
+        description: "게시글 작성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCancel = () => {
@@ -192,14 +260,15 @@ export default function BoardNew() {
                 <Select
                   value={formData.step}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, step: value }))}
+                  disabled={isLoadingSteps}
                 >
                   <SelectTrigger id="step">
-                    <SelectValue placeholder="단계를 선택하세요" />
+                    <SelectValue placeholder={isLoadingSteps ? "단계 로딩 중..." : "단계를 선택하세요"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {step.map((step) => (
-                      <SelectItem key={step} value={step}>
-                        {step}
+                    {steps.map((step) => (
+                      <SelectItem key={step.id} value={step.id.toString()}>
+                        {step.title}
                       </SelectItem>
                     ))}
                   </SelectContent>

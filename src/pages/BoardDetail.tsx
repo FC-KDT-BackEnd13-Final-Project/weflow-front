@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
+import { getPost } from "@/apis/postApi";
 
 type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
 
@@ -280,11 +281,82 @@ export default function BoardDetail() {
   const [actionComment, setActionComment] = useState("");
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   const [visibleReplyForms, setVisibleReplyForms] = useState<Record<string, boolean>>({});
+  const [post, setPost] = useState<BoardPostDetail | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const post = useMemo(() => {
-    if (!postId) return undefined;
-    return mockPostDetails.find((item) => item.id.toString() === postId);
-  }, [postId]);
+  // 백엔드에서 게시글 상세 조회
+  useEffect(() => {
+    const fetchPost = async () => {
+      if (!id || !postId) return;
+
+      setIsLoading(true);
+      try {
+        const response = await getPost(Number(id), Number(postId));
+
+        // 백엔드 데이터를 프론트 형식으로 변환
+        const convertedPost: BoardPostDetail = {
+          id: response.postId,
+          title: response.title,
+          content: response.content,
+          status: response.projectStatus as ApiPostStatus,
+          author: {
+            memberId: response.author.memberId,
+            name: response.author.name,
+            role: response.author.role,
+            companyName: response.author.companyName,
+          },
+          projectStatus: response.projectStatus as ApiPostStatus,
+          step: {
+            stepId: response.step.stepId,
+            stepName: response.step.stepName,
+          },
+          files: response.files.map(file => ({
+            fileId: file.fileId,
+            fileName: file.fileName,
+            fileSize: file.fileSize,
+            downloadUrl: file.downloadUrl,
+          })),
+          links: response.links.map(link => ({
+            linkId: link.linkId,
+            url: link.url,
+            title: link.title,
+          })),
+          questions: response.questions.map(q => ({
+            questionId: q.questionId,
+            content: q.content,
+            buttonLabels: {
+              yes: q.buttonLabels.yes,
+              no: q.buttonLabels.no,
+            },
+            answer: q.answer ? {
+              response: q.answer.response as "YES" | "NO" | "ETC",
+              respondent: {
+                memberId: q.answer.respondent.memberId,
+                name: q.answer.respondent.name,
+              },
+              respondedAt: q.answer.respondedAt,
+            } : null,
+          })),
+          parentPost: response.parentPost?.postId || null,
+          isEdited: response.isEdited,
+          createdAt: response.createdAt,
+          updatedAt: response.updatedAt,
+          comments: [], // 댓글은 별도 API로 가져와야 함
+        };
+
+        setPost(convertedPost);
+      } catch (error) {
+        console.error("게시글 조회 실패:", error);
+        // 에러 시 목 데이터 사용 (임시)
+        const mockPost = mockPostDetails.find((item) => item.id.toString() === postId);
+        setPost(mockPost);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPost();
+  }, [id, postId]);
 
   useEffect(() => {
     if (!post) return;
@@ -298,6 +370,16 @@ export default function BoardDetail() {
     });
     setQuestionSelections(initialSelections);
   }, [post]);
+
+  if (isLoading) {
+    return (
+      <ProjectLayout>
+        <div className="max-w-2xl mx-auto py-16 text-center space-y-4">
+          <p className="text-lg font-medium text-foreground">게시글을 불러오는 중...</p>
+        </div>
+      </ProjectLayout>
+    );
+  }
 
   if (!post) {
     return (
