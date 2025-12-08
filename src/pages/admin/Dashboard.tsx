@@ -1,53 +1,158 @@
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Users, Building2, FolderKanban, UserPlus, Building, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
+import api from "@/apis/api";
+
+type ActionType =
+  | "CREATE"
+  | "UPDATE"
+  | "DELETE"
+  | "LOGIN"
+  | "LOGOUT"
+  | "APPROVE"
+  | "REJECT"
+  | "UPLOAD"
+  | "DOWNLOAD"
+  | "REMOVE"
+  | "SUBMIT";
+
+type TargetTable =
+  | "POST"
+  | "POST_ANSWER"
+  | "COMMENT"
+  | "PROJECT"
+  | "PROJECT_MEMBER"
+  | "USER"
+  | "COMPANY"
+  | "CHECKLIST"
+  | "CHECKLIST_QUESTION"
+  | "CHECKLIST_OPTION"
+  | "ATTACHMENT"
+  | "STEP"
+  | "STEP_REQUEST"
+  | "STEP_RESPONSE"
+  | "TEMPLATE";
+
+interface DashboardResponse {
+  totalUsers: number;
+  totalCompanies: number;
+  totalProjects: number;
+  recentLogs: Array<{
+    logId: number;
+    actionType: ActionType;
+    targetTable: TargetTable;
+    targetId: number;
+    ipAddress: string;
+    createdAt: string;
+    userId: number;
+    userName: string;
+    projectId: number | null;
+    projectName: string | null;
+  }>;
+}
+
+const actionTypeLabels: Record<string, string> = {
+  CREATE: "생성",
+  UPDATE: "수정",
+  DELETE: "삭제",
+  LOGIN: "로그인",
+  LOGOUT: "로그아웃",
+  APPROVE: "승인",
+  REJECT: "반려",
+  UPLOAD: "업로드",
+  DOWNLOAD: "다운로드",
+  REMOVE: "제거",
+  SUBMIT: "제출",
+};
+
+const targetTableLabels: Record<string, string> = {
+  POST: "게시글",
+  POST_ANSWER: "게시글 답변",
+  COMMENT: "댓글",
+  PROJECT: "프로젝트",
+  PROJECT_MEMBER: "프로젝트 멤버",
+  USER: "회원",
+  COMPANY: "회사",
+  CHECKLIST: "체크리스트",
+  CHECKLIST_QUESTION: "체크리스트 질문",
+  CHECKLIST_OPTION: "체크리스트 옵션",
+  ATTACHMENT: "첨부파일",
+  STEP: "단계",
+  STEP_REQUEST: "단계 요청",
+  STEP_RESPONSE: "단계 응답",
+  TEMPLATE: "템플릿",
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const stats = [
-    {
-      title: "전체 회원 수",
-      value: "123명",
-      icon: Users,
-      color: "bg-purple-100 text-purple-600",
-      link: "/admin/members",
-    },
-    {
-      title: "등록된 회사 수",
-      value: "12개",
-      icon: Building2,
-      color: "bg-pink-100 text-pink-600",
-      link: "/admin/companies",
-    },
-    {
-      title: "전체 프로젝트",
-      value: "34개",
-      icon: FolderKanban,
-      color: "bg-blue-100 text-blue-600",
-      link: "/admin/projects",
-    },
-  ];
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalCompanies: 0,
+    totalProjects: 0,
+  });
+  const [recentLogs, setRecentLogs] = useState<DashboardResponse["recentLogs"]>([]);
 
-  const recentActivities = [
-    {
-      time: "2025-11-20 10:13",
-      action: "관리자 홍길동이 회원 '김철수' 생성",
-    },
-    {
-      time: "2025-11-20 04:55",
-      action: "개발사 4에서 프로젝트 'Landing Page' 생성 요청",
-    },
-    {
-      time: "2025-11-20 04:30",
-      action: "고객사 B 멤버 3명 CSV 업로드 완료",
-    },
-    {
-      time: "2025-11-19 16:22",
-      action: "시스템 관리자 계정 비밀번호 초기화됨",
-    },
-  ];
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchDashboard = async () => {
+      try {
+        const response = await api.get("/api/admin/dashboard", {
+          signal: controller.signal,
+        });
+        const data: DashboardResponse = response.data?.data;
+        setStats({
+          totalUsers: data?.totalUsers ?? 0,
+          totalCompanies: data?.totalCompanies ?? 0,
+          totalProjects: data?.totalProjects ?? 0,
+        });
+        setRecentLogs(data?.recentLogs ?? []);
+      } catch {
+        // ignore errors for now
+      }
+    };
+    fetchDashboard();
+    return () => controller.abort();
+  }, []);
+
+  const statsCards = useMemo(
+    () => [
+      {
+        title: "전체 회원 수",
+        value: `${stats.totalUsers.toLocaleString()}명`,
+        icon: Users,
+        color: "bg-purple-100 text-purple-600",
+        link: "/admin/members",
+      },
+      {
+        title: "등록된 회사 수",
+        value: `${stats.totalCompanies.toLocaleString()}개`,
+        icon: Building2,
+        color: "bg-pink-100 text-pink-600",
+        link: "/admin/companies",
+      },
+      {
+        title: "전체 프로젝트",
+        value: `${stats.totalProjects.toLocaleString()}개`,
+        icon: FolderKanban,
+        color: "bg-blue-100 text-blue-600",
+        link: "/admin/projects",
+      },
+    ],
+    [stats]
+  );
+
+  const formatTime = (value: string) =>
+    new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date(value));
 
   return (
     <div className="space-y-6">
@@ -57,7 +162,7 @@ const Dashboard = () => {
 
       {/* 통계 카드 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {stats.map((stat, index) => (
+        {statsCards.map((stat, index) => (
           <Card
             key={index}
             className="border-2 hover:shadow-lg transition-shadow cursor-pointer"
@@ -98,12 +203,23 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {recentActivities.map((activity, index) => (
-              <div key={index} className="flex items-start gap-3 py-2">
+            {recentLogs.length === 0 && (
+              <div className="text-sm text-muted-foreground py-4 text-center">
+                최근 로그가 없습니다.
+              </div>
+            )}
+            {recentLogs.map((log) => (
+              <div key={log.logId} className="flex items-start gap-3 py-2">
                 <Badge variant="outline" className="text-xs shrink-0">
-                  {activity.time}
+                  {formatTime(log.createdAt)}
                 </Badge>
-                <p className="text-sm">{activity.action}</p>
+                <p className="text-sm">
+                  <span className="font-medium">{log.userName ?? "알 수 없음"}님이 </span>
+                  <span className="font-medium">
+                    {targetTableLabels[log.targetTable] ?? log.targetTable}
+                  </span>
+                  을/를 {actionTypeLabels[log.actionType] ?? log.actionType}하였습니다.
+                </p>
               </div>
             ))}
           </div>
