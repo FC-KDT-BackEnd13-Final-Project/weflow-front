@@ -78,23 +78,27 @@ export default function ChecklistDetail() {
         const d = response.data?.data;
         if (!d) throw new Error("잘못된 응답입니다.");
 
-        const normalizedQuestions: ChecklistQuestion[] = (d.questions ?? []).map((q: any) => ({
-          id: q.questionId,
-          questionText: q.questionText,
-          questionType: q.questionType,
-          options: (q.options ?? []).map((opt: any) => ({
-            id: opt.optionId,
-            optionText: opt.optionText,
-            hasInput: opt.hasInput,
-          })),
-          answer: q.answer
-            ? {
-                selectedOptionId: q.answer.selectedOptionId ?? undefined,
-                selectedOptionIds: q.answer.selectedOptionIds ?? undefined,
-                answerText: q.answer.answerText ?? undefined,
-              }
-            : undefined,
-        }));
+        const normalizedQuestions: ChecklistQuestion[] = [...(d.questions ?? [])]
+          .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+          .map((q: any) => ({
+            id: q.questionId,
+            questionText: q.questionText,
+            questionType: q.questionType,
+            options: (q.options ?? [])
+              .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+              .map((opt: any) => ({
+                id: opt.optionId,
+                optionText: opt.optionText,
+                hasInput: opt.hasInput,
+              })),
+            answer: q.answer
+              ? {
+                  selectedOptionId: q.answer.selectedOptionId ?? undefined,
+                  selectedOptionIds: q.answer.selectedOptionIds ?? undefined,
+                  answerText: q.answer.answerText ?? undefined,
+                }
+              : undefined,
+          }));
 
         setDetail({
           checklistId: d.checklistId,

@@ -13,15 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, GripVertical } from "lucide-react";
 import api from "@/apis/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -52,6 +44,7 @@ interface QuestionSource {
   questionId?: number;
   questionText?: string;
   questionType?: "SINGLE" | "MULTI" | "TEXT";
+  orderIndex?: number;
   options?: QuestionSourceOption[];
 }
 
@@ -96,6 +89,7 @@ const normalizeQuestionSources = (source?: QuestionSource[]): QuestionSource[] =
     questionId: question.questionId,
     questionText: question.questionText,
     questionType: question.questionType,
+    orderIndex: question.orderIndex,
     options: (question.options ?? []).map((option) => ({
       optionId: option.optionId,
       optionText: option.optionText,
@@ -104,13 +98,21 @@ const normalizeQuestionSources = (source?: QuestionSource[]): QuestionSource[] =
     })),
   }));
 
-const mapQuestionsFromSource = (source?: QuestionSource[], includeIds = false): Question[] =>
-  (source ?? []).map((question, index) => {
+const mapQuestionsFromSource = (source?: QuestionSource[], includeIds = false): Question[] => {
+  const sortedQuestions = [...(source ?? [])].sort(
+    (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+  );
+
+  return sortedQuestions.map((question, index) => {
     const normalizedType = questionTypeFromApi(question.questionType);
+    const sortedOptions = [...(question.options ?? [])].sort(
+      (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+    );
+
     const options =
       normalizedType === "주관식"
         ? []
-        : (question.options ?? []).map((option) => ({
+        : sortedOptions.map((option) => ({
             text: option.optionText ?? "",
             hasInput: normalizedType === "객관식" ? Boolean(option.hasInput) : false,
             optionId: includeIds ? option.optionId : undefined,
@@ -124,6 +126,7 @@ const mapQuestionsFromSource = (source?: QuestionSource[], includeIds = false): 
       options,
     };
   });
+};
 
 const buildChecklistPayloadFromDetail = (detail: any): ChecklistStatePayload => ({
   checklistId: detail.checklistId,
@@ -153,6 +156,8 @@ export default function ChecklistCreate() {
     : null;
   const [originalData, setOriginalData] = useState<ChecklistStatePayload | null>(initialOriginalData);
   const [isInitialLoading, setIsInitialLoading] = useState(isEditMode);
+  const [draggingQuestionId, setDraggingQuestionId] = useState<number | null>(null);
+  const [draggingOption, setDraggingOption] = useState<{ questionId: number; index: number } | null>(null);
 
   const [title, setTitle] = useState(checklistState?.title ?? templateState?.title ?? "");
   const [description, setDescription] = useState(checklistState?.description ?? templateState?.description ?? "");
@@ -164,19 +169,20 @@ export default function ChecklistCreate() {
   const [isStageLoading, setIsStageLoading] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
 
-  const [questions, setQuestions] = useState<Question[]>(
+  const createEmptyQuestion = (nextId: number): Question => ({
+    id: nextId,
+    title: "",
+    type: "객관식",
+    options: [],
+  });
+
+  const initialQuestions =
     checklistState?.questions
       ? mapQuestionsFromSource(checklistState.questions, true)
-      : mapQuestionsFromSource(templateState?.questions)
-  );
-  const [isSubmitting, setIsSubmitting] = useState(false);
+      : mapQuestionsFromSource(templateState?.questions);
 
-  const [showQuestionDialog, setShowQuestionDialog] = useState(false);
-  const [newQuestion, setNewQuestion] = useState({
-    title: "",
-    type: "객관식" as QuestionType,
-    options: [{ text: "", hasInput: false }],
-  });
+  const [questions, setQuestions] = useState<Question[]>(initialQuestions.length > 0 ? initialQuestions : [createEmptyQuestion(1)]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -248,67 +254,152 @@ export default function ChecklistCreate() {
     return () => controller.abort();
   }, [isEditMode, checklistState?.checklistId, toast]);
 
-  const handleQuestionTypeChange = (value: QuestionType) => {
-    setNewQuestion((prev) => {
-      const baseOptions =
-        value === "주관식"
-          ? []
-          : (prev.options.length > 0 ? prev.options : [{ text: "", hasInput: false }]).map(
-              (option) => ({
-                text: option.text,
-                hasInput: value === "객관식" ? option.hasInput : false,
-              })
-            );
-      return {
-        ...prev,
-        type: value,
-        options: baseOptions,
-      };
-    });
+  const handleRemoveQuestion = (id: number) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id));
   };
 
   const handleAddQuestion = () => {
-    if (!newQuestion.title.trim()) return;
-    const options =
-      newQuestion.type !== "주관식"
-        ? newQuestion.options
-            .filter((option) => option.text.trim() !== "")
-            .map((option) => ({ ...option, optionId: undefined }))
-        : [];
     const nextId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1;
-    const question: Question = {
-      id: nextId,
-      title: newQuestion.title,
-      type: newQuestion.type,
-      options,
-    };
-    setQuestions((prev) => [...prev, question]);
-    setNewQuestion({ title: "", type: "객관식", options: [{ text: "", hasInput: false }] });
-    setShowQuestionDialog(false);
+    setQuestions((prev) => [...prev, createEmptyQuestion(nextId)]);
   };
 
-  const handleAddOption = () => {
-    setNewQuestion((prev) => ({ ...prev, options: [...prev.options, { text: "", hasInput: false }] }));
+  const handleQuestionTitleChange = (id: number, value: string) => {
+    setQuestions((prev) =>
+      prev.map((question) => (question.id === id ? { ...question, title: value } : question))
+    );
   };
 
-  const handleOptionChange = (index: number, value: string) => {
-    setNewQuestion((prev) => {
-      const next = [...prev.options];
-      next[index] = { ...next[index], text: value };
-      return { ...prev, options: next };
+  const handleQuestionTypeChange = (id: number, nextType: QuestionType) => {
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== id) return question;
+        if (nextType === "주관식") {
+          return { ...question, type: nextType, options: [] };
+        }
+        if (nextType === "복수선택") {
+          return {
+            ...question,
+            type: nextType,
+            options: question.options.map((option) => ({ ...option, hasInput: false })),
+          };
+        }
+        return { ...question, type: nextType };
+      })
+    );
+  };
+
+  const handleAddOption = (id: number) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === id
+          ? { ...question, options: [...question.options, { text: "", hasInput: false }] }
+          : question
+      )
+    );
+  };
+
+  const handleOptionChange = (questionId: number, optionIndex: number, value: string) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.map((option, idx) => (idx === optionIndex ? { ...option, text: value } : option)),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleOptionHasInputToggle = (questionId: number, optionIndex: number, checked: boolean) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.map((option, idx) =>
+                idx === optionIndex ? { ...option, hasInput: checked } : option
+              ),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleDeleteOption = (questionId: number, optionIndex: number) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.filter((_, idx) => idx !== optionIndex),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleQuestionDragStart = (id: number) => setDraggingQuestionId(id);
+  const handleQuestionDragEnd = () => setDraggingQuestionId(null);
+  const handleQuestionDrop = (targetId: number) => {
+    if (draggingQuestionId === null || draggingQuestionId === targetId) return;
+    setQuestions((prev) => {
+      const current = [...prev];
+      const fromIndex = current.findIndex((question) => question.id === draggingQuestionId);
+      const toIndex = current.findIndex((question) => question.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const [moved] = current.splice(fromIndex, 1);
+      current.splice(toIndex, 0, moved);
+      return current;
     });
+    setDraggingQuestionId(null);
   };
 
-  const handleOptionHasInputToggle = (index: number, checked: boolean) => {
-    setNewQuestion((prev) => {
-      const next = [...prev.options];
-      next[index] = { ...next[index], hasInput: checked };
-      return { ...prev, options: next };
+  const handleOptionDragStart = (questionId: number, index: number) => {
+    setDraggingOption({ questionId, index });
+  };
+
+  const handleOptionDragEnd = () => setDraggingOption(null);
+
+  const handleOptionDrop = (questionId: number, targetIndex: number) => {
+    if (!draggingOption || draggingOption.questionId !== questionId || draggingOption.index === targetIndex) return;
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== questionId) return question;
+        const currentOptions = [...question.options];
+        const [moved] = currentOptions.splice(draggingOption.index, 1);
+        currentOptions.splice(targetIndex, 0, moved);
+        return { ...question, options: currentOptions };
+      })
+    );
+    setDraggingOption(null);
+  };
+
+  const handleQuestionDropToEnd = () => {
+    if (draggingQuestionId === null) return;
+    setQuestions((prev) => {
+      const current = [...prev];
+      const fromIndex = current.findIndex((question) => question.id === draggingQuestionId);
+      if (fromIndex === -1) return prev;
+      const [moved] = current.splice(fromIndex, 1);
+      current.push(moved);
+      return current;
     });
+    setDraggingQuestionId(null);
   };
 
-  const handleRemoveQuestion = (id: number) => {
-    setQuestions((prev) => prev.filter((q) => q.id !== id));
+  const handleOptionDropToEnd = (questionId: number) => {
+    if (!draggingOption || draggingOption.questionId !== questionId) return;
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== questionId) return question;
+        const currentOptions = [...question.options];
+        const [moved] = currentOptions.splice(draggingOption.index, 1);
+        currentOptions.push(moved);
+        return { ...question, options: currentOptions };
+      })
+    );
+    setDraggingOption(null);
   };
 
   const buildQuestionPayload = () =>
@@ -428,6 +519,8 @@ export default function ChecklistCreate() {
       questions.filter((question) => question.questionId).map((question) => question.questionId as number)
     );
 
+    const orderedQuestionIds: number[] = [];
+
     for (const original of originalQuestions) {
       if (original.questionId && !currentQuestionIds.has(original.questionId)) {
         await api.delete(`/api/questions/${original.questionId}`);
@@ -437,10 +530,21 @@ export default function ChecklistCreate() {
     for (const question of questions) {
       if (question.questionId) {
         await updateQuestionIfNeeded(question, originalMap.get(question.questionId), checklistId);
+        orderedQuestionIds.push(question.questionId);
       } else {
         const createdId = await createQuestionOnServer(checklistId, question);
+        question.questionId = createdId;
+        orderedQuestionIds.push(createdId);
         await createOptionsForQuestion(createdId, question.type, question.options);
       }
+    }
+
+    if (orderedQuestionIds.length > 0) {
+      await api.patch("/api/questions/reorder", {
+        checklistId,
+        orderedIds: orderedQuestionIds,
+        questionIds: orderedQuestionIds,
+      });
     }
   };
 
@@ -572,7 +676,7 @@ export default function ChecklistCreate() {
       previousOrder.some((id, idx) => id !== currentOrder[idx]);
 
     if (orderChanged && currentOrder.length > 0) {
-      await api.post("/api/options/reorder", {
+      await api.patch("/api/options/reorder", {
         questionId,
         orderedIds: currentOrder,
       });
@@ -659,58 +763,134 @@ export default function ChecklistCreate() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-semibold">질문 생성</Label>
-                <Button size="sm" onClick={() => setShowQuestionDialog(true)} className="gap-2">
+                <Button size="sm" onClick={handleAddQuestion} className="gap-2">
                   <Plus className="h-4 w-4" /> 질문 추가
                 </Button>
               </div>
 
-              {questions.length > 0 && (
-                <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
-                  {questions.map((question, index) => (
-                    <div key={question.id} className="rounded bg-background p-4 space-y-3 border">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-semibold">
-                            Q{index + 1}. {question.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">유형 · {question.type}</p>
-                        </div>
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveQuestion(question.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+              <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+                {questions.map((question, index) => (
+                  <div
+                    key={question.id}
+                    className="rounded bg-background p-4 pl-12 space-y-4 border relative"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleQuestionDrop(question.id)}
+                  >
+                    <button
+                      className="absolute top-4 right-4 text-red-500 hover:text-red-700"
+                      onClick={() => handleRemoveQuestion(question.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
 
-                      {question.type !== "주관식" && question.options.length > 0 && (
-                        <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-                          <p className="text-xs font-semibold text-muted-foreground">선택지 목록</p>
-                          {question.options.map((option, idx) => (
-                            <div
-                              key={`${question.id}-option-${idx}`}
-                              className="flex items-center gap-2 text-sm text-foreground"
-                            >
-                              <span className="px-2 py-0.5 rounded-full border bg-muted text-xs">
-                                선택지 {idx + 1}
-                              </span>
-                              <span>{option.text}</span>
-                              {question.type === "객관식" && option.hasInput && (
-                                <Badge variant="outline" className="text-xs">
+                    <button
+                      type="button"
+                      className="absolute top-4 left-4 text-muted-foreground cursor-grab"
+                      draggable
+                      onDragStart={() => handleQuestionDragStart(question.id)}
+                      onDragEnd={handleQuestionDragEnd}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </button>
+
+                    <p className="font-semibold text-gray-700">질문 #{index + 1}</p>
+
+                    <Input
+                      placeholder="질문을 입력하세요"
+                      value={question.title}
+                      onChange={(event) => handleQuestionTitleChange(question.id, event.target.value)}
+                    />
+
+                    <Select
+                      value={question.type}
+                      onValueChange={(value) => handleQuestionTypeChange(question.id, value as QuestionType)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="질문 타입 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="객관식">객관식</SelectItem>
+                        <SelectItem value="복수선택">복수선택</SelectItem>
+                        <SelectItem value="주관식">주관식</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {(question.type === "객관식" || question.type === "복수선택") && (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground">
+                          {question.type === "복수선택" ? "옵션 목록 (복수 선택 가능)" : "옵션 목록"}
+                        </p>
+                        {question.options.map((option, idx) => (
+                          <div
+                            key={`${question.id}-${idx}`}
+                            className="flex flex-col gap-2"
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={() => handleOptionDrop(question.id, idx)}
+                          >
+                            <div className="flex gap-2 items-center">
+                              <button
+                                type="button"
+                                className="text-muted-foreground cursor-grab"
+                                draggable
+                                onDragStart={() => handleOptionDragStart(question.id, idx)}
+                                onDragEnd={handleOptionDragEnd}
+                              >
+                                <GripVertical className="h-4 w-4" />
+                              </button>
+                              <Input
+                                placeholder="옵션 입력"
+                                value={option.text}
+                                onChange={(event) =>
+                                  handleOptionChange(question.id, idx, event.target.value)
+                                }
+                              />
+                              {question.type === "객관식" && (
+                                <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    checked={option.hasInput}
+                                    onChange={(event) =>
+                                      handleOptionHasInputToggle(question.id, idx, event.target.checked)
+                                    }
+                                  />
                                   기타 입력 허용
-                                </Badge>
+                                </label>
                               )}
+                              <Trash2
+                                className="w-4 h-4 text-red-500 cursor-pointer"
+                                onClick={() => handleDeleteOption(question.id, idx)}
+                              />
                             </div>
-                          ))}
+                          </div>
+                        ))}
+                        <Button variant="outline" size="sm" onClick={() => handleAddOption(question.id)}>
+                          + 옵션 추가
+                        </Button>
+                        <div
+                          className="h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-[10px] text-muted-foreground"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => handleOptionDropToEnd(question.id)}
+                        >
+                          하단으로 드래그
                         </div>
-                      )}
+                      </div>
+                    )}
 
-                        {question.type === "주관식" && (
-                          <p className="text-xs text-muted-foreground">
-                            주관식 질문 · 별도의 선택지가 없습니다.
-                          </p>
-                      )}
-                    </div>
-                  ))}
+                    {question.type === "주관식" && (
+                      <p className="text-xs text-muted-foreground">
+                        주관식 질문 · 별도의 선택지가 없습니다.
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <div
+                  className="h-8 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-xs text-muted-foreground"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={handleQuestionDropToEnd}
+                >
+                  카드 하단으로 드래그
                 </div>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -724,80 +904,6 @@ export default function ChecklistCreate() {
           </Button>
         </div>
       </div>
-
-      <Dialog open={showQuestionDialog} onOpenChange={setShowQuestionDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>질문 추가</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>질문 제목</Label>
-              <Input value={newQuestion.title} onChange={(event) => setNewQuestion((prev) => ({ ...prev, title: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>질문 유형</Label>
-              <RadioGroup
-                value={newQuestion.type}
-                onValueChange={(value) => handleQuestionTypeChange(value as QuestionType)}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="객관식" id="question-type-single" />
-                  <Label htmlFor="question-type-single">객관식</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="복수선택" id="question-type-multi" />
-                  <Label htmlFor="question-type-multi">복수선택</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="주관식" id="question-type-text" />
-                  <Label htmlFor="question-type-text">주관식</Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {newQuestion.type !== "주관식" && (
-              <div className="space-y-2">
-                <Label>선택지</Label>
-                <div className="space-y-2">
-                  {newQuestion.options.map((option, index) => (
-                    <div key={index} className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={option.text}
-                          onChange={(event) => handleOptionChange(index, event.target.value)}
-                          placeholder={`선택지 ${index + 1}`}
-                        />
-                        {newQuestion.type === "객관식" && (
-                          <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={option.hasInput}
-                              onChange={(event) => handleOptionHasInputToggle(index, event.target.checked)}
-                            />
-                            기타 입력 허용
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <Button variant="ghost" size="sm" className="mt-2" onClick={handleAddOption}>
-                  + 선택지 추가
-                </Button>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowQuestionDialog(false)}>
-                취소
-              </Button>
-              <Button onClick={handleAddQuestion}>추가</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </ProjectLayout>
   );
 }
