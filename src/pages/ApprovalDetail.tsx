@@ -3,10 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileText, Link as LinkIcon, ArrowLeft } from "lucide-react";
@@ -298,7 +296,7 @@ export default function ApprovalDetail() {
 
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6 max-w-7xl mx-auto w-full">
         <div>
           <Button
             variant="ghost"
@@ -308,7 +306,7 @@ export default function ApprovalDetail() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             목록으로
           </Button>
-          <h1 className="text-2xl font-bold text-foreground">{approval.category}</h1>
+          <h1 className="text-2xl font-bold text-foreground">단계별 승인 상세</h1>
         </div>
 
         <Card>
@@ -319,7 +317,6 @@ export default function ApprovalDetail() {
             </div>
           </CardHeader>
           <CardContent className="pt-6 space-y-6">
-            {/* 제목 선택 */}
             <div className="space-y-2">
               <Select defaultValue={String(approval.id)}>
                 <SelectTrigger className={cn("w-full h-12", getStatusColor(approval.status))}>
@@ -342,8 +339,9 @@ export default function ApprovalDetail() {
               </div>
             </div>
 
-            {/* 첨부파일 */}
-            <div className="space-y-2">
+            <Separator />
+
+            <div className="space-y-3">
               <Label className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 첨부파일
@@ -362,8 +360,7 @@ export default function ApprovalDetail() {
               </div>
             </div>
 
-            {/* 링크 */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Label className="flex items-center gap-2">
                 <LinkIcon className="h-4 w-4" />
                 링크
@@ -567,7 +564,7 @@ export default function ApprovalDetail() {
           <DialogHeader>
             <DialogTitle>{decisionType === "CHANGE_REQUEST" ? "변경 요청" : "승인 반려"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>{decisionType === "CHANGE_REQUEST" ? "변경 요청 사유" : "반려 사유"}</Label>
               <Textarea
@@ -577,9 +574,84 @@ export default function ApprovalDetail() {
                 className="min-h-[120px]"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                첨부파일
+              </Label>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  파일 선택
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {reviewFiles.length > 0 ? `${reviewFiles.length}개 파일 선택됨` : "선택된 파일 없음"}
+                </span>
+              </div>
+              {reviewFiles.length > 0 && (
+                <div className="space-y-2 mt-3">
+                  {reviewFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
+                        <span className="text-sm truncate">{file.name}</span>
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </Badge>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 flex-shrink-0"
+                        onClick={() => removeReviewFile(index)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>링크</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://example.com"
+                  value={linkInput}
+                  onChange={(event) => setLinkInput(event.target.value)}
+                />
+                <Button type="button" onClick={addReviewLink}>
+                  추가
+                </Button>
+              </div>
+              {reviewLinks.length > 0 && (
+                <div className="space-y-2">
+                  {reviewLinks.map((link, index) => (
+                    <div key={`${link.url}-${index}`} className="flex items-center justify-between text-sm border rounded px-3 py-2 bg-muted/40">
+                      <span>{link.displayName}</span>
+                      <Button variant="ghost" size="sm" onClick={() => removeReviewLink(index)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReviewDialogAction(null)}>
               취소
             </Button>
             <Button variant={decisionType === "CHANGE_REQUEST" ? "secondary" : "destructive"} onClick={handleDecision} disabled={feedbackMutation.isPending}>

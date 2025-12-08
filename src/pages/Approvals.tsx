@@ -4,9 +4,9 @@ import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -157,7 +157,7 @@ export default function Approvals() {
     setRequestLinks([]);
     setAttachmentInput("");
     setLinkInput("");
-    setIsRequestDialogOpen(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleRequestDialogChange = (open: boolean) => {
@@ -188,14 +188,14 @@ export default function Approvals() {
     setRequestAttachmentIds(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleAddLink = () => {
+  const addLink = () => {
     if (!linkInput.trim()) return;
-    setRequestLinks(prev => [...prev, linkInput.trim()]);
+    setPendingLinks(prev => [...prev, linkInput.trim()]);
     setLinkInput("");
   };
 
-  const handleRemoveLink = (index: number) => {
-    setRequestLinks(prev => prev.filter((_, i) => i !== index));
+  const removeLink = (index: number) => {
+    setPendingLinks(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmitRequest = () => {
@@ -221,7 +221,7 @@ export default function Approvals() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">단계별 승인 요청</h1>
-            <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인을 관리합니다</p>
+            <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인 상태를 확인하세요</p>
           </div>
         </div>
 
@@ -321,6 +321,11 @@ export default function Approvals() {
                         </div>
                       )
                     )}
+                    {stepStatus.label !== "완료" && requests.length > 0 && (
+                      <Button variant="outline" size="sm" onClick={() => openDialog(category)}>
+                        승인 요청 생성
+                      </Button>
+                    )}
                   </div>
                   {!isApproved && requests.length > 0 && (
                     <Button
@@ -344,12 +349,19 @@ export default function Approvals() {
         </div>
       </div>
 
-      <Dialog open={isRequestDialogOpen} onOpenChange={handleRequestDialogChange}>
-        <DialogContent>
+      <Dialog
+        open={selectedStep !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetDialog();
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>승인 요청</DialogTitle>
+            <DialogTitle>승인 요청 작성</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">단계</Label>
               <Select
@@ -373,21 +385,12 @@ export default function Approvals() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>요청 제목</Label>
-              <Input
-                value={requestTitle}
-                onChange={(event) => setRequestTitle(event.target.value)}
-                placeholder="승인 요청 제목을 입력하세요"
-              />
+              <Label>제목</Label>
+              <Input placeholder="승인 요청 제목을 입력하세요" value={title} onChange={(event) => setTitle(event.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>요청 내용</Label>
-              <Textarea
-                value={requestDescription}
-                onChange={(event) => setRequestDescription(event.target.value)}
-                placeholder="승인 요청 내용을 입력하세요"
-                className="min-h-[140px]"
-              />
+              <Label>설명</Label>
+              <Textarea placeholder="승인 요청에 대한 설명을 입력하세요" className="min-h-[120px]" value={description} onChange={(event) => setDescription(event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>첨부파일</Label>
@@ -397,16 +400,25 @@ export default function Approvals() {
                   onChange={(event) => setAttachmentInput(event.target.value)}
                   placeholder="첨부 ID를 입력하세요 (STEP_REQUEST 업로드)"
                 />
-                <Button type="button" variant="secondary" onClick={handleAddAttachment}>
-                  추가
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4" />
+                  파일 선택
                 </Button>
+                <span className="text-sm text-muted-foreground">
+                  {pendingFiles.length}개 파일 선택됨
+                </span>
               </div>
               {requestAttachmentIds.length > 0 && (
                 <div className="space-y-2">
                   {requestAttachmentIds.map((file, index) => (
                     <div
-                      key={`${file}-${index}`}
-                      className="flex items-center justify-between rounded-md border p-2 text-sm"
+                      key={`${file.name}-${index}`}
+                      className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30"
                     >
                       <span>첨부 ID {file}</span>
                       <Button variant="ghost" size="sm" onClick={() => handleRemoveAttachment(index)}>
@@ -417,28 +429,36 @@ export default function Approvals() {
                 </div>
               )}
             </div>
+
             <div className="space-y-2">
-              <Label>링크</Label>
+              <Label>관련 링크</Label>
               <div className="flex gap-2">
                 <Input
+                  placeholder="https://example.com"
                   value={linkInput}
                   onChange={(event) => setLinkInput(event.target.value)}
-                  placeholder="링크를 입력하세요"
                 />
-                <Button type="button" variant="secondary" onClick={handleAddLink}>
+                <Button type="button" variant="outline" onClick={addLink}>
                   추가
                 </Button>
               </div>
-              {requestLinks.length > 0 && (
+              {pendingLinks.length > 0 && (
                 <div className="space-y-2">
-                  {requestLinks.map((link, index) => (
-                    <div
-                      key={`${link}-${index}`}
-                      className="flex items-center justify-between rounded-md border p-2 text-sm"
-                    >
-                      <span className="truncate">{link}</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleRemoveLink(index)}>
-                        제거
+                  {pendingLinks.map((link, index) => (
+                    <div key={`${link}-${index}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <LinkIcon className="h-4 w-4 flex-shrink-0" />
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate underline-offset-2 hover:underline"
+                        >
+                          {link}
+                        </a>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => removeLink(index)}>
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
@@ -447,7 +467,7 @@ export default function Approvals() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => handleRequestDialogChange(false)}>
+            <Button variant="outline" onClick={resetDialog}>
               취소
             </Button>
             <Button

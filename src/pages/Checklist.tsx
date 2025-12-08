@@ -74,7 +74,16 @@ export default function Checklist() {
   return (
     <ProjectLayout>
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">체크리스트</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-3xl font-bold tracking-tight">체크리스트</h1>
+          <Button
+            size="sm"
+            className="sm:w-auto"
+            onClick={() => navigate(`/project/${id}/checklist/create`)}
+          >
+            체크리스트 추가
+          </Button>
+        </div>
         
         <Card>
           <CardHeader className="pb-3">

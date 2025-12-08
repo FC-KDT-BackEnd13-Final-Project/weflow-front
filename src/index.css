@@ -72,6 +72,18 @@ All colors MUST be HSL.
     --sidebar-border: 240 6% 92%;
     --sidebar-ring: 217 92% 60%;
   }
+
+  /* Darker sidebar palette for admin area */
+  .admin-sidebar-theme {
+    --sidebar-background: 222.2 47.4% 11.2%;
+    --sidebar-foreground: 214.3 31.8% 91.4%;
+    --sidebar-primary: 217.2 91.2% 59.8%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 27.9% 16.9%;
+    --sidebar-accent-foreground: 214.3 31.8% 91.4%;
+    --sidebar-border: 215.3 25% 26.7%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
 }
 
 @layer base {

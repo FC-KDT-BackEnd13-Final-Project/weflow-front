@@ -1,4 +1,11 @@
-import { LayoutDashboard, FolderKanban, Bell, ClipboardCheck, Settings } from "lucide-react";
+import { 
+  LayoutDashboard, 
+  Users, 
+  Building2, 
+  FolderKanban, 
+  Activity, 
+  Settings 
+} from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import {
@@ -7,22 +14,24 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const menuItems = [
-  { title: "대시보드", url: "/dashboard", icon: LayoutDashboard },
-  { title: "프로젝트", url: "/projects", icon: FolderKanban },
-  { title: "알림", url: "/notifications", icon: Bell },
-  { title: "승인 요청", url: "/approval-requests", icon: ClipboardCheck },
-  { title: "설정", url: "/settings", icon: Settings },
+const items = [
+  { title: "대시보드", url: "/admin/dashboard", icon: LayoutDashboard },
+  { title: "회원 관리", url: "/admin/members", icon: Users },
+  { title: "회사 관리", url: "/admin/companies", icon: Building2 },
+  { title: "프로젝트 관리", url: "/admin/projects", icon: FolderKanban },
+  { title: "체크리스트 템플릿 생성", url: "/admin/checklist-templates", icon: FolderKanban },
+  { title: "로그 / 활동 기록", url: "/admin/logs", icon: Activity },
+  { title: "관리자 계정 관리", url: "/admin/admin-users", icon: Settings },
 ];
 
-export function AppSidebar() {
+export function AdminAppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
   const collapsed = state === "collapsed";
@@ -41,18 +50,20 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>메뉴</SidebarGroupLabel>
+          <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>
+            관리자
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
+              {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink
-                      to={item.url}
-                      className="hover:bg-sidebar-accent"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    <NavLink 
+                      to={item.url} 
+                      className="hover:bg-sidebar-accent transition-colors"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold"
                     >
-                      <item.icon className="h-4 w-4" />
+                      <item.icon className="h-5 w-5" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>

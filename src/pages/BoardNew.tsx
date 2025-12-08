@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
@@ -41,10 +41,13 @@ type PostFormData = z.infer<typeof postSchema>;
 export default function BoardNew() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const replyInfo = (location.state as { parentPostId?: number; parentTitle?: string } | null) ?? null;
+  const isReply = Boolean(replyInfo?.parentPostId);
   const { toast } = useToast();
   
   const [formData, setFormData] = useState<PostFormData>({
-    title: "",
+    title: replyInfo?.parentTitle ? `Re: ${replyInfo.parentTitle}` : "",
     content: "",
     status: "",
     step: "",
@@ -114,7 +117,7 @@ export default function BoardNew() {
     setErrors({});
     
     // TODO: API 호출로 데이터 저장
-    // console.log({ ...formData, files, links });
+    // console.log({ ...formData, files, links, parentPostId: replyInfo?.parentPostId ?? null });
     toast({
       title: "게시글 작성 완료",
       description: "게시글이 성공적으로 작성되었습니다.",
@@ -135,7 +138,7 @@ export default function BoardNew() {
 
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-4xl">
+      <div className="space-y-6 max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button
@@ -145,14 +148,19 @@ export default function BoardNew() {
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight">게시글 작성</h1>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">{isReply ? "답글 작성" : "게시글 작성"}</h1>
+            {isReply && (
+              <p className="text-sm text-muted-foreground">원본 글: {replyInfo?.parentTitle}</p>
+            )}
+          </div>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
-              <CardTitle>새 게시글</CardTitle>
+              <CardTitle>{isReply ? "답글 입력" : "새 게시글"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Status */}
