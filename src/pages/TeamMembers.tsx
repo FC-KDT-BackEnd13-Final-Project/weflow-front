@@ -53,9 +53,8 @@ export default function TeamMembers() {
 
   const extractErrorMessage = (err: unknown, fallback: string) => {
     if (axios.isAxiosError(err)) {
-      const resp = err.response?.data as { message?: string; code?: string } | undefined;
-      const combined = [resp?.code, resp?.message].filter(Boolean).join(" | ");
-      if (combined.trim()) return combined;
+      const resp = err.response?.data as { message?: string } | undefined;
+      if (resp?.message) return resp.message;
     }
     return fallback;
   };
@@ -148,10 +147,10 @@ export default function TeamMembers() {
     try {
       setRemoving(true);
 
-      await removeProjectMember(projectId, selectedMember.userId);
+      await removeProjectMember(projectId, selectedMember.projectMemberId);
 
       setMembers((prev) =>
-        prev.filter((m) => m.userId !== selectedMember.userId)
+        prev.filter((m) => m.projectMemberId !== selectedMember.projectMemberId)
       );
 
       toast({ title: "멤버가 제거되었습니다." });
