@@ -51,10 +51,10 @@ export function Topbar() {
           </div>
           <div>
             <p className="text-lg font-semibold tracking-tight">
-              {user?.companyName ?? "weflow workspace"}
+              {isLoading ? "정보 불러오는 중..." : `${user?.name ?? "이용자"}님`}
             </p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {isLoading ? "정보 불러오는 중..." : `${user?.name ?? "이용자"}님`}
+              {user?.companyName ?? "weflow workspace"}
             </p>
           </div>
         </div>
