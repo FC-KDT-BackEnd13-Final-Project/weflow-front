@@ -45,6 +45,7 @@ interface ChecklistDetailResponse {
   stepName?: string;
   stepId?: number;
   questionCount?: number;
+  createdById?: number;
 }
 
 export default function ChecklistDetail() {
@@ -60,6 +61,8 @@ export default function ChecklistDetail() {
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [canManageChecklist, setCanManageChecklist] = useState(false);
+  const [canSubmitChecklist, setCanSubmitChecklist] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   // 1) API로 상세 조회
   useEffect(() => {
@@ -110,6 +113,7 @@ export default function ChecklistDetail() {
           stepName: d.stepName,
           stepId: d.stepId,
           questionCount: d.questionCount,
+          createdById: d.createdById,
         });
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -130,9 +134,13 @@ export default function ChecklistDetail() {
       try {
         const response = await api.get("/api/users/me", { signal: controller.signal });
         const role = response.data?.data?.role;
+        const userId = response.data?.data?.id;
+        setCurrentUserId(typeof userId === "number" ? userId : null);
         setCanManageChecklist(role === "AGENCY");
+        setCanSubmitChecklist(role === "CLIENT");
       } catch {
         setCanManageChecklist(false);
+        setCanSubmitChecklist(false);
       }
     };
     fetchMe();
@@ -164,7 +172,7 @@ export default function ChecklistDetail() {
 
   // 3) SINGLE 선택
   const handleSingleOptionChange = (questionId: number, value: string) => {
-    if (detail?.locked) return;
+    if (detail?.locked || !canSubmitChecklist) return;
 
     const numeric = Number(value);
 
@@ -187,7 +195,7 @@ export default function ChecklistDetail() {
 
   // 4) MULTI 선택 처리
   const handleMultiOptionToggle = (questionId: number, optionId: number, checked: boolean) => {
-    if (detail?.locked) return;
+    if (detail?.locked || !canSubmitChecklist) return;
 
     setSelectedAnswers((prev) => {
       const current = Array.isArray(prev[questionId]) ? (prev[questionId] as number[]) : [];
@@ -212,7 +220,7 @@ export default function ChecklistDetail() {
 
   // 5) INPUT 변경
   const handleCustomInputChange = (questionId: number, value: string) => {
-    if (detail?.locked) return;
+    if (detail?.locked || !canSubmitChecklist) return;
 
     setCustomInputs((prev) => ({
       ...prev,
@@ -261,7 +269,7 @@ export default function ChecklistDetail() {
   };
 
   const handleSubmitAnswers = async () => {
-    if (!detail || detail.locked || isSubmitting) return;
+    if (!detail || detail.locked || isSubmitting || !canSubmitChecklist) return;
     const answers = buildAnswerPayload();
     if (answers.length === 0) {
       toast({
@@ -331,7 +339,7 @@ export default function ChecklistDetail() {
             <ArrowLeft className="h-4 w-4" />
             목록으로
           </Button>
-          {canManageChecklist && (
+          {canManageChecklist && detail.createdById === currentUserId && (
             <div className="flex gap-2">
               {!detail.locked && (
                 <>
@@ -428,7 +436,7 @@ export default function ChecklistDetail() {
                                 <RadioGroupItem
                                   value={String(opt.id)}
                                   id={`${q.id}-${opt.id}`}
-                                  disabled={detail.locked}
+                                  disabled={detail.locked || !canSubmitChecklist}
                                 />
                                 <Label
                                   htmlFor={`${q.id}-${opt.id}`}
@@ -445,7 +453,7 @@ export default function ChecklistDetail() {
                                   value={customInputs[q.id] ?? ""}
                                   placeholder="내용을 입력해주세요"
                                   onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
-                                  readOnly={detail.locked}
+                                  readOnly={detail.locked || !canSubmitChecklist}
                                 />
                               )}
                             </div>
@@ -470,7 +478,7 @@ export default function ChecklistDetail() {
                                   onCheckedChange={(checked) =>
                                     handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
                                   }
-                                  disabled={detail.locked}
+                                  disabled={detail.locked || !canSubmitChecklist}
                                 />
                                   <Label
                                     htmlFor={`${q.id}-${opt.id}`}
@@ -484,7 +492,7 @@ export default function ChecklistDetail() {
                                     value={customInputs[q.id] ?? ""}
                                     placeholder="내용을 입력해주세요"
                                     onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
-                                    readOnly={detail.locked}
+                                    readOnly={detail.locked || !canSubmitChecklist}
                                   />
                                 )}
                               </div>
@@ -499,7 +507,7 @@ export default function ChecklistDetail() {
                           value={customInputs[q.id] ?? ""}
                           onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
                           className="mt-3"
-                          readOnly={detail.locked}
+                          readOnly={detail.locked || !canSubmitChecklist}
                         />
                       )}
 
@@ -518,14 +526,21 @@ export default function ChecklistDetail() {
 
         {!detail.locked && (
           <div className="flex justify-end">
-            <Button
-              size="lg"
-              className="px-8"
-              disabled={isSubmitting}
-              onClick={handleSubmitAnswers}
-            >
-              {isSubmitting ? "제출 중..." : "제출하기"}
-            </Button>
+            <div className="flex flex-col items-end gap-2">
+              {!canSubmitChecklist && (
+                <p className="text-xs text-muted-foreground">
+                  고객사만 답변을 작성하고 제출할 수 있습니다.
+                </p>
+              )}
+              <Button
+                size="lg"
+                className="px-8"
+                disabled={isSubmitting || !canSubmitChecklist}
+                onClick={handleSubmitAnswers}
+              >
+                {isSubmitting ? "제출 중..." : "제출하기"}
+              </Button>
+            </div>
           </div>
         )}
       </div>
