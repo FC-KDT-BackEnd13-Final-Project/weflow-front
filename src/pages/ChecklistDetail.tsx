@@ -11,8 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import api from "@/apis/api";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { checklistsApi } from "@/apis/checklists";
 
 type ChecklistQuestionType = "SINGLE" | "MULTI" | "TEXT";
 
@@ -60,9 +61,7 @@ export default function ChecklistDetail() {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | number[] | undefined>>({});
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [canManageChecklist, setCanManageChecklist] = useState(false);
-  const [canSubmitChecklist, setCanSubmitChecklist] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const { user } = useCurrentUser();
 
   // 1) API로 상세 조회
   useEffect(() => {
@@ -75,9 +74,7 @@ export default function ChecklistDetail() {
         setIsLoading(true);
         setFetchError(null);
 
-        const response = await api.get(`/api/checklists/${checklistId}`, {
-          signal: controller.signal,
-        });
+        const response = await checklistsApi.getDetail(checklistId);
 
         const d = response.data?.data;
         if (!d) throw new Error("잘못된 응답입니다.");
@@ -128,25 +125,6 @@ export default function ChecklistDetail() {
     return () => controller.abort();
   }, [checklistId]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const fetchMe = async () => {
-      try {
-        const response = await api.get("/api/users/me", { signal: controller.signal });
-        const role = response.data?.data?.role;
-        const userId = response.data?.data?.id;
-        setCurrentUserId(typeof userId === "number" ? userId : null);
-        setCanManageChecklist(role === "AGENCY");
-        setCanSubmitChecklist(role === "CLIENT");
-      } catch {
-        setCanManageChecklist(false);
-        setCanSubmitChecklist(false);
-      }
-    };
-    fetchMe();
-    return () => controller.abort();
-  }, []);
-
   // 2) detail 업데이트되면 답변 초기화 (1회)
   useEffect(() => {
     if (!detail) return;
@@ -169,6 +147,10 @@ export default function ChecklistDetail() {
     setSelectedAnswers(nextSel);
     setCustomInputs(nextInput);
   }, [detail]);
+
+  const canSubmitChecklist = user?.role === "CLIENT";
+  const canManageChecklist = user?.role === "AGENCY";
+  const canEditCurrentChecklist = Boolean(detail && canManageChecklist && user?.id === detail.createdById);
 
   // 3) SINGLE 선택
   const handleSingleOptionChange = (questionId: number, value: string) => {
@@ -281,7 +263,7 @@ export default function ChecklistDetail() {
 
     try {
       setIsSubmitting(true);
-      await api.post(`/api/checklists/answers`, {
+      await checklistsApi.submitAnswers({
         checklistId: detail.checklistId,
         answers,
       });
@@ -339,7 +321,7 @@ export default function ChecklistDetail() {
             <ArrowLeft className="h-4 w-4" />
             목록으로
           </Button>
-          {canManageChecklist && detail.createdById === currentUserId && (
+          {canEditCurrentChecklist && (
             <div className="flex gap-2">
               {!detail.locked && (
                 <>
@@ -360,7 +342,7 @@ export default function ChecklistDetail() {
                     onClick={async () => {
                       if (!window.confirm("이 체크리스트를 삭제하시겠습니까?")) return;
                       try {
-                        await api.delete(`/api/checklists/${detail.checklistId}`);
+                        await checklistsApi.deleteChecklist(detail.checklistId);
                         toast({
                           title: "체크리스트가 삭제되었습니다.",
                         });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,39 +12,54 @@ import {
 } from "@/components/ui/select";
 import { Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { adminApi } from "@/apis/admin";
+import { useToast } from "@/hooks/use-toast";
 
 const Companies = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState("전체");
   const [searchQuery, setSearchQuery] = useState("");
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const companies = [
-    {
-      name: "4소핑몰",
-      ceo: "김대표",
-      email: "daepyo@shop.com",
-      status: "활성",
-    },
-    {
-      name: "B전자",
-      ceo: "최대표",
-      email: "daepyo@shop.com",
-      status: "완료",
-    },
-    {
-      name: "C전자",
-      ceo: "이대표",
-      email: "daepyo@shop.com",
-      status: "활성",
-    },
-  ];
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await adminApi.getCompanies();
+        if (response.success) {
+          setCompanies(response.data.content);
+        }
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "회사 목록 조회 실패",
+          description: error.response?.data?.message || "회사 목록을 불러올 수 없습니다.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCompanies();
+  }, [toast]);
 
   const getStatusBadge = (status: string) => {
-    if (status === "활성") {
-      return <Badge className="bg-pink-100 text-pink-700 hover:bg-pink-100">{status}</Badge>;
+    if (status === "ACTIVE") {
+      return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">활성</Badge>;
     }
-    return <Badge variant="secondary" className="bg-green-100 text-green-700">{status}</Badge>;
+    return <Badge variant="secondary" className="bg-gray-100 text-gray-700">비활성</Badge>;
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -107,18 +122,24 @@ const Companies = () => {
               <div>활성 상태</div>
             </div>
             <div className="divide-y">
-              {companies.map((company, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-4 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/admin/companies/${index + 1}/edit`)}
-                >
-                  <div className="font-medium">{company.name}</div>
-                  <div className="text-muted-foreground">{company.ceo}</div>
-                  <div className="text-muted-foreground">{company.email}</div>
-                  <div>{getStatusBadge(company.status)}</div>
+              {companies.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  회사가 없습니다.
                 </div>
-              ))}
+              ) : (
+                companies.map((company) => (
+                  <div
+                    key={company.id}
+                    className="grid grid-cols-4 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/admin/companies/${company.id}/edit`)}
+                  >
+                    <div className="font-medium">{company.name}</div>
+                    <div className="text-muted-foreground">{company.representative || "-"}</div>
+                    <div className="text-muted-foreground">{company.email || "-"}</div>
+                    <div>{getStatusBadge(company.status)}</div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </CardContent>

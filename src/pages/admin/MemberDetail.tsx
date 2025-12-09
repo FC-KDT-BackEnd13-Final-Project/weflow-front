@@ -33,8 +33,8 @@ const AdminMemberDetail = () => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
-  const member = location.state?.member;
+  const [isLoading, setIsLoading] = useState(true);
+  const [companies, setCompanies] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -42,28 +42,60 @@ const AdminMemberDetail = () => {
     role: "",
     status: "",
     companyId: "",
-    companyName: "",
   });
 
   useEffect(() => {
-    if (!member) {
-      toast({
-        variant: "destructive",
-        title: "잘못된 접근",
-        description: "회원 목록에서 회원을 선택해주세요.",
-      });
-      navigate("/admin/members");
-    } else {
-      setFormData({
-        name: member.name || "",
-        email: member.email || "",
-        role: member.role || "",
-        status: member.status || "",
-        companyId: member.companyId?.toString() || "",
-        companyName: member.companyName || "",
-      });
-    }
-  }, [toast, navigate]);
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        // 1. 회사 목록 조회
+        const companiesResponse = await adminApi.getCompanies();
+        if (companiesResponse.success) {
+          setCompanies(companiesResponse.data.content);
+        }
+
+        // 2. 회원 정보 설정 (state가 있으면 사용, 없으면 API 조회)
+        if (location.state?.member) {
+          const member = location.state.member;
+          setFormData({
+            name: member.name || "",
+            email: member.email || "",
+            role: member.role || "",
+            status: member.status || "",
+            companyId: member.companyId?.toString() || "",
+          });
+        } else if (id) {
+          try {
+            const userResponse = await adminApi.getUserById(Number(id));
+            if (userResponse.success) {
+              const member = userResponse.data;
+              setFormData({
+                name: member.name || "",
+                email: member.email || "",
+                role: member.role || "",
+                status: member.status || "",
+                companyId: member.companyId?.toString() || "",
+              });
+            }
+          } catch (error) {
+            console.error("회원 상세 조회 실패:", error);
+            toast({
+              variant: "destructive",
+              title: "회원 조회 실패",
+              description: "회원 정보를 불러올 수 없습니다.",
+            });
+            navigate("/admin/members");
+          }
+        }
+      } catch (error) {
+        console.error("데이터 로딩 실패:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [id, location.state, navigate, toast]);
 
   const handleDelete = async () => {
     if (!id) return;
@@ -138,12 +170,10 @@ const AdminMemberDetail = () => {
     }
   };
 
-  if (!member) {
+  if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">잘못된 접근입니다. 회원 목록으로 이동합니다...</p>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">로딩 중...</p>
       </div>
     );
   }
@@ -200,9 +230,11 @@ const AdminMemberDetail = () => {
                   <SelectValue placeholder="회사 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">비엔시스템</SelectItem>
-                  <SelectItem value="2">고객사A</SelectItem>
-                  <SelectItem value="3">고객사B</SelectItem>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id.toString()}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

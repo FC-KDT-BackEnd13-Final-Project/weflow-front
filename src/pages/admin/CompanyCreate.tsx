@@ -12,9 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
+import { adminApi } from "@/apis/admin";
+import { useToast } from "@/hooks/use-toast";
 
 const CompanyCreate = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     name: "",
     representative: "",
@@ -22,13 +25,27 @@ const CompanyCreate = () => {
     address: "",
     businessNumber: "",
     memo: "",
+    status: "ACTIVE",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: 회사 등록 로직
-    console.log("회사 등록:", formData);
-    navigate("/admin/companies");
+    try {
+      const response = await adminApi.createCompany(formData);
+      if (response.success) {
+        toast({
+          title: "회사 생성 성공",
+          description: "회사가 성공적으로 생성되었습니다.",
+        });
+        navigate("/admin/companies");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "회사 생성 실패",
+        description: error.response?.data?.message || "회사 생성 중 오류가 발생했습니다.",
+      });
+    }
   };
 
   return (
