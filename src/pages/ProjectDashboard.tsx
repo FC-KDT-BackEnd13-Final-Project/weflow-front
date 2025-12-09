@@ -189,7 +189,7 @@ export default function ProjectDashboard() {
                 <p className="text-sm text-slate-600 mt-1">{projectInfo.plan}</p>
               </div>
               <Badge className="bg-sky-100 text-sky-700 text-xs px-3 py-1 rounded-full">
-                현재 단계 · {projectInfo.currentStage || "-"}
+                현재 단계 · {projectInfo.currentStage || "종료"}
               </Badge>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
@@ -220,7 +220,7 @@ export default function ProjectDashboard() {
                 <CheckCircle2 className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs text-slate-500">다음 승인 대상</p>
-                  <p className="font-medium">{projectInfo.nextApproval || "-"}</p>
+                  <p className="font-medium">{projectInfo.nextApproval || "없음"}</p>
                 </div>
               </div>
             </div>
@@ -270,7 +270,7 @@ export default function ProjectDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {projectInfo.daysLeft ? `${projectInfo.daysLeft}일` : "-"}
+                {projectInfo.daysLeft ? `${projectInfo.daysLeft}일` : "0일"}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {projectInfo.dueDate ? `${projectInfo.dueDate} 마감` : "마감일 미정"}

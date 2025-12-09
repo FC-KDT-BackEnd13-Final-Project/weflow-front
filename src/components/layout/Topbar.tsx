@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { Button } from "@/components/ui/button";
 import api from "@/apis/api";
 import { User, Bell } from "lucide-react";
-import { useEffect, useState } from "react";
 import { notificationsApi } from "@/apis/notifications";
 
 interface CurrentUser {
@@ -16,14 +14,19 @@ export function Topbar() {
   const navigate = useNavigate();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0); // 🔧: 위치 수정
 
+  // ----------- 사용자 정보 조회 -----------
   useEffect(() => {
     const controller = new AbortController();
 
     const fetchProfile = async () => {
       try {
         setIsLoading(true);
-        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const response = await api.get("/api/users/me", {
+          signal: controller.signal,
+        });
+
         const data = response.data?.data;
         if (data) {
           setUser({
@@ -31,8 +34,8 @@ export function Topbar() {
             companyName: data.companyName ?? undefined,
           });
         }
-      } catch {
-        // keep fallback user state
+      } catch (err) {
+        console.error("❌ 사용자 정보 조회 실패:", err);
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -42,15 +45,14 @@ export function Topbar() {
 
     fetchProfile();
     return () => controller.abort();
-  const [unreadCount, setUnreadCount] = useState(0);
+  }, []); // <-- 🔧 여기가 빠져 있었음!
 
+  // ----------- 읽지 않은 알림 개수 조회 -----------
   useEffect(() => {
     const fetchUnreadCount = async () => {
       try {
         const response = await notificationsApi.getUnreadCount();
-        console.log("🔔 읽지 않은 알림 API 응답:", response);
         if (response.success) {
-          console.log("🔔 읽지 않은 알림 개수:", response.data);
           setUnreadCount(response.data);
         }
       } catch (error) {
@@ -59,7 +61,6 @@ export function Topbar() {
     };
 
     fetchUnreadCount();
-
     const interval = setInterval(fetchUnreadCount, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -73,6 +74,7 @@ export function Topbar() {
   return (
     <header className="rounded-2xl border bg-white/80 px-6 py-4 shadow-sm backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-4">
+        {/* 좌측 사용자 정보 */}
         <div className="flex items-center gap-4">
           <div className="h-12 w-12 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center shadow-inner">
             <User className="h-5 w-5" />
@@ -86,6 +88,8 @@ export function Topbar() {
             </p>
           </div>
         </div>
+
+        {/* 우측 버튼들 */}
         <div className="flex items-center gap-4 text-sm">
           <Button
             variant="ghost"
@@ -100,6 +104,7 @@ export function Topbar() {
               </span>
             )}
           </Button>
+
           <Button variant="outline" onClick={handleLogout}>
             로그아웃
           </Button>
