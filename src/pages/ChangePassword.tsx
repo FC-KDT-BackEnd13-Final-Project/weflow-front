@@ -51,6 +51,17 @@ export default function ChangePassword() {
       return;
     }
 
+    // 비밀번호 형식 검증 (백엔드 정책과 동일)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}$/;
+    if (!passwordRegex.test(formData.newPassword)) {
+      toast({
+        variant: "destructive",
+        title: "비밀번호 형식 오류",
+        description: "비밀번호는 8자 이상, 영문+숫자 조합이어야 합니다. (특수문자 사용 불가)",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -95,6 +106,15 @@ export default function ChangePassword() {
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit}>
+              <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">비밀번호 규칙</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                  <li>8자 이상</li>
+                  <li>영문 포함 필수</li>
+                  <li>숫자 포함 필수</li>
+                  <li>특수문자 사용 불가</li>
+                </ul>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">현재 비밀번호</Label>
                 <Input
@@ -113,7 +133,7 @@ export default function ChangePassword() {
                   type="password"
                   value={formData.newPassword}
                   onChange={handleChange("newPassword")}
-                  placeholder="새 비밀번호"
+                  placeholder="영문+숫자 조합, 8자 이상"
                   required
                 />
               </div>

@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import api from "@/apis/api";
+import { checklistsApi } from "@/apis/checklists";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 type ChecklistCategory = string;
 type StatusFilter = "전체" | "완료" | "대기";
@@ -40,7 +41,7 @@ export default function Checklist() {
   const [stepError, setStepError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { id } = useParams();
-  const [canCreateChecklist, setCanCreateChecklist] = useState(false);
+  const { user } = useCurrentUser();
 
   useEffect(() => {
     if (!id) return;
@@ -49,10 +50,7 @@ export default function Checklist() {
       try {
         setIsLoading(true);
         setFetchError(null);
-        const response = await api.get("/api/checklists", {
-          params: { projectId: id },
-          signal: controller.signal,
-        });
+        const response = await checklistsApi.getList(id!, { signal: controller.signal });
         const responseData = response.data?.data;
         if (Array.isArray(responseData)) {
           const mapped = responseData.map((item: any) => ({
@@ -86,7 +84,7 @@ export default function Checklist() {
       try {
         setIsStepLoading(true);
         setStepError(null);
-        const response = await api.get(`/api/projects/${id}/steps`, { signal: controller.signal });
+        const response = await checklistsApi.fetchProjectSteps(id!, { signal: controller.signal });
         const stepData = response.data?.data?.steps ?? response.data?.data;
         if (Array.isArray(stepData)) {
           const sorted = [...stepData].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
@@ -106,20 +104,7 @@ export default function Checklist() {
     return () => controller.abort();
   }, [id]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const fetchMe = async () => {
-      try {
-        const response = await api.get("/api/users/me", { signal: controller.signal });
-        const role = response.data?.data?.role;
-        setCanCreateChecklist(role === "AGENCY");
-      } catch {
-        setCanCreateChecklist(false);
-      }
-    };
-    fetchMe();
-    return () => controller.abort();
-  }, []);
+  const canCreateChecklist = user?.role === "AGENCY";
 
   const stepNames = steps.map((step) => step.title);
   const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];

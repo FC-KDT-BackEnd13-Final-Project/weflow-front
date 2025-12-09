@@ -45,9 +45,20 @@ interface MarkAsReadResponse {
   data: null;
 }
 
+interface NotificationDetailResponse {
+  success: boolean;
+  message: string;
+  data: Notification;
+}
+
 export const notificationsApi = {
   getNotifications: async (): Promise<NotificationsResponse> => {
     const response = await api.get<NotificationsResponse>("/api/notifications");
+    return response.data;
+  },
+
+  getNotification: async (notificationId: number): Promise<NotificationDetailResponse> => {
+    const response = await api.get<NotificationDetailResponse>(`/api/notifications/${notificationId}`);
     return response.data;
   },
 
@@ -58,6 +69,21 @@ export const notificationsApi = {
 
   markAsRead: async (notificationId: number): Promise<MarkAsReadResponse> => {
     const response = await api.patch<MarkAsReadResponse>(`/api/notifications/${notificationId}/read`);
+    return response.data;
+  },
+
+  markAsUnread: async (notificationId: number): Promise<MarkAsReadResponse> => {
+    const response = await api.patch<MarkAsReadResponse>(`/api/notifications/${notificationId}/unread`);
+    return response.data;
+  },
+
+  markAllAsRead: async (): Promise<MarkAsReadResponse> => {
+    const response = await api.patch<MarkAsReadResponse>("/api/notifications/read-all");
+    return response.data;
+  },
+
+  deleteNotification: async (notificationId: number): Promise<MarkAsReadResponse> => {
+    const response = await api.delete<MarkAsReadResponse>(`/api/notifications/${notificationId}`);
     return response.data;
   },
 };

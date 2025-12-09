@@ -39,6 +39,7 @@ export default function AdminLayout() {
   }, []);
 
   const handleLogout = () => {
+    localStorage.removeItem("accessToken");
     navigate("/login");
   };
 

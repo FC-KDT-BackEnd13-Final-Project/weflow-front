@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,15 +21,39 @@ const AdminMemberCreate = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [formData, setFormData] = useState({
     name: "",
     phoneNumber: "",
     email: "",
-    password: "company1234@",
+    password: "company1234",
     role: "AGENCY",
     companyId: "",
   });
+
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await adminApi.getCompanies();
+        if (response.success) {
+          setCompanies(response.data.content);
+        }
+      } catch (error) {
+        console.error("회사 목록 로딩 실패:", error);
+        toast({
+          variant: "destructive",
+          title: "회사 목록 로딩 실패",
+          description: "회사 목록을 불러오는 중 오류가 발생했습니다.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCompanies();
+  }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +96,14 @@ const AdminMemberCreate = () => {
       setIsSubmitting(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">로딩 중...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -155,9 +187,11 @@ const AdminMemberCreate = () => {
                       <SelectValue placeholder="회사 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1">비엔시스템</SelectItem>
-                      <SelectItem value="2">고객사A</SelectItem>
-                      <SelectItem value="3">고객사B</SelectItem>
+                      {companies.map((company) => (
+                        <SelectItem key={company.id} value={company.id.toString()}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

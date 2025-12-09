@@ -80,6 +80,85 @@ interface DeleteUserResponse {
   data: null;
 }
 
+interface Company {
+  id: number;
+  name: string;
+  businessNumber: string | null;
+  representative: string | null;
+  email: string | null;
+  address: string | null;
+  memo: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CompaniesResponse {
+  success: boolean;
+  message: string;
+  data: {
+    content: Company[];
+    pageable: {
+      pageNumber: number;
+      pageSize: number;
+    };
+    totalElements: number;
+    totalPages: number;
+  };
+}
+
+interface CreateCompanyRequest {
+  name: string;
+  businessNumber: string;
+  representative: string;
+  email: string;
+  address: string;
+  memo: string;
+  status: string;
+}
+
+interface CreateCompanyResponse {
+  success: boolean;
+  message: string;
+  data: {
+    id: number;
+    name: string;
+  };
+}
+
+interface CompanyDetailResponse {
+  success: boolean;
+  message: string;
+  data: Company;
+}
+
+interface UpdateCompanyRequest {
+  name?: string;
+  businessNumber?: string;
+  representative?: string;
+  email?: string;
+  address?: string;
+  memo?: string;
+  status?: string;
+}
+
+interface UpdateCompanyResponse {
+  success: boolean;
+  message: string;
+  data: {
+    id: number;
+    name: string;
+    representative: string;
+    status: string;
+  };
+}
+
+interface DeleteCompanyResponse {
+  success: boolean;
+  message: string;
+  data: null;
+}
+
 export const adminApi = {
   getUsers: async (page: number = 0, size: number = 10): Promise<UsersResponse> => {
     const response = await api.get<UsersResponse>("/api/admin/users", {
@@ -105,6 +184,31 @@ export const adminApi = {
 
   deleteUser: async (userId: number): Promise<DeleteUserResponse> => {
     const response = await api.delete<DeleteUserResponse>(`/api/admin/users/${userId}`);
+    return response.data;
+  },
+
+  getCompanies: async (): Promise<CompaniesResponse> => {
+    const response = await api.get<CompaniesResponse>("/api/admin/companies");
+    return response.data;
+  },
+
+  createCompany: async (data: CreateCompanyRequest): Promise<CreateCompanyResponse> => {
+    const response = await api.post<CreateCompanyResponse>("/api/admin/companies", data);
+    return response.data;
+  },
+
+  getCompanyById: async (companyId: number): Promise<CompanyDetailResponse> => {
+    const response = await api.get<CompanyDetailResponse>(`/api/admin/companies/${companyId}`);
+    return response.data;
+  },
+
+  updateCompany: async (companyId: number, data: UpdateCompanyRequest): Promise<UpdateCompanyResponse> => {
+    const response = await api.patch<UpdateCompanyResponse>(`/api/admin/companies/${companyId}`, data);
+    return response.data;
+  },
+
+  deleteCompany: async (companyId: number): Promise<DeleteCompanyResponse> => {
+    const response = await api.delete<DeleteCompanyResponse>(`/api/admin/companies/${companyId}`);
     return response.data;
   },
 };

@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2, GripVertical } from "lucide-react";
-import api from "@/apis/api";
+import { checklistsApi } from "@/apis/checklists";
 import { useToast } from "@/hooks/use-toast";
 
 type QuestionType = "객관식" | "복수선택" | "주관식";
@@ -191,9 +191,7 @@ export default function ChecklistCreate() {
       try {
         setIsStageLoading(true);
         setStageError(null);
-        const response = await api.get(`api/projects/${id}/steps`, {
-          signal: controller.signal,
-        });
+        const response = await checklistsApi.fetchProjectSteps(id!, { signal: controller.signal });
         const data = response.data?.data?.steps ?? response.data?.data;
         if (!Array.isArray(data)) throw new Error("단계 정보가 없습니다.");
         const mapped: Stage[] = data.map((step: any) => ({
@@ -226,7 +224,7 @@ export default function ChecklistCreate() {
     const fetchOriginal = async () => {
       try {
         setIsInitialLoading(true);
-        const response = await api.get(`/api/checklists/${checklistState.checklistId}`, {
+        const response = await checklistsApi.getDetail(checklistState.checklistId, {
           signal: controller.signal,
         });
         const detail = response.data?.data;
@@ -456,7 +454,7 @@ export default function ChecklistCreate() {
 
   const handleCreateChecklist = async (basePayload: ChecklistBasePayload) => {
     try {
-      await api.post("/api/checklists", {
+      await checklistsApi.createChecklist({
         ...basePayload,
         questions: buildQuestionPayload(),
       });
@@ -485,7 +483,7 @@ export default function ChecklistCreate() {
         (originalData.stepId ?? null) !== basePayload.stepId;
 
       if (metaChanged) {
-        await api.patch(`/api/checklists/${checklistId}`, {
+        await checklistsApi.updateChecklist(checklistId, {
           checklistId,
           ...basePayload,
         });
@@ -523,7 +521,7 @@ export default function ChecklistCreate() {
 
     for (const original of originalQuestions) {
       if (original.questionId && !currentQuestionIds.has(original.questionId)) {
-        await api.delete(`/api/questions/${original.questionId}`);
+        await checklistsApi.deleteQuestion(original.questionId);
       }
     }
 
@@ -540,16 +538,15 @@ export default function ChecklistCreate() {
     }
 
     if (orderedQuestionIds.length > 0) {
-      await api.patch("/api/questions/reorder", {
+      await checklistsApi.reorderQuestions({
         checklistId,
         orderedIds: orderedQuestionIds,
-        questionIds: orderedQuestionIds,
       });
     }
   };
 
   const createQuestionOnServer = async (checklistId: number, question: Question) => {
-    const response = await api.post("/api/questions", {
+    const response = await checklistsApi.createQuestion({
       checklistId,
       questionText: question.title,
       questionType: questionTypeToApi(question.type),
@@ -575,7 +572,7 @@ export default function ChecklistCreate() {
       original.questionText !== question.title ||
       original.questionType !== serverType
     ) {
-      await api.put(`/api/questions/${questionId}`, {
+      await checklistsApi.updateQuestion(questionId, {
         checklistId,
         questionText: question.title,
         questionType: serverType,
@@ -607,7 +604,7 @@ export default function ChecklistCreate() {
     option: Question["options"][number],
     index: number
   ) => {
-    const response = await api.post("/api/options", {
+    const response = await checklistsApi.createOption({
       questionId,
       optionText: option.text,
       hasInput: questionType === "객관식" ? Boolean(option.hasInput) : false,
@@ -629,7 +626,7 @@ export default function ChecklistCreate() {
     if (questionType === "주관식") {
       for (const option of originalOptions) {
         if (option.optionId) {
-          await api.delete(`/api/options/${option.optionId}`);
+          await checklistsApi.deleteOption(option.optionId);
         }
       }
       return;
@@ -640,7 +637,7 @@ export default function ChecklistCreate() {
     );
     for (const option of originalOptions) {
       if (option.optionId && !existingIds.has(option.optionId)) {
-        await api.delete(`/api/options/${option.optionId}`);
+        await checklistsApi.deleteOption(option.optionId);
       }
     }
 
@@ -654,7 +651,7 @@ export default function ChecklistCreate() {
           originalOption.optionText !== option.text ||
           Boolean(originalOption.hasInput) !== normalizedHasInput
         ) {
-          await api.put(`/api/options/${option.optionId}`, {
+          await checklistsApi.updateOption(option.optionId, {
             questionId,
             optionText: option.text,
             hasInput: normalizedHasInput,
@@ -676,7 +673,7 @@ export default function ChecklistCreate() {
       previousOrder.some((id, idx) => id !== currentOrder[idx]);
 
     if (orderChanged && currentOrder.length > 0) {
-      await api.patch("/api/options/reorder", {
+      await checklistsApi.reorderOptions({
         questionId,
         orderedIds: currentOrder,
       });
