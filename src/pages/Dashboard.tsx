@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Bell, XCircle } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -8,6 +8,103 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import api from "@/apis/api";
 import { useToast } from "@/hooks/use-toast";
+
+declare global {
+  interface Window {
+    Chart?: any;
+  }
+}
+
+const chartJsCdnUrl = "https://cdn.jsdelivr.net/npm/chart.js";
+let chartScriptPromise: Promise<void> | null = null;
+
+const loadChartJs = () => {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.Chart) return Promise.resolve();
+  if (chartScriptPromise) return chartScriptPromise;
+
+  chartScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${chartJsCdnUrl}"]`);
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve());
+      existingScript.addEventListener("error", reject);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = chartJsCdnUrl;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+
+  return chartScriptPromise;
+};
+
+interface SummaryChartProps {
+  labels: string[];
+  values: number[];
+}
+
+function SummaryChart({ labels, values }: SummaryChartProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const chartInstance = useRef<any>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const renderChart = async () => {
+      try {
+        await loadChartJs();
+        if (!isMounted || !canvasRef.current || !window.Chart) return;
+        const Chart = window.Chart;
+
+        if (chartInstance.current) {
+          chartInstance.current.destroy();
+        }
+
+        chartInstance.current = new Chart(canvasRef.current, {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [
+              {
+                data: values,
+                backgroundColor: ["#4C6FFF", "#22C55E", "#F97316"],
+                borderWidth: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: {
+                  usePointStyle: true,
+                },
+              },
+            },
+          },
+        });
+      } catch (error) {
+        console.error("Chart.js 로딩 실패:", error);
+      }
+    };
+
+    renderChart();
+    return () => {
+      isMounted = false;
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+        chartInstance.current = null;
+      }
+    };
+  }, [labels, values]);
+
+  return <canvas ref={canvasRef} className="mx-auto max-w-[280px]" />;
+}
 
 interface DashboardImportantProject {
   projectId: number;
@@ -157,6 +254,17 @@ export default function Dashboard() {
 
   const importantProjects = dashboardData?.importantProjects ?? [];
   const approvals = dashboardData?.upcomingApprovals ?? [];
+  const chartDataset = useMemo(
+    () => ({
+      labels: ["진행 프로젝트", "읽지 않은 알림", "승인 대기"],
+      values: [
+        dashboardData?.inProgressProjectCount ?? 0,
+        dashboardData?.unreadNotificationCount ?? 0,
+        dashboardData?.pendingApprovalCount ?? 0,
+      ],
+    }),
+    [dashboardData]
+  );
   const isNotificationMutating = (id: number) => mutatingNotificationIds.has(id);
 
   const setNotificationMutating = (id: number, active: boolean) => {
@@ -263,26 +371,34 @@ export default function Dashboard() {
     <AppLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">오늘의 현황</p>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-semibold tracking-tight">DashBoard</h1>
           </div>
           <p className="text-muted-foreground text-sm">조직에 속한 프로젝트 전체 현황과 승인, 리소스를 한눈에 확인하세요.</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {stats.map((stat) => (
-            <Card key={stat.label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">{stat.label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-semibold">{stat.value}</div>
-                <p className="text-sm text-muted-foreground mt-1">{stat.description}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <Card>
+          <CardHeader className="flex flex-col gap-1">
+            <CardTitle>업무 현황 요약</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <SummaryChart labels={chartDataset.labels} values={chartDataset.values} />
+            <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
+              <div className="rounded-md border p-3">
+                <p className="text-muted-foreground text-xs">진행 중 프로젝트</p>
+                <p className="text-lg font-semibold">{chartDataset.values[0]}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-muted-foreground text-xs">읽지 않은 알림</p>
+                <p className="text-lg font-semibold">{chartDataset.values[1]}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-muted-foreground text-xs">승인 대기</p>
+                <p className="text-lg font-semibold">{chartDataset.values[2]}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6">
           <Card>
