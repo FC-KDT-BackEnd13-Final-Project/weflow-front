@@ -54,11 +54,8 @@ export default function Settings() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [userResponse, companyResponse] = await Promise.all([
-          authApi.getMe(),
-          companiesApi.getMyCompany(),
-        ]);
-
+        // 1. 사용자 정보 조회 (필수)
+        const userResponse = await authApi.getMe();
         if (userResponse.success) {
           setUserData(userResponse.data);
           const initialProfile = {
@@ -69,16 +66,24 @@ export default function Settings() {
           };
           setProfile(initialProfile);
           setFormData(initialProfile);
-        }
 
-        if (companyResponse.success) {
-          setCompanyData(companyResponse.data);
+          // 2. 회사 정보 조회 (선택 - 실패해도 페이지는 표시)
+          try {
+            const companyResponse = await companiesApi.getMyCompany();
+            if (companyResponse.success) {
+              setCompanyData(companyResponse.data);
+            }
+          } catch (companyError) {
+            console.log("회사 정보가 없거나 조회 실패:", companyError);
+            // 회사 정보 조회 실패는 페이지 렌더링을 막지 않음
+          }
         }
       } catch (error: any) {
+        console.error("사용자 정보 조회 실패:", error);
         toast({
           variant: "destructive",
           title: "정보 조회 실패",
-          description: error.response?.data?.message || "정보를 불러올 수 없습니다.",
+          description: error.response?.data?.message || "사용자 정보를 불러올 수 없습니다.",
         });
       } finally {
         setIsLoading(false);
