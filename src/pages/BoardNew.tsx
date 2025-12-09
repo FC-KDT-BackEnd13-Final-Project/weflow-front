@@ -67,6 +67,7 @@ export default function BoardNew() {
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 프로젝트의 실제 step 목록 가져오기
   useEffect(() => {
@@ -189,6 +190,9 @@ export default function BoardNew() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // 중복 제출 방지
+    if (isSubmitting) return;
+
     const result = postSchema.safeParse(formData);
 
     if (!result.success) {
@@ -205,6 +209,7 @@ export default function BoardNew() {
     setErrors({});
 
     // 백엔드 API 호출
+    setIsSubmitting(true);
     try {
       // status 매핑
       const statusMap: Record<string, ProjectStatus> = {
@@ -300,6 +305,8 @@ export default function BoardNew() {
         description: `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -617,14 +624,17 @@ export default function BoardNew() {
 
               {/* Actions */}
               <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1">
-                  {isEditMode ? "게시글 수정" : "게시글 작성"}
+                <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? `${isEditMode ? '수정' : '작성'} 중...`
+                    : isEditMode ? "게시글 수정" : "게시글 작성"}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleCancel}
                   className="flex-1"
+                  disabled={isSubmitting}
                 >
                   취소
                 </Button>
