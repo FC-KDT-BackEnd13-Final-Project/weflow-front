@@ -8,9 +8,10 @@ export enum PostApprovalStatus {
 }
 
 export enum ProjectStatus {
+  CONTRACT = "CONTRACT",
   IN_PROGRESS = "IN_PROGRESS",
-  COMPLETED = "COMPLETED",
-  ON_HOLD = "ON_HOLD",
+  DELIVERY = "DELIVERY",
+  MAINTENANCE = "MAINTENANCE",
 }
 
 // ===== Response Types =====

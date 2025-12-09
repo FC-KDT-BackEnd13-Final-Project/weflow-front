@@ -19,8 +19,10 @@ import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { createPost, updatePost, getPost } from "@/apis/postApi";
 import { ProjectStatus } from "@/types/post";
+import type { FileRequest } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
+import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
 
 const status = ["계약", "진행", "납품", "유지보수"];
 
@@ -186,12 +188,12 @@ export default function BoardNew() {
 
     // 백엔드 API 호출
     try {
-      // status 매핑 (임시)
+      // status 매핑
       const statusMap: Record<string, ProjectStatus> = {
-        "계약": ProjectStatus.IN_PROGRESS,
+        "계약": ProjectStatus.CONTRACT,
         "진행": ProjectStatus.IN_PROGRESS,
-        "납품": ProjectStatus.COMPLETED,
-        "유지보수": ProjectStatus.ON_HOLD,
+        "납품": ProjectStatus.DELIVERY,
+        "유지보수": ProjectStatus.MAINTENANCE,
       };
 
       // formData.step은 이제 실제 stepId(문자열)
@@ -206,6 +208,33 @@ export default function BoardNew() {
         return;
       }
 
+      // 파일 업로드
+      const uploadedFiles: FileRequest[] = [];
+      for (const file of files) {
+        try {
+          // 1. Presigned URL 요청
+          const key = `post/${Date.now()}_${file.name}`;
+          const presignedUrlResponse = await getPresignedUrl({
+            key,
+            contentType: file.type,
+          });
+
+          // 2. S3에 파일 업로드
+          await uploadFileToS3(presignedUrlResponse.url, file);
+
+          // 3. 파일 정보 저장
+          uploadedFiles.push({
+            fileName: file.name,
+            fileSize: file.size,
+            filePath: presignedUrlResponse.key,
+            contentType: file.type,
+          });
+        } catch (error) {
+          console.error(`파일 업로드 실패 (${file.name}):`, error);
+          throw error;
+        }
+      }
+
       if (isEditMode && postId) {
         // 수정 모드
         await updatePost(Number(id), Number(postId), {
@@ -214,7 +243,7 @@ export default function BoardNew() {
           stepId: stepId,
           projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
           links: links.map(url => ({ url })),
-          // 파일 업로드는 별도 구현 필요
+          files: uploadedFiles,
         });
 
         toast({
@@ -233,7 +262,7 @@ export default function BoardNew() {
           projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
           parentPostId: replyInfo?.parentPostId,
           links: links.map(url => ({ url })),
-          // 파일 업로드는 별도 구현 필요
+          files: uploadedFiles,
         });
 
         toast({

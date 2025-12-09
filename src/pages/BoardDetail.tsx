@@ -24,6 +24,7 @@ import {
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
 import { getPost, deletePost } from "@/apis/postApi";
+import { getDownloadUrl } from "@/apis/attachmentApi";
 
 type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
 
@@ -590,6 +591,20 @@ export default function BoardDetail() {
     }
   };
 
+  const handleDownload = async (fileId: number) => {
+    try {
+      const downloadUrl = await getDownloadUrl(fileId);
+      window.open(downloadUrl, '_blank');
+    } catch (error) {
+      console.error("파일 다운로드 실패:", error);
+      toast({
+        title: "파일 다운로드 실패",
+        description: "파일 다운로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto">
@@ -685,16 +700,14 @@ export default function BoardDetail() {
                             <p className="text-xs text-muted-foreground">{formatFileSize(file.fileSize)}</p>
                           </div>
                         </div>
-                        <Button asChild variant="ghost" size="icon">
-                          <a
-                            href={file.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`${file.fileName} 다운로드`}
-                          >
-                            <Download className="h-4 w-4" />
-                            <span className="sr-only">다운로드</span>
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownload(file.fileId)}
+                          aria-label={`${file.fileName} 다운로드`}
+                        >
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only">다운로드</span>
                         </Button>
                       </div>
                     ))}
