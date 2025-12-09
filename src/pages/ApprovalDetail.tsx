@@ -281,17 +281,17 @@ export default function ApprovalDetail() {
     const pad = (num: number) => String(num).padStart(2, "0");
     return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   };
+  const role = (me?.role || "").toUpperCase();
   const isRequester = Boolean(me?.id && approval.requestedBy === me.id);
-  // TODO: 회원 연동 후 관리자 fallback 제거
-  const isSystemAdmin = true;
-  const isClient = me?.role === "CLIENT";
-  const isAgency = me?.role === "AGENCY";
+  const isSystemAdmin = role === "SYSTEM_ADMIN";
+  const isClient = role === "CLIENT";
+  const isAgency = role === "AGENCY";
   const canDecide = isRequested && (isClient || isSystemAdmin);
   const canChangeRequest = isRequested && (isClient || isSystemAdmin);
   const canEditRequested = isRequested && (isSystemAdmin || (isRequester && isAgency));
   const canResubmit = isChangeRequested && (isSystemAdmin || isRequester);
   const canCancel = isRequested && (isSystemAdmin || isRequester);
-  const showActions = true;
+  const showActions = canDecide || canChangeRequest || canEditRequested || canResubmit || canCancel;
 
   const handleSubmitEdit = () => {
     if (!editTitle.trim()) {
@@ -309,6 +309,8 @@ export default function ApprovalDetail() {
   const decisionReason = approval.decisionReason || feedback?.reasonText || "";
   const hasDecisionReason = (approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED") && Boolean(decisionReason?.trim());
   const decisionDisplayAttachments = ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]);
+  const decisionFiles = decisionDisplayAttachments.filter((item) => !(item as AttachmentResponse).isLink);
+  const decisionLinks = decisionDisplayAttachments.filter((item) => (item as AttachmentResponse).isLink);
   const hasDecisionAttachments = Array.isArray(decisionDisplayAttachments) && decisionDisplayAttachments.length > 0;
   const decisionSectionTitle: Record<StepRequestResponse["status"], string> = {
     APPROVED: "승인 정보",
