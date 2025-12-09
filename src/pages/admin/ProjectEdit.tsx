@@ -1,53 +1,78 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { useNavigate } from "react-router-dom";
+// ----------------------------------------------
+// AdminProjectEdit.tsx 
+// ----------------------------------------------
+
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Plus, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import MemberSelectDialog, { SelectedMember } from "@/components/admin/MemberSelectDialog";
+
 import {
   DndContext,
-  closestCenter,
   PointerSensor,
+  closestCenter,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
   SortableContext,
-  useSortable,
   arrayMove,
+  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-// Sortable Stage Badge (aligned with Create page)
+import {
+  ProjectStatus,
+  fetchAdminProjectDetail,
+  updateAdminProject,
+  fetchAdminProjectMembers,
+  addAdminProjectMember,
+  removeAdminProjectMember,
+} from "@/apis/adminProjects";
+
+import {
+  fetchProjectSteps,
+  createStep,
+  updateStep,
+  deleteStep,
+  reorderSteps,
+  StepResponse,
+} from "@/apis/steps";
+
+import { fetchAllUsers } from "@/apis/adminUsers";
+import MemberSelectDialog, {
+  SelectedMember,
+  MemberData,
+} from "@/components/admin/MemberSelectDialog";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+
+
+// ----------------------------------------------
+// SortableStage (ProjectCreate와 동일)
+// ----------------------------------------------
 const SortableStage = ({ stage, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: stage.order });
+    useSortable({
+      id: stage.order,
+    });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const style = { transform: CSS.Transform.toString(transform), transition };
 
   return (
     <div
@@ -61,72 +86,164 @@ const SortableStage = ({ stage, onDelete }) => {
         {stage.name}
         <X
           className="w-3 h-3 cursor-pointer text-muted-foreground hover:text-red-500"
+          onPointerDown={(e) => {
+            e.stopPropagation();   // 드래그 방지
+          }}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             onDelete(stage.order);
           }}
-          onPointerDown={(e) => e.stopPropagation()}
         />
       </Badge>
     </div>
   );
 };
 
-interface ProjectMember {
-  id: string;
-  name: string;
-  company: string;
-  companyType: "agency" | "client";
-  role: string;
-  canDelete: boolean;
-}
+
+// ------------------------------------------------------
+// MAIN COMPONENT
+// ------------------------------------------------------
 
 const AdminProjectEdit = () => {
+  const { id } = useParams();
+  const projectId = Number(id);
+
   const navigate = useNavigate();
-  const [stages, setStages] = useState([
-    { name: "요구사항 정의", order: 1 },
-    { name: "화면 설계", order: 2 },
-    { name: "디자인", order: 3 },
-    { name: "개발", order: 4 },
-    { name: "테스트", order: 5 },
-    { name: "납품", order: 6 },
-  ]);
-  const [members, setMembers] = useState<ProjectMember[]>([
-    { id: "1", name: "홍길동", company: "DevCorp", companyType: "agency", role: "최고권한", canDelete: false },
-    { id: "2", name: "김철수", company: "ClientA", companyType: "client", role: "일반권한", canDelete: true },
-  ]);
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  const [loading, setLoading] = useState(true);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // -------------------------------
+  // 프로젝트 정보
+  // -------------------------------
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [customerCompanyId, setCustomerCompanyId] = useState("");
+  const [status, setStatus] = useState<ProjectStatus>("CONTRACT");
+
+  const [contractAmount, setContractAmount] = useState("");
+  const [contractFileUrl, setContractFileUrl] = useState("");
+
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [actualEndDate, setActualEndDate] = useState<Date | null>(null);
+
+  const toLocal = (d: Date | null) => {
+    if (!d) return undefined;
+    const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return t.toISOString().slice(0, 19);
+  };
+
+  // -------------------------------
+  // 단계
+  // -------------------------------
+  const [stages, setStages] = useState<
+    { id?: number; name: string; order: number }[]
+  >([]);
+  const [deletedStageIds, setDeletedStageIds] = useState<number[]>([]);
   const [newStageName, setNewStageName] = useState("");
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
-  const [startDate, setStartDate] = useState<Date | null>(new Date("2025-11-12"));
-  const [endDate, setEndDate] = useState<Date | null>(new Date("2025-12-12"));
-  const [contractFile, setContractFile] = useState<File | null>(null);
-  const [selectedClientCompany, setSelectedClientCompany] = useState<string | null>("ClientA");
+
+  // -------------------------------
+  // 멤버
+  // -------------------------------
+  const [members, setMembers] = useState<SelectedMember[]>([]);
+  const [users, setUsers] = useState<MemberData[]>([]);
   const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
 
-  // 단계 추가
+  const initialMemberIds = useRef<Set<string>>(new Set());
+  const [selectedClientCompany, setSelectedClientCompany] = useState<string | null>(null);
+
+  // -------------------------------
+  // 초기 로딩
+  // -------------------------------
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        
+        const users = await fetchAllUsers();
+        setUsers(users);
+
+        const [detail, memberRes, stepRes] = await Promise.all([
+          fetchAdminProjectDetail(projectId),
+          fetchAdminProjectMembers(projectId),
+          fetchProjectSteps(projectId),
+        ]);
+
+        // 프로젝트 정보
+        setName(detail.name);
+        setDescription(detail.description || "");
+        setStatus(detail.status as ProjectStatus);
+        setCustomerCompanyId(detail.customerCompanyId ? String(detail.customerCompanyId) : "");
+        setContractAmount(detail.contractAmount ? String(detail.contractAmount) : "");
+        setContractFileUrl(detail.contractFileUrl || "");
+
+        setStartDate(detail.startDate ? new Date(detail.startDate) : null);
+        setEndDate(detail.endDateExpected ? new Date(detail.endDateExpected) : null);
+        setActualEndDate(detail.endDate ? new Date(detail.endDate) : null);
+
+        // 멤버
+        const mappedMembers = memberRes.members.map((m) => {
+          const u = users.find((x) => x.id === String(m.userId));
+          return {
+            id: String(m.userId),
+            name: m.username,
+            company: m.companyName,
+            companyType: u?.companyType ?? "agency",
+            role: m.projectRole === "ADMIN" ? "최고권한" : "일반권한",
+            canDelete: true,
+          };
+        });
+
+        setMembers(mappedMembers);
+        initialMemberIds.current = new Set(mappedMembers.map((m) => m.id));
+
+        // 단계
+        setStages(
+          stepRes
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+            .map((s: StepResponse) => ({
+              id: s.id,
+              name: s.title,
+              order: s.orderIndex,
+            }))
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [projectId]);
+
+  // -------------------------------
+  // 단계 추가/삭제/드래그
+  // -------------------------------
   const handleAddStage = () => {
     if (!newStageName.trim()) return;
+
     setStages([
       ...stages,
       { name: newStageName, order: stages.length + 1 },
     ]);
+
     setNewStageName("");
     setIsStageDialogOpen(false);
   };
 
-  // 단계 삭제
   const handleDeleteStage = (order: number) => {
+    const target = stages.find((s) => s.order === order);
+    if (target?.id) deletedStageIds.push(target.id);
+
     const filtered = stages.filter((s) => s.order !== order);
-    const reordered = filtered.map((s, i) => ({ ...s, order: i + 1 }));
-    setStages(reordered);
+    setStages(filtered.map((s, i) => ({ ...s, order: i + 1 })));
   };
 
-  // DnD sensors & reordering
-  const sensors = useSensors(useSensor(PointerSensor));
-
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
+  const handleDragEnd = (e: any) => {
+    const { active, over } = e;
     if (!over || active.id === over.id) return;
 
     const oldIndex = stages.findIndex((s) => s.order === active.id);
@@ -140,338 +257,191 @@ const AdminProjectEdit = () => {
     setStages(reordered);
   };
 
-  const handleDeleteMember = (index: number) => {
-    setMembers(members.filter((_, i) => i !== index));
-  };
-
-  const existingMemberIds = members.map((m) => m.id);
-  const existingAdminId = members.find(
-    (m) => m.companyType === "agency" && m.role === "최고권한"
-  )?.id ?? null;
-
-  const handleAddMembers = (newMembers: SelectedMember[]) => {
-    if (!selectedClientCompany) {
-      const clientMember = newMembers.find((m) => m.companyType === "client");
-      if (clientMember) {
-        setSelectedClientCompany(clientMember.company);
-      }
-    }
-
-    // 삭제 불가 멤버 유지 + 새 선택을 중복 없이 교체
-    const fixedMembers = members.filter((m) => !m.canDelete);
-    const fixedIds = new Set(fixedMembers.map((m) => m.id));
-
-    const uniqueIds = new Set<string>(fixedIds);
-    const dedupedNew = newMembers.filter((m) => {
-      if (uniqueIds.has(m.id)) return false;
-      uniqueIds.add(m.id);
-      return true;
-    });
-
-    setMembers([...fixedMembers, ...dedupedNew]);
+  // -------------------------------
+  // 멤버 추가/삭제
+  // -------------------------------
+  const handleAddMembers = (list: SelectedMember[]) => {
+    setMembers(list);
     setIsMemberDialogOpen(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate("/admin/projects");
+  const handleDeleteMember = (idx: number) => {
+    setMembers(members.filter((_, i) => i !== idx));
   };
 
-  const agencyMembers = members.filter((m) => m.companyType === "agency");
-  const clientMembers = members.filter((m) => m.companyType === "client");
+  // -------------------------------
+  // 저장
+  // -------------------------------
+  const handleSubmit = async () => {
+    try {
+      // 1) 프로젝트 기본 정보 저장
+      await updateAdminProject(projectId, {
+        name,
+        description,
+        status,
+        customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
+        contractAmount: contractAmount ? Number(contractAmount) : null,
+        contractFileUrl: contractFileUrl || null,
+        startDate: toLocal(startDate),
+        endDateExpected: toLocal(endDate),
+        endDate: toLocal(actualEndDate),
+      });
 
+      // 2) 단계 삭제
+      for (const del of deletedStageIds) {
+        await deleteStep(projectId, del);
+      }
+
+      // 3) 단계 생성/수정
+      const newStages = [...stages];
+
+      for (let i = 0; i < newStages.length; i++) {
+        const s = newStages[i];
+
+        if (!s.id) {
+          const created = await createStep(projectId, { title: s.name });
+          newStages[i] = { ...s, id: created.id }; // ← 반드시 새로운 객체 생성
+        } else {
+          await updateStep(projectId, s.id, { title: s.name });
+        }
+      }
+
+      setStages(newStages);
+
+      // 4) reorder
+      await reorderSteps(projectId, {
+        steps: newStages
+          .sort((a, b) => a.order - b.order)
+          .map((s, idx) => ({
+            stepId: s.id,
+            orderIndex: idx + 1,
+          }))
+      });
+
+      // 5) 멤버 추가/삭제
+      const current = new Set(members.map((m) => m.id));
+
+      // 삭제된 멤버
+      for (const oldId of initialMemberIds.current) {
+        if (!current.has(oldId)) {
+          await removeAdminProjectMember(projectId, Number(oldId));
+        }
+      }
+
+      // 추가된 멤버
+      for (const m of members) {
+        if (!initialMemberIds.current.has(m.id)) {
+          await addAdminProjectMember(projectId, {
+            userId: Number(m.id),
+            projectRole: m.role === "최고권한" ? "ADMIN" : "MEMBER",
+          });
+        }
+      }
+
+      navigate(`/admin/projects/${projectId}`);
+    } catch (err) {
+      console.error(err);
+      setSubmitError("저장 실패! 다시 시도해주세요.");
+    }
+  };
+
+  // -------------------------------
+  // 화면 렌더링 (ProjectCreate UI 그대로)
+  // -------------------------------
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">프로젝트 관리</h1>
-          <p className="text-muted-foreground mt-1">
-            프로젝트 관리 {'>'} 프로젝트 생성
-          </p>
-        </div>
-      </div>
+      <h1 className="text-3xl font-bold">프로젝트 수정</h1>
 
       <Card>
         <CardHeader>
-          <CardTitle>프로젝트명</CardTitle>
+          <CardTitle>프로젝트 정보</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="name">프로젝트명</Label>
-              <Input
-                id="name"
-                defaultValue="ClientA Web Renewal"
-                placeholder="프로젝트명 입력"
-                required
-              />
+
+        <CardContent className="space-y-6">
+          {/* 프로젝트명 */}
+          <div>
+            <Label>프로젝트명</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+
+          {/* 설명 */}
+          <div>
+            <Label>설명</Label>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+
+          {/* GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <Label>고객사 ID</Label>
+              <Input value={customerCompanyId} onChange={(e) => setCustomerCompanyId(e.target.value)} />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description">프로젝트 설명</Label>
-              <Textarea
-                id="description"
-                defaultValue="고객사 웹 리뉴얼 프로젝트"
-                placeholder="프로젝트 설명 입력"
-                rows={4}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="company">고객사</Label>
-              <Select
-                value={selectedClientCompany ?? ""}
-                onValueChange={(v) => {
-                  setMembers((prev) =>
-                    prev.filter((m) => m.companyType === "agency" || m.company === v)
-                  );
-                  setSelectedClientCompany(v);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="선택" />
-                </SelectTrigger>
+            <div>
+              <Label>상태</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ClientA">ClientA</SelectItem>
-                  <SelectItem value="ClientB">ClientB</SelectItem>
+                  <SelectItem value="CONTRACT">계약</SelectItem>
+                  <SelectItem value="IN_PROGRESS">진행중</SelectItem>
+                  <SelectItem value="DELIVERY">납품</SelectItem>
+                  <SelectItem value="MAINTENANCE">유지보수</SelectItem>
+                  <SelectItem value="CLOSED">종료</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label>시작일</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left">
-                      {startDate ? (
-                        startDate.toLocaleDateString()
-                      ) : (
-                        <span className="text-muted-foreground">날짜 선택</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="p-0">
-                    <Calendar
-                      mode="single"
-                      selected={startDate}
-                      onSelect={setStartDate}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label>종료일</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left">
-                      {endDate ? (
-                        endDate.toLocaleDateString()
-                      ) : (
-                        <span className="text-muted-foreground">날짜 선택</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="p-0">
-                    <Calendar
-                      mode="single"
-                      selected={endDate}
-                      onSelect={setEndDate}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
+            <div>
+              <Label>계약 금액</Label>
+              <Input value={contractAmount} onChange={(e) => setContractAmount(e.target.value)} />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label>계약서 파일 업로드</Label>
-              <div className="bg-muted/30 rounded-lg p-4 text-sm text-muted-foreground space-y-3">
-                <div className="flex items-center gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => document.getElementById("contract-upload")?.click()}
-                  >
-                    파일 선택
-                  </Button>
-                  <span className="text-muted-foreground text-sm">
-                    {contractFile ? contractFile.name : "선택된 파일이 없습니다."}
-                  </span>
-                </div>
-                <input
-                  id="contract-upload"
-                  type="file"
-                  accept=".pdf,.csv,.doc,.docx"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    setContractFile(file);
-                  }}
-                />
-              </div>
-            </div>
+          {/* 파일 URL */}
+          <div>
+            <Label>계약서 파일 URL</Label>
+            <Input value={contractFileUrl} onChange={(e) => setContractFileUrl(e.target.value)} />
+          </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>프로젝트 단계 설정</Label>
-                <Dialog open={isStageDialogOpen} onOpenChange={setIsStageDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button type="button" variant="outline" size="sm">
-                      <Plus className="h-4 w-4 mr-1" />
-                      단계 추가
-                    </Button>
-                  </DialogTrigger>
+          {/* 날짜 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <DateSelector label="시작일" date={startDate} setDate={setStartDate} />
+            <DateSelector label="종료 예정일" date={endDate} setDate={setEndDate} />
+          </div>
 
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>단계 이름 입력</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label>단계명</Label>
-                        <Input
-                          value={newStageName}
-                          onChange={(e) => setNewStageName(e.target.value)}
-                          placeholder="단계명 입력"
-                        />
-                      </div>
+          <DateSelector label="실제 종료일" date={actualEndDate} setDate={setActualEndDate} optional />
 
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setIsStageDialogOpen(false)}>취소</Button>
-                        <Button onClick={handleAddStage}>추가</Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={stages.map(s => s.order)} strategy={verticalListSortingStrategy}>
-                  <div className="flex flex-wrap gap-2">
-                    {stages.map(stage => (
-                      <SortableStage
-                        key={stage.order}
-                        stage={stage}
-                        onDelete={handleDeleteStage}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            </div>
+          {/* 단계 */}
+          <StageSection
+            stages={stages}
+            setStages={setStages}
+            newStageName={newStageName}
+            setNewStageName={setNewStageName}
+            handleAddStage={handleAddStage}
+            handleDeleteStage={handleDeleteStage}
+            handleDragEnd={handleDragEnd}
+            isStageDialogOpen={isStageDialogOpen}
+            setIsStageDialogOpen={setIsStageDialogOpen}
+            sensors={sensors}
+          />
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>프로젝트 멤버 설정</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsMemberDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  멤버 추가
-                </Button>
-              </div>
+          {/* 멤버 */}
+          <MemberSection
+            members={members}
+            handleDeleteMember={handleDeleteMember}
+          />
 
-              {/* 개발사 멤버 */}
-              {agencyMembers.length > 0 && (
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="bg-primary/10 px-4 py-2">
-                    <span className="font-medium text-sm">개발사</span>
-                  </div>
-                  <div className="bg-muted grid grid-cols-4 gap-4 p-3 text-sm font-medium">
-                    <div>이름</div>
-                    <div>소속</div>
-                    <div>권한</div>
-                    <div>삭제</div>
-                  </div>
-                  <div className="divide-y">
-                    {agencyMembers.map((member) => {
-                      const originalIndex = members.findIndex((m) => m.id === member.id);
-                      return (
-                        <div key={member.id} className="grid grid-cols-4 gap-4 p-3 text-sm items-center">
-                          <div>{member.name}</div>
-                          <div className="text-muted-foreground">{member.company}</div>
-                          <div>{member.role}</div>
-                          <div>
-                            {member.canDelete ? (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => handleDeleteMember(originalIndex)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">-</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+          <Button variant="outline" size="sm" onClick={() => setIsMemberDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> 멤버 추가
+          </Button>
 
-              {/* 고객사 멤버 */}
-              {clientMembers.length > 0 && (
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="bg-primary/10 px-4 py-2">
-                    <span className="font-medium text-sm">고객사</span>
-                  </div>
-                  <div className="bg-muted grid grid-cols-4 gap-4 p-3 text-sm font-medium">
-                    <div>이름</div>
-                    <div>소속</div>
-                    <div>권한</div>
-                    <div>삭제</div>
-                  </div>
-                  <div className="divide-y">
-                    {clientMembers.map((member) => {
-                      const originalIndex = members.findIndex((m) => m.id === member.id);
-                      return (
-                        <div key={member.id} className="grid grid-cols-4 gap-4 p-3 text-sm items-center">
-                          <div>{member.name}</div>
-                          <div className="text-muted-foreground">{member.company}</div>
-                          <div>{member.role}</div>
-                          <div>
-                            {member.canDelete ? (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => handleDeleteMember(originalIndex)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">-</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+          {/* 저장 버튼 */}
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={() => navigate("/admin/projects")}>취소</Button>
+            <Button onClick={handleSubmit}>저장</Button>
+          </div>
 
-              {members.length === 0 && (
-                <div className="border rounded-lg p-4 text-center text-muted-foreground">
-                  추가된 멤버가 없습니다.
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-3 justify-end pt-4">
-              <Button type="submit">수정</Button>
-            </div>
-          </form>
+          {submitError && <p className="text-red-500 text-sm">{submitError}</p>}
         </CardContent>
       </Card>
 
@@ -479,8 +449,9 @@ const AdminProjectEdit = () => {
         open={isMemberDialogOpen}
         onOpenChange={setIsMemberDialogOpen}
         onConfirm={handleAddMembers}
-        existingMemberIds={existingMemberIds}
-        existingAdminId={existingAdminId}
+        existingMemberIds={members.map((m) => m.id)}
+        existingAdminId={null}
+        users={users}
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
       />
@@ -489,3 +460,126 @@ const AdminProjectEdit = () => {
 };
 
 export default AdminProjectEdit;
+
+
+// ----------------------------------------------
+// SUPPORT COMPONENTS (ProjectCreate와 동일)
+// ----------------------------------------------
+
+const DateSelector = ({ label, date, setDate, optional = false }) => (
+  <div className="space-y-2">
+    <Label>{label}</Label>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full text-left">
+          {date ? date.toLocaleDateString() : optional ? "선택 (optional)" : "날짜 선택"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0">
+        <Calendar mode="single" selected={date} onSelect={setDate} />
+      </PopoverContent>
+    </Popover>
+  </div>
+);
+
+
+// ----------------------------------------------
+// StageSection
+// ----------------------------------------------
+const StageSection = ({
+  stages,
+  setStages,
+  newStageName,
+  setNewStageName,
+  handleAddStage,
+  handleDeleteStage,
+  handleDragEnd,
+  isStageDialogOpen,
+  setIsStageDialogOpen,
+  sensors,
+}) => (
+  <div className="space-y-3">
+    <div className="flex items-center justify-between">
+      <Label>프로젝트 단계 설정</Label>
+      <Button variant="outline" size="sm" onClick={() => setIsStageDialogOpen(true)}>
+        <Plus className="h-4 w-4 mr-1" /> 단계 추가
+      </Button>
+    </div>
+
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={stages.map((s) => s.order)} strategy={verticalListSortingStrategy}>
+        <div className="flex flex-wrap gap-2">
+          {stages.map((stage) => (
+            <SortableStage key={stage.order} stage={stage} onDelete={handleDeleteStage} />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+
+    <Dialog open={isStageDialogOpen} onOpenChange={setIsStageDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>새 단계 추가</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3 mt-2">
+          <Input
+            placeholder="예: QA, 퍼블리싱"
+            value={newStageName}
+            onChange={(e) => setNewStageName(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setIsStageDialogOpen(false)}>취소</Button>
+            <Button onClick={handleAddStage}>추가</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
+);
+
+
+// ----------------------------------------------
+// MemberSection
+// ----------------------------------------------
+const MemberSection = ({ members, handleDeleteMember }) => (
+  <div className="space-y-3">
+    {members.length === 0 && (
+      <div className="border rounded-lg p-4 text-center text-muted-foreground">
+        추가된 멤버가 없습니다.
+      </div>
+    )}
+
+    {members.length > 0 && (
+      <div className="border rounded-lg overflow-hidden">
+        <div className="bg-primary/10 px-4 py-2">
+          <span className="font-medium text-sm">참여 멤버</span>
+        </div>
+
+        <div className="bg-muted grid grid-cols-4 gap-4 p-3 font-medium text-sm">
+          <div>이름</div>
+          <div>소속</div>
+          <div>권한</div>
+          <div>삭제</div>
+        </div>
+
+        <div className="divide-y">
+          {members.map((m, idx) => (
+            <div key={m.id} className="grid grid-cols-4 gap-4 p-3 text-sm items-center">
+              <div>{m.name}</div>
+              <div className="text-muted-foreground">{m.company}</div>
+              <div>{m.role}</div>
+              <div>
+                <Button variant="ghost" size="sm" onClick={() => handleDeleteMember(idx)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+);
+

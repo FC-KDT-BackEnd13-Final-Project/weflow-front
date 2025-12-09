@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,68 +6,58 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Clock, AlertCircle, Calendar, User, Layers3, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import api from "@/apis/api";
 
-const projectInfo = {
-  name: "WeFlow 플랫폼 고도화",
-  plan: "웹/앱 통합 구축",
-  currentStage: "화면 설계",
-  progress: 62,
-  dueDate: "2024.12.31",
-  daysLeft: 41,
-  owner: "홍길동 PM",
-  client: "하이넥스트",
-  nextApproval: "디자인",
-};
+interface RecentApproval {
+  id: number;
+  title: string;
+  status: string;
+  requestedByName?: string;
+  requestedByRole?: string;
+  requestedBy?: {
+    name: string;
+    role?: string;
+  };
+  createdAt?: string;
+  stepId?: number;
+  stepTitle?: string;
+  hasAttachment?: boolean;
+  decidedAt?: string | null;
+}
 
-const stageFlow = [
-  { label: "요구사항 정의", status: "done" },
-  { label: "화면 설계", status: "in-progress" },
-  { label: "디자인", status: "pending" },
-  { label: "퍼블리싱", status: "pending" },
-  { label: "개발", status: "pending" },
-  { label: "검수", status: "pending" },
-];
+interface RecentActivity {
+  logId: number;
+  actionType: string;
+  targetTable: string;
+  targetId: number;
+  createdAt: string;
+  userId?: number;
+  userName?: string;
+  projectName?: string;
+}
 
-const approvals = [
-  { title: "요구사항 정의", status: "완료", color: "bg-emerald-100 text-emerald-700", desc: "11.12 승인" },
-  { title: "화면 설계", status: "진행중", color: "bg-blue-100 text-blue-700", desc: "승인 요청 1건" },
-  { title: "디자인", status: "대기", color: "bg-slate-200 text-slate-700", desc: "예정 12월 초" },
-];
-
-const activities = [
-  { id: 1, content: "김지현님이 화면 설계 피드백을 남겼습니다.", time: "오늘 오전 10:12" },
-  { id: 2, content: "홍길동님이 요구사항 정의 단계를 승인했습니다.", time: "어제 오후 4:37" },
-  { id: 3, content: "디자인 킥오프 회의록이 업로드되었습니다.", time: "11.21 13:02" },
-];
-
-const stepRequests = [
-  {
-    id: 501,
-    title: "디자인 시안 승인 요청드립니다",
-    status: "REQUESTED",
-    requestedBy: { name: "김서현", role: "디자이너" },
-    createdAt: "2025-02-05T11:00:00"
-  },
-  {
-    id: 502,
-    title: "퍼블리싱 결과물 승인 요청",
-    status: "APPROVED",
-    requestedBy: { name: "박고객", role: "CUSTOMER" },
-    createdAt: "2025-02-04T16:30:00"
-  },
-  {
-    id: 503,
-    title: "테스트 시나리오 승인 요청",
-    status: "REJECTED",
-    requestedBy: { name: "이개발", role: "QA" },
-    createdAt: "2025-02-02T09:45:00"
-  }
-];
+interface ProjectDashboardData {
+  projectId: number;
+  name: string;
+  customerCompanyName?: string;
+  adminName?: string;
+  status?: string;
+  progressPercent?: number;
+  totalSteps?: number;
+  completedSteps?: number;
+  currentStepTitle?: string;
+  nextApprovalStepTitle?: string;
+  endDate?: string;
+  daysLeft?: number;
+  recentApprovals?: RecentApproval[];
+  recentActivities?: RecentActivity[];
+}
 
 const requestStatusMap: Record<string, { label: string; className: string }> = {
   REQUESTED: { label: "승인 대기", className: "bg-blue-100 text-blue-700" },
   APPROVED: { label: "승인 완료", className: "bg-emerald-100 text-emerald-700" },
-  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" }
+  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" },
+  CANCELED: { label: "취소", className: "bg-slate-100 text-slate-600" },
 };
 
 const formatRequestDate = (dateString: string) =>
@@ -78,9 +69,110 @@ const formatRequestDate = (dateString: string) =>
     hour12: false
   });
 
+const actionTypeLabels: Record<string, string> = {
+  CREATE: "생성",
+  UPDATE: "수정",
+  DELETE: "삭제",
+  LOGIN: "로그인",
+  LOGOUT: "로그아웃",
+  APPROVE: "승인",
+  REJECT: "반려",
+  UPLOAD: "업로드",
+  DOWNLOAD: "다운로드",
+  REMOVE: "삭제",
+  SUBMIT: "제출",
+};
+
+const targetTableLabels: Record<string, string> = {
+  POST: "게시글",
+  POST_ANSWER: "게시글 답변",
+  COMMENT: "댓글",
+  PROJECT: "프로젝트",
+  PROJECT_MEMBER: "프로젝트 멤버",
+  USER: "회원",
+  COMPANY: "회사",
+  CHECKLIST: "체크리스트",
+  CHECKLIST_QUESTION: "체크리스트 질문",
+  CHECKLIST_OPTION: "체크리스트 옵션",
+  ATTACHMENT: "첨부파일",
+  STEP: "단계",
+  STEP_REQUEST: "단계 승인 요청",
+  STEP_RESPONSE: "단계 승인 응답",
+  TEMPLATE: "템플릿",
+};
+
 export default function ProjectDashboard() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [dashboard, setDashboard] = useState<ProjectDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+
+    const fetchDashboard = async () => {
+      try {
+        setIsLoading(true);
+        setFetchError(null);
+        const response = await api.get(`/api/projects/${id}/dashboard`, { signal: controller.signal });
+        setDashboard(response.data?.data ?? null);
+      } catch {
+        if (!controller.signal.aborted) {
+          setFetchError("프로젝트 대시보드를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchDashboard();
+    return () => controller.abort();
+  }, [id]);
+
+  const projectInfo = useMemo(() => {
+    if (!dashboard) {
+      return {
+        name: "",
+        plan: "",
+        currentStage: "",
+        progress: 0,
+        dueDate: "",
+        daysLeft: 0,
+        owner: "",
+        client: "",
+        nextApproval: "",
+      };
+    }
+
+    return {
+      name: dashboard.name,
+      plan: dashboard.status ? `현재 상태 ${dashboard.status}` : "",
+      currentStage: dashboard.currentStepTitle ?? "",
+      progress: dashboard.progressPercent ?? 0,
+      dueDate: dashboard.endDate ? formatShortDate(dashboard.endDate) : "",
+      daysLeft: dashboard.daysLeft ?? 0,
+      owner: dashboard.adminName ? dashboard.adminName : "",
+      client: dashboard.customerCompanyName ?? "",
+      nextApproval: dashboard.nextApprovalStepTitle ?? "",
+    };
+  }, [dashboard]);
+
+  const recentApprovals = dashboard?.recentApprovals ?? [];
+  const activities = dashboard?.recentActivities ?? [];
+
+  const formatActivityTime = (value?: string) => {
+    if (!value) return "";
+    return new Intl.DateTimeFormat("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  };
 
   return (
     <ProjectLayout>
@@ -91,40 +183,44 @@ export default function ProjectDashboard() {
             <div className="flex items-center justify-between gap-6">
               <div>
                 <p className="text-sm uppercase tracking-wider text-slate-500">프로젝트 #{id}</p>
-                <h1 className="text-3xl font-semibold mt-2">{projectInfo.name}</h1>
+                <h1 className="text-3xl font-semibold mt-2">
+                  {isLoading ? "데이터 불러오는 중..." : projectInfo.name || "프로젝트 정보 없음"}
+                </h1>
                 <p className="text-sm text-slate-600 mt-1">{projectInfo.plan}</p>
               </div>
               <Badge className="bg-sky-100 text-sky-700 text-xs px-3 py-1 rounded-full">
-                현재 단계 · {projectInfo.currentStage}
+                현재 단계 · {projectInfo.currentStage || "종료"}
               </Badge>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
               <div className="flex items-center gap-2 text-slate-700">
                 <Calendar className="h-4 w-4 text-slate-500" />
                 <div>
-                  <p className="text-xs text-slate-500">남은 기간</p>
-                  <p className="font-medium">{projectInfo.daysLeft}일 · {projectInfo.dueDate}</p>
+                  <p className="text-xs text-slate-500">종료일</p>
+                  <p className="font-medium">
+                    {projectInfo.dueDate || "-"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <User className="h-4 w-4 text-slate-500" />
                 <div>
-                  <p className="text-xs text-slate-500">PM</p>
-                  <p className="font-medium">{projectInfo.owner}</p>
+                  <p className="text-xs text-slate-500">관리자</p>
+                  <p className="font-medium">{projectInfo.owner || "-"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <Layers3 className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs text-slate-500">고객사</p>
-                  <p className="font-medium">{projectInfo.client}</p>
+                  <p className="font-medium">{projectInfo.client || "-"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <CheckCircle2 className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs text-slate-500">다음 승인 대상</p>
-                  <p className="font-medium">{projectInfo.nextApproval}</p>
+                  <p className="font-medium">{projectInfo.nextApproval || "없음"}</p>
                 </div>
               </div>
             </div>
@@ -136,6 +232,9 @@ export default function ProjectDashboard() {
               <span>{projectInfo.progress}% 완료</span>
               <span>업무 안정 권장 80%</span>
             </div>
+            {fetchError && (
+              <p className="text-xs text-destructive mt-2">{fetchError}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -156,8 +255,12 @@ export default function ProjectDashboard() {
               <CheckCircle2 className="h-4 w-4 text-status-complete" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">2 / 6</div>
-              <p className="text-xs text-muted-foreground mt-1">화면 설계 단계 진행중</p>
+              <div className="text-2xl font-bold">
+                {dashboard?.completedSteps ?? 0} / {dashboard?.totalSteps ?? 0}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {projectInfo.currentStage ? `${projectInfo.currentStage} 단계 진행중` : "단계 정보를 확인하세요"}
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -166,62 +269,15 @@ export default function ProjectDashboard() {
               <AlertCircle className="h-4 w-4 text-status-pending" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{projectInfo.daysLeft}일</div>
-              <p className="text-xs text-muted-foreground mt-1">{projectInfo.dueDate} 마감</p>
+              <div className="text-2xl font-bold">
+                {projectInfo.daysLeft ? `${projectInfo.daysLeft}일` : "0일"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {projectInfo.dueDate ? `${projectInfo.dueDate} 마감` : "마감일 미정"}
+              </p>
             </CardContent>
           </Card>
         </div>
-
-        {/* Stage Timeline */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">단계 진행 현황</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-4 md:grid-cols-6">
-                {stageFlow.map(stage => (
-                  <div
-                    key={stage.label}
-                    className={cn(
-                      "rounded-xl border p-3 text-center text-sm",
-                      stage.status === "done" && "bg-emerald-50 border-emerald-100 text-emerald-800",
-                      stage.status === "in-progress" && "bg-blue-50 border-blue-100 text-blue-700 ring-1 ring-blue-200",
-                      stage.status === "pending" && "bg-muted border-dashed text-muted-foreground"
-                    )}
-                  >
-                    <p className="font-semibold">{stage.label}</p>
-                    <p className="text-xs mt-1">
-                      {stage.status === "done" && "완료"}
-                      {stage.status === "in-progress" && "진행중"}
-                      {stage.status === "pending" && "대기"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="grid gap-4 md:grid-cols-1">
-                <Card className="bg-muted/60 border-dashed">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">승인 단계 요약</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {approvals.map((approval) => (
-                      <div key={approval.title} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-sm">{approval.title}</p>
-                          <p className="text-xs text-muted-foreground">{approval.desc}</p>
-                        </div>
-                        <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", approval.color)}>
-                          {approval.status}
-                        </span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Approval Requests */}
         <Card>
@@ -235,8 +291,10 @@ export default function ProjectDashboard() {
             </button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {stepRequests.map((request) => {
+            {recentApprovals.map((request) => {
               const status = requestStatusMap[request.status] || requestStatusMap.REQUESTED;
+              const requesterName = request.requestedBy?.name ?? request.requestedByName ?? "담당자";
+              const requesterRole = request.requestedBy?.role ?? request.requestedByRole ?? "";
               return (
                 <div
                   key={request.id}
@@ -255,8 +313,12 @@ export default function ProjectDashboard() {
                     <div>
                       <p className="font-semibold">{request.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {request.requestedBy.name} ({request.requestedBy.role}) · {formatRequestDate(request.createdAt)}
+                        {requesterName} {requesterRole && `(${requesterRole})`} ·{" "}
+                        {request.createdAt ? formatRequestDate(request.createdAt) : "-"}
                       </p>
+                      {request.stepTitle && (
+                        <p className="text-xs text-muted-foreground">단계: {request.stepTitle}</p>
+                      )}
                     </div>
                     <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", status.className)}>
                       {status.label}
@@ -265,9 +327,14 @@ export default function ProjectDashboard() {
                 </div>
               );
             })}
-            {stepRequests.length === 0 && (
+            {!isLoading && recentApprovals.length === 0 && (
               <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg">
                 표시할 승인 요청이 없습니다.
+              </div>
+            )}
+            {isLoading && (
+              <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg">
+                승인 요청을 불러오는 중입니다...
               </div>
             )}
           </CardContent>
@@ -288,15 +355,43 @@ export default function ProjectDashboard() {
             </button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {activities.map(activity => (
-              <div key={activity.id} className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-                <p className="text-sm">{activity.content}</p>
-                <span className="text-xs text-muted-foreground">{activity.time}</span>
+            {activities.length === 0 && !isLoading && (
+              <div className="text-center text-muted-foreground text-sm py-6 border rounded-lg">
+                최근 활동이 없습니다.
               </div>
-            ))}
+            )}
+            {activities.length > 0 &&
+              activities.map((activity) => (
+                <div
+                  key={activity.logId}
+                  className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3"
+                >
+                  <p className="text-sm">
+                    <span className="font-medium">{activity.userName ?? "사용자"}</span>님이{" "}
+                    {targetTableLabels[activity.targetTable] ?? activity.targetTable}을/를{" "}
+                    {actionTypeLabels[activity.actionType] ?? activity.actionType}했습니다.
+                  </p>
+                  <span className="text-xs text-muted-foreground">
+                    {formatActivityTime(activity.createdAt)}
+                  </span>
+                </div>
+              ))}
+            {isLoading && (
+              <div className="text-center text-muted-foreground text-sm py-6 border rounded-lg">
+                활동을 불러오는 중입니다...
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
     </ProjectLayout>
   );
+}
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
 }

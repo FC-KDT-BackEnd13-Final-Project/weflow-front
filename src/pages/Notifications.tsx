@@ -45,6 +45,7 @@ export default function Notifications() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [readFilter, setReadFilter] = useState<"ALL" | "READ" | "UNREAD">("ALL");
+  const [isDeleting, setIsDeleting] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     const fetchNotifications = async () => {

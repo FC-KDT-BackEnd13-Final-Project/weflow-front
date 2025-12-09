@@ -26,7 +26,7 @@ interface Company {
   name: string;
 }
 
-interface UserProfile {
+export interface UserProfile {
   id: number;
   email: string;
   name: string;
@@ -76,9 +76,9 @@ export const authApi = {
     return response.data;
   },
 
-  getMe: async (): Promise<UserProfileResponse> => {
+  getMe: async (): Promise<UserProfile> => {
     const response = await api.get<UserProfileResponse>("/api/users/me");
-    return response.data;
+    return response.data.data;
   },
 
   updateMe: async (data: UpdateUserRequest): Promise<UpdateUserResponse> => {
