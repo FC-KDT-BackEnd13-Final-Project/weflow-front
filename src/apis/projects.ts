@@ -23,7 +23,7 @@ export interface ProjectSummaryResponse {
   projectId: number;
   name: string;
   status: ProjectStatus;
-  projectRole: ProjectRole;
+  projectRole?: ProjectRole | null;
 }
 
 export interface ProjectDetailResponse {
