@@ -1,13 +1,13 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, AlertCircle, Calendar, User, Layers3, ArrowRight } from "lucide-react";
+import { AlertCircle, ArrowRight, Bell, Calendar, CheckCircle2, Clock, Layers3, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
-import { getProjectStepRequests } from "@/lib/stepRequest";
+import { getProjectStepRequests } from "@/apis/stepRequest";
+import { useNavigate, useParams } from "react-router-dom";
 
 const projectInfo = {
   name: "WeFlow 플랫폼 고도화",
@@ -30,6 +30,11 @@ const highlightedProjects = [
   { id: 1, name: "ABC 리뉴얼", client: "ABC전자", progress: 62, status: "IN_PROGRESS" },
   { id: 2, name: "WeFlow 모바일", client: "비엔시스템", progress: 40, status: "PLANNING" },
   { id: 3, name: "AI PoC", client: "뉴텍", progress: 85, status: "APPROVAL" },
+];
+
+const upcomingApprovals = [
+  { id: 1, title: "디자인 시안 승인", project: { id: 1, name: "ABC 리뉴얼" }, dueDate: "2025-02-12T10:00:00", step: "디자인" },
+  { id: 2, title: "요구사항 검토", project: { id: 2, name: "WeFlow 모바일" }, dueDate: "2025-02-15T18:00:00", step: "요구사항" },
 ];
 
 const recentNotifications = [
@@ -56,6 +61,20 @@ const recentNotifications = [
   },
 ];
 
+const activities = [
+  { id: 1, content: "김고객님이 게시판에 댓글을 작성했습니다.", time: "1시간 전" },
+  { id: 2, content: "박퍼블리셔가 디자인 시안을 업데이트했습니다.", time: "3시간 전" },
+  { id: 3, content: "승인 요청 2건이 신규로 생성되었습니다.", time: "오늘" },
+];
+
+const requestStatusMap: Record<string, { label: string; className: string }> = {
+  REQUESTED: { label: "승인 요청", className: "bg-amber-100 text-amber-700" },
+  CHANGE_REQUESTED: { label: "수정 요청", className: "bg-orange-100 text-orange-700" },
+  APPROVED: { label: "승인", className: "bg-emerald-100 text-emerald-700" },
+  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" },
+  CANCELED: { label: "요청 취소", className: "bg-slate-200 text-slate-700" },
+};
+
 const formatDateLabel = (value: string) =>
   new Date(value).toLocaleString("ko-KR", {
     month: "2-digit",
@@ -65,8 +84,19 @@ const formatDateLabel = (value: string) =>
     hour12: false,
   });
 
+const formatRequestDate = (value: string) =>
+  new Date(value).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
 export default function Dashboard() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const projectId = Number(id);
 
   const { data: requestsData, isLoading } = useQuery({
@@ -75,7 +105,7 @@ export default function Dashboard() {
     enabled: !!projectId,
   });
 
-  const stepRequests = requestsData?.data.stepRequestSummaryResponses ?? [];
+  const stepRequests = requestsData?.stepRequestSummaryResponses ?? [];
 
   return (
     <AppLayout>
@@ -169,12 +199,12 @@ export default function Dashboard() {
               <CardTitle>최근 알림</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              {notifications.length === 0 ? (
+              {recentNotifications.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8 border rounded">
                   새로운 알림이 없습니다.
                 </div>
               ) : (
-                notifications.map((notice) => (
+                recentNotifications.map((notice) => (
                   <div
                     key={notice.id}
                     className="rounded border p-3 hover:bg-muted/50"
@@ -191,13 +221,13 @@ export default function Dashboard() {
                         <p className="text-muted-foreground text-sm mt-1">{notice.content}</p>
                         <p className="text-xs text-muted-foreground mt-2">{formatDateLabel(notice.createdAt)}</p>
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Approval Requests */}
         <Card>

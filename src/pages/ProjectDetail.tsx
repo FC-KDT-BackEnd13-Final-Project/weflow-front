@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, Plus, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { getProjectSteps } from "@/lib/step";
+import { getProjectSteps } from "@/apis/step";
 import { StepResponse, StepStatus } from "@/lib/stepTypes";
 
 const mockPosts = [
@@ -43,10 +43,13 @@ export default function ProjectDetail() {
 
   const steps = stepsData?.data.steps ?? [];
 
-  const stepStatusToBadge = (status: StepStatus) => {
+  const stepStatusToBadge = (
+    status: StepStatus
+  ): { label: string; variant: "pending" | "progress" | "complete" } => {
     if (status === "APPROVED") return { label: "완료", variant: "complete" };
     if (status === "IN_PROGRESS") return { label: "진행중", variant: "progress" };
-    return { label: "대기", variant: "pending" };
+    if (status === "PENDING") return { label: "대기", variant: "pending" };
+    return { label: status, variant: "pending" };
   };
 
   return (

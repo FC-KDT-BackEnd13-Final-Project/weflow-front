@@ -15,7 +15,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type ProjectStatus = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE" | "CLOSED";
+type ProjectStatus = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE" | "CLOSED" | "APPROVAL" | "PLANNING" | "COMPLETE";
+
+const statusLabelMap: Record<ProjectStatus, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행중",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+  CLOSED: "종료",
+  APPROVAL: "승인",
+  PLANNING: "기획",
+  COMPLETE: "완료",
+};
+
+const statusBadgeMap: Record<ProjectStatus, "pending" | "progress" | "complete" | "approved" | "rejected" | "request"> = {
+  CONTRACT: "request",
+  IN_PROGRESS: "progress",
+  DELIVERY: "progress",
+  MAINTENANCE: "pending",
+  CLOSED: "complete",
+  APPROVAL: "approved",
+  PLANNING: "pending",
+  COMPLETE: "complete",
+};
 
 const mockProjects: Array<{
   id: number;
@@ -57,7 +79,7 @@ const mockProjects: Array<{
     id: 4,
     name: "클라우드 포털 고도화",
     client: "아크레버 테크놀로지스",
-    status: "complete" as const,
+    status: "COMPLETE",
     progress: 10,
     dueDate: "2025.12.30",
     team: 7,
