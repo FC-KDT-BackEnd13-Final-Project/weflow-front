@@ -14,12 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
+import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { createPost, updatePost, getPost } from "@/apis/postApi";
 import { ProjectStatus } from "@/types/post";
-import type { FileRequest } from "@/types/post";
+import type { FileRequest, QuestionRequest } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
 import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
@@ -63,6 +63,7 @@ export default function BoardNew() {
   const [links, setLinks] = useState<string[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<QuestionRequest[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
@@ -168,6 +169,23 @@ export default function BoardNew() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
+  const addQuestion = () => {
+    setQuestions(prev => [
+      ...prev,
+      { questionText: "", confirmLabel: "승인", rejectLabel: "반려" }
+    ]);
+  };
+
+  const updateQuestion = (index: number, field: keyof QuestionRequest, value: string) => {
+    setQuestions(prev => prev.map((q, i) =>
+      i === index ? { ...q, [field]: value } : q
+    ));
+  };
+
+  const removeQuestion = (index: number) => {
+    setQuestions(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -244,6 +262,7 @@ export default function BoardNew() {
           projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
+          questions: questions.length > 0 ? questions : undefined,
         });
 
         toast({
@@ -263,6 +282,7 @@ export default function BoardNew() {
           parentPostId: replyInfo?.parentPostId,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
+          questions: questions.length > 0 ? questions : undefined,
         });
 
         toast({
@@ -516,6 +536,79 @@ export default function BoardNew() {
                         >
                           <X className="h-4 w-4" />
                         </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Questions */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    질문 추가
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addQuestion}
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    질문 추가
+                  </Button>
+                </div>
+
+                {questions.length > 0 && (
+                  <div className="space-y-4 mt-3">
+                    {questions.map((question, index) => (
+                      <div
+                        key={index}
+                        className="p-4 border rounded-md bg-muted/30 space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">질문 {index + 1}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeQuestion(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`question-text-${index}`}>질문 내용</Label>
+                          <Textarea
+                            id={`question-text-${index}`}
+                            placeholder="질문 내용을 입력하세요"
+                            value={question.questionText}
+                            onChange={(e) => updateQuestion(index, "questionText", e.target.value)}
+                            className="min-h-[80px]"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor={`confirm-label-${index}`}>승인 버튼 텍스트</Label>
+                            <Input
+                              id={`confirm-label-${index}`}
+                              placeholder="승인"
+                              value={question.confirmLabel}
+                              onChange={(e) => updateQuestion(index, "confirmLabel", e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`reject-label-${index}`}>반려 버튼 텍스트</Label>
+                            <Input
+                              id={`reject-label-${index}`}
+                              placeholder="반려"
+                              value={question.rejectLabel}
+                              onChange={(e) => updateQuestion(index, "rejectLabel", e.target.value)}
+                            />
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
