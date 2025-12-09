@@ -25,6 +25,7 @@ import {
 } from "@/constants/boardStatus";
 import { getPost, deletePost } from "@/apis/postApi";
 import { getDownloadUrl } from "@/apis/attachmentApi";
+import { useUserStore } from "@/stores/user";
 
 type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
 
@@ -276,6 +277,7 @@ export default function BoardDetail() {
   const navigate = useNavigate();
   const { id, postId } = useParams();
   const { toast } = useToast();
+  const { user } = useUserStore();
   const [newComment, setNewComment] = useState("");
   const [questionSelections, setQuestionSelections] = useState<Record<number, "confirm" | "reject">>({});
   const [actionDialog, setActionDialog] = useState<{ questionId: number; action: "confirm" | "reject" } | null>(null);
@@ -403,6 +405,33 @@ export default function BoardDetail() {
     : post.questions.every((q) => q.answer)
       ? "approved"
       : "request";
+
+  // 작성자의 role을 CLIENT/AGENCY/ADMIN으로 매핑
+  const getAuthorUserRole = (authorRole: string): "CLIENT" | "AGENCY" | "ADMIN" => {
+    if (authorRole === "CLIENT") return "CLIENT";
+    if (authorRole === "ADMIN") return "ADMIN";
+    return "AGENCY"; // DEVELOPER, PM 등은 모두 AGENCY로 간주
+  };
+
+  // 현재 사용자가 질문에 답변할 수 있는지 체크
+  const canAnswerQuestion = () => {
+    if (!user) return false;
+
+    // 자문자답 방지: 작성자 본인이면 답변 불가
+    if (user.id === post.author.memberId) return false;
+
+    const authorUserRole = getAuthorUserRole(post.author.role);
+    const currentUserRole = user.projectRole === "ADMIN" ? "ADMIN" : user.userRole;
+
+    // 관리자는 모든 게시글에 답변 가능 (자신이 작성한 게시글 제외)
+    if (currentUserRole === "ADMIN") return true;
+
+    // 작성자가 관리자면 AGENCY, CLIENT 모두 답변 가능
+    if (authorUserRole === "ADMIN") return true;
+
+    // 작성자와 다른 역할인 경우에만 답변 가능
+    return currentUserRole !== authorUserRole;
+  };
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
@@ -783,7 +812,7 @@ export default function BoardDetail() {
                                   ? "ring-2 ring-primary hover:bg-primary/90"
                                   : "border-primary/40 text-primary hover:bg-primary/10"
                               )}
-                              disabled={isAnswered}
+                              disabled={isAnswered || !canAnswerQuestion()}
                               aria-pressed={selectedAction === "confirm"}
                               onClick={() => openQuestionAction(question.questionId, "confirm")}
                             >
@@ -798,7 +827,7 @@ export default function BoardDetail() {
                                   ? "ring-2 ring-destructive hover:bg-destructive/90 text-white"
                                   : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               )}
-                              disabled={isAnswered}
+                              disabled={isAnswered || !canAnswerQuestion()}
                               aria-pressed={selectedAction === "reject"}
                               onClick={() => openQuestionAction(question.questionId, "reject")}
                             >
