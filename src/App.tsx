@@ -9,9 +9,11 @@ import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import ProjectDashboard from "./pages/ProjectDashboard";
 import Notifications from "./pages/Notifications";
+import NotificationDetail from "./pages/NotificationDetail";
 import ApprovalRequests from "./pages/ApprovalRequests";
 import Settings from "./pages/Settings";
 import ChangePassword from "./pages/ChangePassword";
+import FirstPasswordChange from "./pages/FirstPasswordChange";
 import Board from "./pages/Board";
 import BoardNew from "./pages/BoardNew";
 import BoardDetail from "./pages/BoardDetail";
@@ -58,10 +60,12 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/first-password-change" element={<FirstPasswordChange />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/notifications/:id" element={<NotificationDetail />} />
           <Route path="/approval-requests" element={<ApprovalRequests />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/password" element={<ChangePassword />} />

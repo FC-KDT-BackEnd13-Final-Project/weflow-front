@@ -30,6 +30,12 @@ export default function Login() {
           description: response.message,
         });
 
+        // 최초 로그인 시 비밀번호 변경 강제
+        if (response.data.user.isTemporaryPassword) {
+          navigate("/first-password-change");
+          return;
+        }
+
         // 역할에 따라 다른 페이지로 이동
         const userRole = response.data.user.role;
         if (userRole === "SYSTEM_ADMIN") {

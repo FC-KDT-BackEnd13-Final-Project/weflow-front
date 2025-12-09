@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { X } from "lucide-react";
+import { X, Mail, CheckCheck } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
 
@@ -88,8 +88,30 @@ export default function Notifications() {
     });
   }, [notifications, readFilter]);
 
-  const handleDismiss = (id: number) => {
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+  const hasUnread = useMemo(() => {
+    return notifications.some((n) => !n.read);
+  }, [notifications]);
+
+  const handleDismiss = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!window.confirm("알림을 삭제하시겠습니까?")) return;
+
+    try {
+      const response = await notificationsApi.deleteNotification(id);
+      if (response.success) {
+        setNotifications((prev) => prev.filter((notification) => notification.id !== id));
+        toast({
+          title: "알림 삭제",
+          description: "알림이 삭제되었습니다.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "알림 삭제 실패",
+        description: error.response?.data?.message || "알림을 삭제할 수 없습니다.",
+      });
+    }
   };
 
   const handleMarkAsRead = async (notificationId: number) => {
@@ -103,16 +125,59 @@ export default function Notifications() {
               : notification
           )
         );
-        toast({
-          title: "알림 읽음",
-          description: response.message,
-        });
       }
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "알림 읽음 처리 실패",
         description: error.response?.data?.message || "알림을 읽음 처리할 수 없습니다.",
+      });
+    }
+  };
+
+  const handleMarkAsUnread = async (e: React.MouseEvent, notificationId: number) => {
+    e.stopPropagation();
+    try {
+      const response = await notificationsApi.markAsUnread(notificationId);
+      if (response.success) {
+        setNotifications((prev) =>
+          prev.map((notification) =>
+            notification.id === notificationId
+              ? { ...notification, read: false }
+              : notification
+          )
+        );
+        toast({
+          title: "알림 안 읽음 처리",
+          description: "알림을 읽지 않음 상태로 변경했습니다.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "알림 처리 실패",
+        description: error.response?.data?.message || "작업을 수행할 수 없습니다.",
+      });
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      const response = await notificationsApi.markAllAsRead();
+      if (response.success) {
+        setNotifications((prev) =>
+          prev.map((notification) => ({ ...notification, read: true }))
+        );
+        toast({
+          title: "모두 읽음 처리 완료",
+          description: "모든 알림을 읽음 상태로 변경했습니다.",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "일괄 읽음 처리 실패",
+        description: error.response?.data?.message || "작업을 수행할 수 없습니다.",
       });
     }
   };
@@ -139,21 +204,29 @@ export default function Notifications() {
             <div className="flex flex-col gap-2">
               <CardTitle>최근 알림</CardTitle>
             </div>
-            <div className="flex gap-2">
-              {[
-                { label: "전체", value: "ALL" },
-                { label: "읽지 않음", value: "UNREAD" },
-                { label: "읽음", value: "READ" },
-              ].map((option) => (
-                <Button
-                  key={option.value}
-                  variant={readFilter === option.value ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setReadFilter(option.value as typeof readFilter)}
-                >
-                  {option.label}
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                {[
+                  { label: "전체", value: "ALL" },
+                  { label: "읽지 않음", value: "UNREAD" },
+                  { label: "읽음", value: "READ" },
+                ].map((option) => (
+                  <Button
+                    key={option.value}
+                    variant={readFilter === option.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setReadFilter(option.value as typeof readFilter)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              {hasUnread && (
+                <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
+                  <CheckCheck className="mr-2 h-4 w-4" />
+                  모두 읽음
                 </Button>
-              ))}
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -163,11 +236,19 @@ export default function Notifications() {
               </div>
             ) : (
               filteredNotifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className="rounded border p-4 space-y-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => !notification.read && handleMarkAsRead(notification.id)}
-                >
+                  <div
+                    key={notification.id}
+                    className={`rounded border p-4 space-y-3 cursor-pointer transition-colors ${
+                      notification.read ? "bg-white" : "bg-blue-50/50 hover:bg-blue-50"
+                    }`}
+                    onClick={async () => {
+                      if (!notification.read) {
+                        await handleMarkAsRead(notification.id);
+                      }
+                      // 상세 페이지로 이동
+                      navigate(`/notifications/${notification.id}`);
+                    }}
+                  >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Badge
@@ -186,18 +267,32 @@ export default function Notifications() {
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{notification.read ? "읽음" : "읽지 않음"}</span>
                       <span>{formatDateTime(notification.createdAt)}</span>
+                      {notification.read && (
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={(e) => handleMarkAsUnread(e, notification.id)}
+                          aria-label="안 읽음으로 표시"
+                          title="안 읽음으로 표시"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="text-muted-foreground hover:text-foreground"
-                        onClick={() => handleDismiss(notification.id)}
+                        onClick={(e) => handleDismiss(e, notification.id)}
                         aria-label="알림 삭제"
+                        title="알림 삭제"
                       >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="font-semibold">{notification.title}</p>
+                    <p className={`font-semibold ${notification.read ? "text-muted-foreground" : ""}`}>
+                      {notification.title}
+                    </p>
                     <p className="text-sm text-muted-foreground">{notification.message}</p>
                   </div>
                 </div>

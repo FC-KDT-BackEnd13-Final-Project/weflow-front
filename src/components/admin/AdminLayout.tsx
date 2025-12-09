@@ -1,13 +1,20 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminAppSidebar } from "@/components/admin/AdminAppSidebar";
 
 export default function AdminLayout() {
+  const navigate = useNavigate();
+
   useEffect(() => {
     document.documentElement.classList.add("admin-sidebar-theme");
     return () => document.documentElement.classList.remove("admin-sidebar-theme");
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("accessToken");
+    navigate("/login");
+  };
 
   return (
     <SidebarProvider>
@@ -20,7 +27,10 @@ export default function AdminLayout() {
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium">관리자 홍길동님</span>
-              <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <button 
+                onClick={handleLogout}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
                 로그아웃
               </button>
             </div>
