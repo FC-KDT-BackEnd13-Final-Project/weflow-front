@@ -1,4 +1,4 @@
-import { ApiResponse } from "./http";
+import { ApiResponse } from "@/types/api";
 
 export type StepPhase = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "APPROVED" | string;
 export type StepStatus = "PENDING" | "IN_PROGRESS" | "APPROVED" | "CANCELED" | string;
@@ -29,9 +29,11 @@ export interface AttachmentResponse {
   id: number;
   name?: string;
   url?: string;
+  isLink?: boolean;
   fileName?: string;
   originalName?: string;
   path?: string;
+  filePath?: string;
 }
 
 export interface StepRequestResponse {
@@ -82,6 +84,7 @@ export interface StepRequestAnswerResponse {
   respondedBy?: number;
   respondedByName?: string;
   reasonText?: string;
+  attachments?: AttachmentResponse[];
   decidedAt?: string;
   createdAt: string;
 }

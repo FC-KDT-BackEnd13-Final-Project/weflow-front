@@ -5,16 +5,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Link as LinkIcon, ArrowLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { ArrowLeft, FileText, Link as LinkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { cancelStepRequest, getStepRequest, updateStepRequest } from "@/lib/stepRequest";
-import { getFeedback, sendFeedback } from "@/lib/feedback";
-import { AttachmentResponse, FeedbackResponseType, StepRequestAnswerResponse, StepRequestResponse } from "@/lib/stepTypes";
+import { cancelStepRequest, getStepRequest, updateStepRequest } from "@/apis/stepRequest";
+import { getProjectSteps } from "@/apis/step";
+import { getFeedback, sendFeedback } from "@/apis/feedback";
+import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
+import { AttachmentResponse, FeedbackResponseType, StepRequestAnswerResponse, StepRequestResponse, StepResponse } from "@/lib/stepTypes";
 import { useToast } from "@/hooks/use-toast";
-import { getMyInfo, MeResponse } from "@/lib/user";
+import { getMyInfo, MeResponse } from "@/apis/user";
+import { stepRequestStatusMap } from "@/constants/stepRequestStatus";
 
 export default function ApprovalDetail() {
   const { id, approvalId } = useParams();
@@ -27,18 +32,21 @@ export default function ApprovalDetail() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editAttachmentIds, setEditAttachmentIds] = useState<number[]>([]);
-  const [editLinks, setEditLinks] = useState<string[]>([]);
-  const [editAttachmentInput, setEditAttachmentInput] = useState("");
-  const [editLinkInput, setEditLinkInput] = useState("");
+  const [editAttachments, setEditAttachments] = useState<UploadedAttachment[]>([]);
+  const [decisionAttachments, setDecisionAttachments] = useState<UploadedAttachment[]>([]);
 
   const requestId = Number(approvalId);
   const projectId = Number(id);
-
   const { data: requestData, isLoading } = useQuery({
     queryKey: ["step-request-detail", requestId],
     queryFn: () => getStepRequest(requestId),
     enabled: !!requestId,
+  });
+
+  const { data: stepsData } = useQuery({
+    queryKey: ["project-steps", projectId],
+    queryFn: () => getProjectSteps(projectId),
+    enabled: !!projectId,
   });
 
   const { data: meData } = useQuery({
@@ -46,14 +54,8 @@ export default function ApprovalDetail() {
     queryFn: getMyInfo,
   });
 
-  const { data: feedbackData } = useQuery({
-    queryKey: ["step-request-feedback", requestId],
-    queryFn: () => getFeedback(requestId),
-    enabled: !!requestId,
-  });
-
   const feedbackMutation = useMutation({
-    mutationFn: (payload: { response: FeedbackResponseType; reasonText?: string }) =>
+    mutationFn: (payload: { response: FeedbackResponseType; reasonText?: string; attachmentIds?: number[] }) =>
       sendFeedback(requestId, payload),
     onSuccess: () => {
       toast({ title: "처리되었습니다." });
@@ -90,6 +92,23 @@ export default function ApprovalDetail() {
       }),
   });
 
+  const resubmitMutation = useMutation({
+    mutationFn: () => updateStepRequest(requestId, { status: "REQUESTED" }),
+    onSuccess: () => {
+      toast({ title: "다시 승인 요청을 보냈습니다." });
+      queryClient.invalidateQueries({ queryKey: ["step-request-detail", requestId] });
+      queryClient.invalidateQueries({ queryKey: ["step-request-feedback", requestId] });
+      queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
+    },
+    onError: (error: unknown) =>
+      toast({
+        title: "재요청 실패",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
   const cancelMutation = useMutation({
     mutationFn: () => cancelStepRequest(requestId),
     onSuccess: () => {
@@ -108,6 +127,15 @@ export default function ApprovalDetail() {
   });
 
   const approval = requestData?.data;
+  const { data: feedbackData } = useQuery({
+    queryKey: ["step-request-feedback", requestId],
+    queryFn: () => getFeedback(requestId),
+    enabled:
+      !!requestId &&
+      Boolean(
+        approval?.status === "APPROVED" || approval?.status === "REJECTED" || approval?.status === "CHANGE_REQUESTED"
+      ),
+  });
   const feedback = useMemo(() => {
     const feedbackPayload = feedbackData?.data;
     if (Array.isArray(feedbackPayload)) return feedbackPayload[0];
@@ -119,15 +147,32 @@ export default function ApprovalDetail() {
     if (showEditDialog && approval) {
       setEditTitle(approval.title);
       setEditDescription(approval.description || "");
-      const attachmentIds = (approval.files ?? approval.attachments ?? [])
-        .map((file) => (typeof file === "object" && file?.id ? file.id : undefined))
-        .filter((id): id is number => typeof id === "number");
-      setEditAttachmentIds(attachmentIds);
-      const linkValues = (approval.links ?? []).map((link) => {
-        if (typeof link === "string") return link;
-        return link?.url || link?.path || link?.fileName || "";
-      }).filter(Boolean);
-      setEditLinks(linkValues as string[]);
+      const requestAttachments = approval.attachments ?? approval.files ?? [];
+      const linkValues = approval.links ?? [];
+      const mapped: UploadedAttachment[] = [
+        ...requestAttachments.map((file, index) => {
+          const label = renderAttachmentLabel(file);
+          const href = typeof file === "string" ? file : file?.url || file?.path;
+          return {
+            id: typeof file === "string" ? -(index + 1) : file?.id ?? index,
+            name: label,
+            url: href,
+            isLink: Boolean(href),
+          };
+        }),
+        ...linkValues.map((link, index) => {
+          if (typeof link === "string") {
+            return { id: -(requestAttachments.length + index + 1), name: link, url: link, isLink: true };
+          }
+          return {
+            id: link?.id ?? -(requestAttachments.length + index + 1),
+            name: link?.fileName || link?.url || link?.path || `링크 ${index + 1}`,
+            url: link?.url || link?.path,
+            isLink: true,
+          };
+        }),
+      ];
+      setEditAttachments(mapped);
     }
   }, [showEditDialog, approval]);
 
@@ -151,54 +196,17 @@ export default function ApprovalDetail() {
   }
 
   const getStatusBadge = (status: StepRequestResponse["status"]) => {
-    switch (status) {
-      case "APPROVED":
-        return <Badge className="bg-green-500 text-white hover:bg-green-600">승인 완료</Badge>;
-      case "REJECTED":
-        return <Badge variant="destructive">반려됨</Badge>;
-      case "REQUESTED":
-        return <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">승인 요청 중</Badge>;
-      case "CHANGE_REQUESTED":
-        return <Badge className="bg-amber-500 text-white hover:bg-amber-600">변경 요청됨</Badge>;
-      case "CANCELED":
-        return <Badge variant="secondary">취소됨</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
+    const mapped = stepRequestStatusMap[status];
+    const label = mapped?.label ?? status;
+    if (status === "APPROVED") return <Badge className="bg-green-500 text-white hover:bg-green-600">{label}</Badge>;
+    if (status === "REJECTED") return <Badge variant="destructive">{label}</Badge>;
+    if (status === "REQUESTED") return <Badge className="bg-yellow-500 text-white hover:bg-yellow-600">{label}</Badge>;
+    if (status === "CHANGE_REQUESTED") return <Badge className="bg-amber-500 text-white hover:bg-amber-600">{label}</Badge>;
+    if (status === "CANCELED") return <Badge variant="secondary">{label}</Badge>;
+    if (mapped?.className) {
+      return <Badge className={mapped.className}>{label}</Badge>;
     }
-  };
-
-  const getStatusColor = (status: StepRequestResponse["status"]) => {
-    switch (status) {
-      case "APPROVED":
-        return "text-green-600 border-green-600 bg-green-50";
-      case "REJECTED":
-        return "text-red-600 border-red-600 bg-red-50";
-      case "REQUESTED":
-        return "text-yellow-600 border-yellow-600 bg-yellow-50";
-      case "CHANGE_REQUESTED":
-        return "text-amber-600 border-amber-600 bg-amber-50";
-      case "CANCELED":
-        return "text-slate-600 border-slate-200 bg-slate-50";
-      default:
-        return "text-muted-foreground border-dashed";
-    }
-  };
-
-  const getStatusDotColor = (status: StepRequestResponse["status"]) => {
-    switch (status) {
-      case "APPROVED":
-        return "bg-green-500";
-      case "REJECTED":
-        return "bg-red-500";
-      case "REQUESTED":
-        return "bg-yellow-500";
-      case "CHANGE_REQUESTED":
-        return "bg-amber-500";
-      case "CANCELED":
-        return "bg-slate-400";
-      default:
-        return "bg-slate-400";
-    }
+    return <Badge variant="secondary">{label}</Badge>;
   };
 
   const handleApprove = () => {
@@ -212,6 +220,7 @@ export default function ApprovalDetail() {
   const openDecisionDialog = (type: FeedbackResponseType) => {
     setDecisionType(type);
     setRejectReason("");
+    setDecisionAttachments([]);
     setShowRejectDialog(true);
   };
 
@@ -224,7 +233,16 @@ export default function ApprovalDetail() {
       toast({ title: "사유를 입력해주세요.", variant: "destructive" });
       return;
     }
-    feedbackMutation.mutate({ response: decisionType, reasonText: rejectReason });
+    const attachmentIds = decisionAttachments.map((a) => a.id);
+    feedbackMutation.mutate({ response: decisionType, reasonText: rejectReason, attachmentIds: attachmentIds.length ? attachmentIds : undefined });
+  };
+
+  const handleResubmit = () => {
+    if (!isChangeRequested) {
+      toast({ title: "재요청할 수 없는 상태입니다.", variant: "destructive" });
+      return;
+    }
+    resubmitMutation.mutate();
   };
 
   const renderAttachmentLabel = (file?: AttachmentResponse | string) => {
@@ -237,49 +255,43 @@ export default function ApprovalDetail() {
   const isRequestCancelable = isRequested;
   const isDecisionable = isRequested;
   const attachments = approval?.files ?? approval?.attachments ?? [];
-  const links = approval?.links ?? [];
+  const links = approval?.links ?? (approval?.attachments ?? []);
   const statusLabelMap: Record<string, string> = {
-    REQUESTED: "승인 요청 중",
-    APPROVED: "승인 완료",
-    REJECTED: "반려됨",
-    CHANGE_REQUESTED: "변경 요청됨",
-    CANCELED: "요청 취소",
+    REQUESTED: stepRequestStatusMap.REQUESTED.label,
+    APPROVED: stepRequestStatusMap.APPROVED.label,
+    REJECTED: stepRequestStatusMap.REJECTED.label,
+    CHANGE_REQUESTED: stepRequestStatusMap.CHANGE_REQUESTED.label,
+    CANCELED: stepRequestStatusMap.CANCELED.label,
+  };
+  const feedbackLabelMap: Record<string, string> = {
+    APPROVE: "승인",
+    REJECT: "반려",
+    CHANGE_REQUEST: "수정 요청",
+  };
+  const decisionCardStyle: Record<StepRequestResponse["status"], string> = {
+    APPROVED: "bg-[#F1FFF4] border-emerald-200",
+    REJECTED: "bg-[#FFF3F3] border-red-200",
+    CHANGE_REQUESTED: "bg-[#FFF7EC] border-amber-200",
+    REQUESTED: "bg-muted/40",
+    CANCELED: "bg-slate-50 border-slate-200",
+  };
+  const formatDateTime = (value?: string) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   };
   const isRequester = Boolean(me?.id && approval.requestedBy === me.id);
-  const isSystemAdmin = me?.role === "SYSTEM_ADMIN";
+  // TODO: 회원 연동 후 관리자 fallback 제거
+  const isSystemAdmin = true;
   const isClient = me?.role === "CLIENT";
   const isAgency = me?.role === "AGENCY";
   const canDecide = isRequested && (isClient || isSystemAdmin);
   const canChangeRequest = isRequested && (isClient || isSystemAdmin);
   const canEditRequested = isRequested && (isSystemAdmin || (isRequester && isAgency));
-  const canEditChangeRequested = isChangeRequested && (isSystemAdmin || (isRequester && isAgency));
+  const canResubmit = isChangeRequested && (isSystemAdmin || isRequester);
   const canCancel = isRequested && (isSystemAdmin || isRequester);
-  const showActions = canDecide || canChangeRequest || canEditRequested || canEditChangeRequested || canCancel;
-
-  const handleEditAddAttachment = () => {
-    if (!editAttachmentInput.trim()) return;
-    const value = Number(editAttachmentInput.trim());
-    if (Number.isNaN(value)) {
-      toast({ title: "첨부 ID는 숫자여야 합니다.", variant: "destructive" });
-      return;
-    }
-    setEditAttachmentIds(prev => [...prev, value]);
-    setEditAttachmentInput("");
-  };
-
-  const handleEditRemoveAttachment = (index: number) => {
-    setEditAttachmentIds(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleEditAddLink = () => {
-    if (!editLinkInput.trim()) return;
-    setEditLinks(prev => [...prev, editLinkInput.trim()]);
-    setEditLinkInput("");
-  };
-
-  const handleEditRemoveLink = (index: number) => {
-    setEditLinks(prev => prev.filter((_, i) => i !== index));
-  };
+  const showActions = true;
 
   const handleSubmitEdit = () => {
     if (!editTitle.trim()) {
@@ -289,52 +301,85 @@ export default function ApprovalDetail() {
     updateRequestMutation.mutate({
       title: editTitle,
       description: editDescription,
-      attachmentIds: editAttachmentIds,
-      links: editLinks,
+      attachmentIds: editAttachments.map((a) => a.id).filter((id) => typeof id === "number" && id > 0),
     });
   };
+
+  const isDecidedStatus = approval.status === "APPROVED" || approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED";
+  const decisionReason = approval.decisionReason || feedback?.reasonText || "";
+  const hasDecisionReason = (approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED") && Boolean(decisionReason?.trim());
+  const decisionDisplayAttachments = ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]);
+  const hasDecisionAttachments = Array.isArray(decisionDisplayAttachments) && decisionDisplayAttachments.length > 0;
+  const decisionSectionTitle: Record<StepRequestResponse["status"], string> = {
+    APPROVED: "승인 정보",
+    REJECTED: "반려 정보",
+    CHANGE_REQUESTED: "수정 요청 정보",
+    REQUESTED: "결정 정보",
+    CANCELED: "결정 정보",
+  };
+  const feedbackHistory = Array.isArray(feedbackData?.data)
+    ? feedbackData.data
+    : feedbackData?.data
+      ? [feedbackData.data]
+      : [];
+  const phaseLabelMap: Record<string, string> = {
+    CONTRACT: "계약",
+    IN_PROGRESS: "진행",
+    DELIVERY: "납품",
+    MAINTENANCE: "유지보수",
+    PENDING: "대기",
+    COMPLETED: "완료",
+    APPROVED: "승인",
+  };
+  const steps = (stepsData?.data.steps ?? []) as StepResponse[];
+  const matchedStep = steps.find((step) => step.id === approval.stepId);
+  const stepPhase = matchedStep?.phase || (approval as { stepPhase?: string }).stepPhase || (approval as { phase?: string }).phase;
+  const phaseLabel = phaseLabelMap[stepPhase || ""] || stepPhase || "";
+  const requestedByLabel = approval.requestedByName || approval.requestedBy || "-";
+  const decidedByLabel = approval.decidedByName || approval.decidedBy || "-";
+  const decidedByCompany =
+    (approval as { decidedByCompanyName?: string; decidedByCompany?: string }).decidedByCompanyName ||
+    (approval as { decidedByCompanyName?: string; decidedByCompany?: string }).decidedByCompany ||
+    "";
+  const decidedByDisplayCompany = decidedByCompany || "회사명"; // TODO: 결정자 회사 정보를 API로 수신하면 교체하세요.
+  const metaDate = formatDateTime(approval.createdAt);
 
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto w-full">
-        <div>
-          <Button
-            variant="ghost"
-            onClick={() => navigate(`/project/${id}/approvals`)}
-            className="mb-4 -ml-2"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            목록으로
-          </Button>
-          <h1 className="text-2xl font-bold text-foreground">단계별 승인 상세</h1>
-        </div>
+        <Button
+          variant="ghost"
+          onClick={() => navigate(`/project/${id}/approvals`)}
+          className="-ml-2 w-fit"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          목록으로
+        </Button>
 
         <Card>
-          <CardHeader className="border-b">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">{approval.title}</CardTitle>
+          <CardHeader className="space-y-3 border-b">
+            <div className="flex flex-wrap items-center gap-3">
+              <CardTitle className="text-2xl">{approval.title}</CardTitle>
               {getStatusBadge(approval.status)}
             </div>
-          </CardHeader>
-          <CardContent className="pt-6 space-y-6">
-            <div className="space-y-2">
-              <Select defaultValue={String(approval.id)}>
-                <SelectTrigger className={cn("w-full h-12", getStatusColor(approval.status))}>
-                  <div className="flex items-center gap-2">
-                    <div className={cn("w-3 h-3 rounded-full", getStatusDotColor(approval.status))} />
-                    <SelectValue />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={String(approval.id)}>{approval.title}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {phaseLabel ? (
+                <span className="inline-flex items-center rounded-full border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground">
+                  {phaseLabel}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">-</span>
+              )}
+              <span className="text-muted-foreground">·</span>
+              <span className="text-foreground font-medium">{requestedByLabel}</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-foreground font-medium">{metaDate}</span>
             </div>
-
-            {/* 설명 */}
+          </CardHeader>
+          <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
               <Label>설명</Label>
-              <div className="text-sm text-muted-foreground whitespace-pre-line p-3 bg-muted/30 rounded-md">
+              <div className="text-sm text-muted-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
                 {approval.description || "설명이 없습니다."}
               </div>
             </div>
@@ -378,116 +423,124 @@ export default function ApprovalDetail() {
                 )}
               </div>
             </div>
+          </CardContent>
+        </Card>
 
-            {/* 요청자 */}
-            <div className="space-y-2">
-              <Label>요청자</Label>
-              <Input value={approval.requestedByName || approval.requestedBy || ""} readOnly />
-            </div>
+        {isDecidedStatus && (
+          <Card className={cn("border", decisionCardStyle[approval.status] ?? "bg-muted/40")}>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">
+                {decisionSectionTitle[approval.status] ?? "결정 정보"}
+              </CardTitle>
+            </CardHeader>
+              <CardContent className="pt-0 space-y-4 text-sm text-foreground">
+                <Separator className="my-2" />
 
-            {/* 요청일 */}
-            <div className="space-y-2">
-              <Label>요청일</Label>
-              <Input value={new Date(approval.createdAt).toLocaleString("ko-KR")} readOnly />
-            </div>
-
-            {/* 상태 */}
-            <div className="space-y-2">
-              <Label>상태</Label>
-              <div className="flex items-center gap-2">
-                <Badge className={cn(
-                  approval.status === "APPROVED" && "bg-green-500",
-                  approval.status === "REJECTED" && "bg-red-500",
-                  approval.status === "REQUESTED" && "bg-yellow-500",
-                  approval.status === "CHANGE_REQUESTED" && "bg-amber-500",
-                  approval.status === "CANCELED" && "bg-slate-400"
-                )}>
-                  {statusLabelMap[approval.status] || approval.status}
-                </Badge>
-              </div>
-            </div>
-
-            {/* 반려 정보 (반려/변경 요청 등) */}
-            {approval.status === "REJECTED" && (
-              <div className="space-y-4 p-4 border-2 border-red-200 rounded-lg bg-red-50/50">
-                <div className="flex items-center gap-2 pb-2 border-b border-red-200">
-                  <div className="font-semibold text-red-700">반려 정보</div>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>반려자</Label>
-                  <Input value={approval.decidedByName || approval.decidedBy || ""} readOnly className="bg-white" />
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2 flex-wrap sm:flex-nowrap items-start sm:items-center">
+                    <span className="text-sm text-muted-foreground min-w-[70px] font-semibold">결정자</span>
+                    <span className="text-sm text-foreground/80 flex-1 break-words">
+                      {decidedByLabel}
+                      {` · ${decidedByDisplayCompany}`}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap sm:flex-nowrap items-start sm:items-center">
+                    <span className="text-sm text-muted-foreground min-w-[70px] font-semibold">결정일</span>
+                    <span className="text-sm text-foreground/80 flex-1 break-words whitespace-pre-line">
+                      {formatDateTime(approval.decidedAt)}
+                    </span>
+                  </div>
+                  {hasDecisionReason && (
+                    <div className="flex gap-2 flex-wrap sm:flex-nowrap items-start sm:items-center">
+                      <span className="text-sm text-muted-foreground min-w-[70px] font-semibold">사유</span>
+                      <span className="text-sm text-foreground/80 flex-1 break-words whitespace-pre-line leading-relaxed block">
+                        {decisionReason}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label>반려일</Label>
-                  <Input value={approval.decidedAt ? new Date(approval.decidedAt).toLocaleString("ko-KR") : ""} readOnly className="bg-white" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>반려사유</Label>
-                  <Textarea 
-                    value={approval.decisionReason || feedback?.reasonText || ""} 
-                    readOnly 
-                    className="min-h-[80px] bg-white"
-                  />
-                </div>
-
-                {/* 첨부파일 */}
-                {attachments.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      첨부파일
-                    </Label>
+              {hasDecisionAttachments && (
+                <div className="space-y-2 pt-1">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">첨부파일 / 링크</p>
                     <div className="space-y-2">
-                      {attachments.map((file, index) => (
-                        <div key={index} className="flex items-center gap-2 p-3 border rounded-lg bg-white">
+                      {decisionFiles.map((file, index) => (
+                        <div key={index} className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm flex-1">{renderAttachmentLabel(file)}</span>
+                          {(() => {
+                            const label = renderAttachmentLabel(file);
+                            const href = typeof file === "string" ? file : file?.url || file?.path;
+                            if (href) {
+                              return (
+                                <a
+                                  className="text-sm font-semibold text-blue-600 hover:underline break-all"
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {label}
+                                </a>
+                              );
+                            }
+                              return <span className="text-sm font-semibold break-words">{label}</span>;
+                          })()}
                         </div>
                       ))}
+                      {decisionLinks.map((link, index) => {
+                        const label = renderAttachmentLabel(link);
+                        const href = typeof link === "string" ? link : link?.url || link?.path;
+                        return (
+                          <div key={`link-${index}`} className="flex items-center gap-2">
+                            <LinkIcon className="h-4 w-4 text-blue-500" />
+                            {href ? (
+                              <a
+                                className="text-sm font-semibold text-blue-600 hover:underline break-all"
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {label}
+                              </a>
+                            ) : (
+                              <span className="text-sm font-semibold break-words">{label}</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-                {/* 링크 */}
-                {links.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-2">
-                      <LinkIcon className="h-4 w-4" />
-                      링크
-                    </Label>
-                    <div className="space-y-2">
-                      {links.map((link, index) => (
-                        <div key={index} className="flex items-center gap-2 p-3 border rounded-lg bg-white">
-                          <LinkIcon className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm flex-1">{renderAttachmentLabel(link)}</span>
-                        </div>
-                      ))}
+        {feedbackHistory.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-muted-foreground">결정 이력</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {feedbackHistory.map((item, index) => (
+                <div key={`${item.id ?? item.response}-${index}`} className="flex items-start gap-3 text-sm">
+                  <div className="mt-2 h-2 w-2 rounded-full bg-slate-400" />
+                    <div className="flex-1 space-y-0.5">
+                      <div className="font-medium text-foreground">
+                        {formatDateTime(item.decidedAt ?? item.createdAt)} · {feedbackLabelMap[item.response] ?? item.response} · {item.respondedByName || item.respondedBy || "결정자"}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+                ))}
+            </CardContent>
+          </Card>
+        )}
 
-            {/* 승인자/승인일 (승인된 경우에만 표시) */}
-            {approval.status === "APPROVED" && (
+        {/* 액션 버튼 (TODO: 권한 및 상태에 따라 표시) */}
+        {showActions && (
+          <div className="flex gap-2 flex-wrap">
+            {isRequested && (
               <>
-                <div className="space-y-2">
-                  <Label>승인자</Label>
-                  <Input value={approval.decidedByName || approval.decidedBy || ""} readOnly />
-                </div>
-                <div className="space-y-2">
-                  <Label>승인일</Label>
-                  <Input value={approval.decidedAt ? new Date(approval.decidedAt).toLocaleString("ko-KR") : ""} readOnly />
-                </div>
-              </>
-            )}
-
-            {/* 액션 버튼 (권한 및 상태에 따라 표시) */}
-            {showActions && (
-              <div className="flex gap-2 pt-4 flex-wrap">
                 {canDecide && (
                   <>
                     <Button onClick={handleApprove} className="flex-1 bg-blue-500 hover:bg-blue-600" disabled={feedbackMutation.isPending}>
@@ -510,17 +563,17 @@ export default function ApprovalDetail() {
                     className="flex-1"
                     disabled={feedbackMutation.isPending}
                   >
-                    변경 요청
+                    수정 요청
                   </Button>
                 )}
-                {(canEditRequested || canEditChangeRequested) && (
+                {canEditRequested && (
                   <Button
                     onClick={() => setShowEditDialog(true)}
                     variant="secondary"
                     className="flex-1"
                     disabled={updateRequestMutation.isPending}
                   >
-                    {isChangeRequested ? "요청 수정(재제출)" : "요청 수정"}
+                    요청 내용 수정
                   </Button>
                 )}
                 {canCancel && (
@@ -537,25 +590,36 @@ export default function ApprovalDetail() {
                     {cancelMutation.isPending ? "취소 중..." : "요청 취소"}
                   </Button>
                 )}
-              </div>
+              </>
             )}
 
-            {!isDecisionable && approval.status === "CANCELED" && (
-              <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
-                요청이 취소되어 승인/반려를 진행할 수 없습니다.
-              </div>
+            {isChangeRequested && canResubmit && (
+              <>
+                <Button
+                  onClick={() => setShowEditDialog(true)}
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={updateRequestMutation.isPending}
+                >
+                  요청 내용 수정
+                </Button>
+                <Button
+                  onClick={handleResubmit}
+                  className="flex-1"
+                  disabled={resubmitMutation.isPending}
+                >
+                  {resubmitMutation.isPending ? "요청 중..." : "다시 승인 요청"}
+                </Button>
+              </>
             )}
-            {feedback && (
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                <p className="font-semibold">최근 결정</p>
-                <p className="text-muted-foreground mt-1">
-                  {feedback.response} · {feedback.decidedAt ? new Date(feedback.decidedAt).toLocaleString("ko-KR") : feedback.createdAt}
-                </p>
-                {feedback.reasonText && <p className="mt-1 whitespace-pre-line text-muted-foreground">{feedback.reasonText}</p>}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        )}
+
+        {!isDecisionable && approval.status === "CANCELED" && (
+          <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
+            요청이 취소되어 승인/반려를 진행할 수 없습니다.
+          </div>
+        )}
       </div>
 
       {/* 결정 입력 다이얼로그 (반려/변경 요청) */}
@@ -563,6 +627,7 @@ export default function ApprovalDetail() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{decisionType === "CHANGE_REQUEST" ? "변경 요청" : "승인 반려"}</DialogTitle>
+            <DialogDescription className="sr-only">결정 사유와 첨부를 입력하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -575,83 +640,22 @@ export default function ApprovalDetail() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                첨부파일
-              </Label>
-              <div className="flex items-center gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
-                  <FileText className="h-4 w-4" />
-                  파일 선택
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  {reviewFiles.length > 0 ? `${reviewFiles.length}개 파일 선택됨` : "선택된 파일 없음"}
-                </span>
-              </div>
-              {reviewFiles.length > 0 && (
-                <div className="space-y-2 mt-3">
-                  {reviewFiles.map((file, index) => (
-                    <div
-                      key={`${file.name}-${index}`}
-                      className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <FileText className="h-4 w-4 flex-shrink-0 text-primary" />
-                        <span className="text-sm truncate">{file.name}</span>
-                        <Badge variant="secondary" className="text-xs flex-shrink-0">
-                          {(file.size / 1024).toFixed(1)} KB
-                        </Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 flex-shrink-0"
-                        onClick={() => removeReviewFile(index)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>링크</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="https://example.com"
-                  value={linkInput}
-                  onChange={(event) => setLinkInput(event.target.value)}
-                />
-                <Button type="button" onClick={addReviewLink}>
-                  추가
-                </Button>
-              </div>
-              {reviewLinks.length > 0 && (
-                <div className="space-y-2">
-                  {reviewLinks.map((link, index) => (
-                    <div key={`${link.url}-${index}`} className="flex items-center justify-between text-sm border rounded px-3 py-2 bg-muted/40">
-                      <span>{link.displayName}</span>
-                      <Button variant="ghost" size="sm" onClick={() => removeReviewLink(index)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AttachmentInput
+              targetType="STEP_REQUEST_ANSWER"
+              attachments={decisionAttachments}
+              onChange={setDecisionAttachments}
+              label="첨부파일 / 링크"
+              disabled={feedbackMutation.isPending}
+            />
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReviewDialogAction(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRejectDialog(false);
+                setDecisionAttachments([]);
+              }}
+            >
               취소
             </Button>
             <Button variant={decisionType === "CHANGE_REQUEST" ? "secondary" : "destructive"} onClick={handleDecision} disabled={feedbackMutation.isPending}>
@@ -666,6 +670,7 @@ export default function ApprovalDetail() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>요청 수정</DialogTitle>
+            <DialogDescription className="sr-only">요청 내용을 수정하고 첨부를 업데이트하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -680,62 +685,12 @@ export default function ApprovalDetail() {
                 className="min-h-[140px]"
               />
             </div>
-            <div className="space-y-2">
-              <Label>첨부파일 ID</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={editAttachmentInput}
-                  onChange={(event) => setEditAttachmentInput(event.target.value)}
-                  placeholder="첨부 ID를 입력하세요"
-                />
-                <Button type="button" variant="secondary" onClick={handleEditAddAttachment}>
-                  추가
-                </Button>
-              </div>
-              {editAttachmentIds.length > 0 && (
-                <div className="space-y-2">
-                  {editAttachmentIds.map((file, index) => (
-                    <div
-                      key={`${file}-${index}`}
-                      className="flex items-center justify-between rounded-md border p-2 text-sm"
-                    >
-                      <span>첨부 ID {file}</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleEditRemoveAttachment(index)}>
-                        제거
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>링크</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={editLinkInput}
-                  onChange={(event) => setEditLinkInput(event.target.value)}
-                  placeholder="링크를 입력하세요"
-                />
-                <Button type="button" variant="secondary" onClick={handleEditAddLink}>
-                  추가
-                </Button>
-              </div>
-              {editLinks.length > 0 && (
-                <div className="space-y-2">
-                  {editLinks.map((link, index) => (
-                    <div
-                      key={`${link}-${index}`}
-                      className="flex items-center justify-between rounded-md border p-2 text-sm"
-                    >
-                      <span className="truncate">{link}</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleEditRemoveLink(index)}>
-                        제거
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AttachmentInput
+              targetType="STEP_REQUEST"
+              attachments={editAttachments}
+              onChange={setEditAttachments}
+              label="첨부파일 / 링크"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>

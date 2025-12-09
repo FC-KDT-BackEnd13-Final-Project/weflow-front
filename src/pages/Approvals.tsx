@@ -4,18 +4,28 @@ import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProjectSteps } from "@/lib/step";
-import { createStepRequest, getProjectStepRequests } from "@/lib/stepRequest";
+import { getProjectSteps } from "@/apis/step";
+import { createStepRequest, getProjectStepRequests } from "@/apis/stepRequest";
+import { deleteAttachment } from "@/apis/attachments";
+import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
 import { StepResponse, StepRequestSummaryResponse } from "@/lib/stepTypes";
 import { useToast } from "@/hooks/use-toast";
 import { boardStatusLabels, boardStatusStyles } from "@/constants/boardStatus";
+import { stepRequestStatusMap } from "@/constants/stepRequestStatus";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 export default function Approvals() {
   const { id } = useParams();
@@ -25,13 +35,13 @@ export default function Approvals() {
   const projectId = Number(id);
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<string>("ALL");
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
   const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
   const [requestTitle, setRequestTitle] = useState("");
   const [requestDescription, setRequestDescription] = useState("");
-  const [requestAttachmentIds, setRequestAttachmentIds] = useState<number[]>([]);
-  const [requestLinks, setRequestLinks] = useState<string[]>([]);
-  const [attachmentInput, setAttachmentInput] = useState("");
-  const [linkInput, setLinkInput] = useState("");
+  const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
+  const attachmentIds = useMemo(() => uploadedAttachments.map((a) => a.id), [uploadedAttachments]);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
     queryKey: ["project-steps", projectId],
@@ -40,8 +50,8 @@ export default function Approvals() {
   });
 
   const { data: requestData, isLoading: requestsLoading } = useQuery({
-    queryKey: ["project-step-requests", projectId],
-    queryFn: () => getProjectStepRequests(projectId, 0, 100),
+    queryKey: ["project-step-requests", projectId, page],
+    queryFn: () => getProjectStepRequests(projectId, page, pageSize),
     enabled: !!projectId,
   });
 
@@ -51,8 +61,7 @@ export default function Approvals() {
       return createStepRequest(selectedStepId, {
         title: requestTitle,
         description: requestDescription,
-        attachmentIds: requestAttachmentIds.length ? requestAttachmentIds : undefined,
-        links: requestLinks,
+        attachmentIds: attachmentIds.length ? attachmentIds : undefined,
       });
     },
     onSuccess: () => {
@@ -69,7 +78,15 @@ export default function Approvals() {
   });
 
   const steps = stepsData?.data.steps ?? [];
-  const stepRequestSummaries = requestData?.data.stepRequestSummaryResponses ?? [];
+  const {
+    stepRequestSummaryResponses: stepRequestSummaries = [],
+    totalCount = 0,
+    page: currentPageFromApi,
+    size: pageSizeFromApi,
+  } = requestData ?? {};
+  const currentPage = currentPageFromApi ?? page;
+  const pageSizeForCalc = pageSizeFromApi ?? pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSizeForCalc));
 
   const phaseLabelMap: Record<string, string> = {
     CONTRACT: "계약",
@@ -111,41 +128,18 @@ export default function Approvals() {
     return { label: "진행 전", className: "bg-gray-500 text-white" };
   };
 
-  const requestStatusLabel: Record<string, string> = {
-    REQUESTED: "승인 요청",
-    APPROVED: "승인",
-    REJECTED: "반려",
-    CANCELED: "요청 취소",
-    CHANGE_REQUESTED: "수정 요청",
-  };
-
   const requestStatusBadge = (status: StepRequestSummaryResponse["status"]) => {
-    switch (status) {
-      case "REQUESTED":
-        return { label: boardStatusLabels.request, className: boardStatusStyles.request };
-      case "CHANGE_REQUESTED":
-        return { label: requestStatusLabel[status], className: boardStatusStyles.request };
-      case "APPROVED":
-        return { label: boardStatusLabels.approved, className: boardStatusStyles.approved };
-      case "REJECTED":
-        return { label: boardStatusLabels.rejected, className: boardStatusStyles.rejected };
-      case "CANCELED":
-        return { label: requestStatusLabel[status], className: "bg-slate-500 text-white" };
-      default:
-        return { label: status, className: "bg-slate-500 text-white" };
-    }
+    const mapped = stepRequestStatusMap[status];
+    if (mapped) return mapped;
+    return { label: status, className: "bg-slate-500 text-white" };
   };
 
-  const formatDateTime = (value?: string) => {
+  const formatDate = (value?: string) => {
     if (!value) return "-";
-    return new Date(value).toLocaleString("ko-KR", {
+    return new Date(value).toLocaleDateString("ko-KR", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
     });
   };
 
@@ -153,11 +147,8 @@ export default function Approvals() {
     setSelectedStepId(stepId);
     setRequestTitle("");
     setRequestDescription("");
-    setRequestAttachmentIds([]);
-    setRequestLinks([]);
-    setAttachmentInput("");
-    setLinkInput("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    setUploadedAttachments([]);
+    setIsRequestDialogOpen(true);
   };
 
   const handleRequestDialogChange = (open: boolean) => {
@@ -166,54 +157,19 @@ export default function Approvals() {
       setSelectedStepId(null);
       setRequestTitle("");
       setRequestDescription("");
-      setRequestAttachmentIds([]);
-      setRequestLinks([]);
-      setAttachmentInput("");
-      setLinkInput("");
+      setUploadedAttachments([]);
     }
   };
-
-  const handleAddAttachment = () => {
-    if (!attachmentInput.trim()) return;
-    const value = Number(attachmentInput.trim());
-    if (Number.isNaN(value)) {
-      toast({ title: "첨부 ID는 숫자여야 합니다.", variant: "destructive" });
-      return;
+  const handleRemoveAttachment = async (index: number) => {
+    const target = uploadedAttachments[index];
+    setUploadedAttachments(prev => prev.filter((_, i) => i !== index));
+    try {
+      await deleteAttachment(target.id);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({ title: "첨부 삭제 실패", description: message, variant: "destructive" });
     }
-    setRequestAttachmentIds(prev => [...prev, value]);
-    setAttachmentInput("");
   };
-
-  const handleRemoveAttachment = (index: number) => {
-    setRequestAttachmentIds(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const addLink = () => {
-    if (!linkInput.trim()) return;
-    setPendingLinks(prev => [...prev, linkInput.trim()]);
-    setLinkInput("");
-  };
-
-  const removeLink = (index: number) => {
-    setPendingLinks(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSubmitRequest = () => {
-    if (!selectedStepId) {
-      toast({ title: "단계를 선택해주세요.", variant: "destructive" });
-      return;
-    }
-    createRequestMutation.mutate();
-  };
-
-  const groupedRequests = useMemo(() => {
-    const summaries = requestData?.data.stepRequestSummaryResponses ?? [];
-    return summaries.reduce<Record<number, typeof summaries>>((acc, request) => {
-      if (!acc[request.stepId]) acc[request.stepId] = [];
-      acc[request.stepId].push(request);
-      return acc;
-    }, {});
-  }, [requestData]);
 
   return (
     <ProjectLayout>
@@ -252,8 +208,8 @@ export default function Approvals() {
               <CardContent className="p-6 text-muted-foreground text-sm">표시할 단계가 없습니다.</CardContent>
             </Card>
           )}
-          {filteredSteps.map((step: StepResponse) => {
-            const requests = groupedRequests[step.id] || [];
+        {filteredSteps.map((step: StepResponse) => {
+            const requests = (stepRequestSummaries || []).filter((r) => r.stepId === step.id);
             const status = stepStatusBadge(step.status, requests.length > 0);
             const phaseLabel = phaseLabelMap[step.phase] || step.phase || "단계";
             const isApproved = step.status === "APPROVED";
@@ -285,15 +241,16 @@ export default function Approvals() {
                     {requests.length > 0 ? (
                       requests.map((approval) => {
                         const badge = requestStatusBadge(approval.status);
-                        const isCanceled = approval.status === "CANCELED";
-                        const showDecidedAt = approval.decidedAt && (approval.status === "APPROVED" || approval.status === "REJECTED");
+                        const showDecidedAt = approval.decidedAt && (approval.status === "APPROVED" || approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED");
+                        const createdLabel = formatDate(approval.createdAt);
+                        const decidedLabel = showDecidedAt ? formatDate(approval.decidedAt) : null;
                         return (
                           <button
                             key={approval.id}
                             onClick={() => navigate(`/project/${id}/approvals/${approval.id}`)}
                             className={cn(
                               "w-full rounded-lg border-2 bg-white p-3 text-left transition-shadow",
-                              isCanceled
+                              approval.status === "CANCELED"
                                 ? "border-gray-200 bg-gray-50 text-muted-foreground"
                                 : "border-gray-200 hover:border-gray-200 hover:shadow-md"
                             )}
@@ -305,8 +262,10 @@ export default function Approvals() {
                               </Badge>
                             </div>
                             <div className="flex flex-col text-xs text-muted-foreground mt-2">
-                              <span>작성일 {formatDateTime(approval.createdAt)}</span>
-                              {showDecidedAt && <span>결정일 {formatDateTime(approval.decidedAt)}</span>}
+                              <span>
+                                {(approval.requestedByName || approval.requestedBy || "요청자") ?? "요청자"}
+                                {createdLabel && ` · ${createdLabel}`}
+                              </span>
                             </div>
                           </button>
                         );
@@ -320,11 +279,6 @@ export default function Approvals() {
                           </Button>
                         </div>
                       )
-                    )}
-                    {stepStatus.label !== "완료" && requests.length > 0 && (
-                      <Button variant="outline" size="sm" onClick={() => openDialog(category)}>
-                        승인 요청 생성
-                      </Button>
                     )}
                   </div>
                   {!isApproved && requests.length > 0 && (
@@ -349,17 +303,11 @@ export default function Approvals() {
         </div>
       </div>
 
-      <Dialog
-        open={selectedStep !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            resetDialog();
-          }
-        }}
-      >
+      <Dialog open={isRequestDialogOpen} onOpenChange={handleRequestDialogChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>승인 요청 작성</DialogTitle>
+            <DialogDescription className="sr-only">승인 요청 내용을 입력하고 첨부를 추가하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -386,92 +334,25 @@ export default function Approvals() {
             </div>
             <div className="space-y-2">
               <Label>제목</Label>
-              <Input placeholder="승인 요청 제목을 입력하세요" value={title} onChange={(event) => setTitle(event.target.value)} />
+              <Input placeholder="승인 요청 제목을 입력하세요" value={requestTitle} onChange={(event) => setRequestTitle(event.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>설명</Label>
-              <Textarea placeholder="승인 요청에 대한 설명을 입력하세요" className="min-h-[120px]" value={description} onChange={(event) => setDescription(event.target.value)} />
+              <Textarea placeholder="승인 요청에 대한 설명을 입력하세요" className="min-h-[120px]" value={requestDescription} onChange={(event) => setRequestDescription(event.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label>첨부파일</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={attachmentInput}
-                  onChange={(event) => setAttachmentInput(event.target.value)}
-                  placeholder="첨부 ID를 입력하세요 (STEP_REQUEST 업로드)"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Paperclip className="h-4 w-4" />
-                  파일 선택
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  {pendingFiles.length}개 파일 선택됨
-                </span>
-              </div>
-              {requestAttachmentIds.length > 0 && (
-                <div className="space-y-2">
-                  {requestAttachmentIds.map((file, index) => (
-                    <div
-                      key={`${file.name}-${index}`}
-                      className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30"
-                    >
-                      <span>첨부 ID {file}</span>
-                      <Button variant="ghost" size="sm" onClick={() => handleRemoveAttachment(index)}>
-                        제거
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>관련 링크</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="https://example.com"
-                  value={linkInput}
-                  onChange={(event) => setLinkInput(event.target.value)}
-                />
-                <Button type="button" variant="outline" onClick={addLink}>
-                  추가
-                </Button>
-              </div>
-              {pendingLinks.length > 0 && (
-                <div className="space-y-2">
-                  {pendingLinks.map((link, index) => (
-                    <div key={`${link}-${index}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm bg-muted/30">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <LinkIcon className="h-4 w-4 flex-shrink-0" />
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="truncate underline-offset-2 hover:underline"
-                        >
-                          {link}
-                        </a>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => removeLink(index)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AttachmentInput
+              targetType="STEP_REQUEST"
+              attachments={uploadedAttachments}
+              onChange={setUploadedAttachments}
+              label="첨부파일 / 링크"
+            />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={resetDialog}>
+            <Button variant="outline" onClick={() => handleRequestDialogChange(false)}>
               취소
             </Button>
             <Button
-              onClick={handleSubmitRequest}
+              onClick={() => createRequestMutation.mutate()}
               disabled={!selectedStepId || !requestTitle || !requestDescription || createRequestMutation.isPending}
             >
               {createRequestMutation.isPending ? "작성 중..." : "작성 완료"}
@@ -479,6 +360,26 @@ export default function Approvals() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <div className="flex justify-center">
+        <Pagination className="mt-4">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious onClick={() => page > 0 && setPage(page - 1)} className={page === 0 ? "pointer-events-none opacity-50" : ""} />
+            </PaginationItem>
+            <PaginationItem>
+              <span className="text-sm">
+                {currentPage + 1} / {totalPages}
+              </span>
+            </PaginationItem>
+            <PaginationItem>
+              <PaginationNext
+                onClick={() => currentPage + 1 < totalPages && setPage(currentPage + 1)}
+                className={currentPage + 1 >= totalPages ? "pointer-events-none opacity-50" : ""}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
     </ProjectLayout>
   );
 }
