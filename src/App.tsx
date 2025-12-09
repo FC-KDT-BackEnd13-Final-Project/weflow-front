@@ -60,64 +60,7 @@ import AdminUserDetail from "./pages/admin/AdminUserDetail";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/first-password-change" element={<FirstPasswordChange />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/notifications/:id" element={<NotificationDetail />} />
-          <Route path="/approval-requests" element={<ApprovalRequests />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/settings/password" element={<ChangePassword />} />
-          
-          {/* Project Member Routes */}
-          <Route path="/project/:id/dashboard" element={<ProjectDashboard />} />
-          <Route path="/project/:id/board" element={<Board />} />
-          <Route path="/project/:id/board/new" element={<BoardNew />} />
-          <Route path="/project/:id/board/:postId" element={<BoardDetail />} />
-          <Route path="/project/:id/checklist" element={<Checklist />} />
-          <Route path="/project/:id/checklist/create" element={<ChecklistCreate />} />
-          <Route path="/project/:id/checklist/templates" element={<ChecklistTemplates />} />
-          <Route path="/project/:id/checklist/templates/:templateId" element={<ChecklistTemplateDetail />} />
-          <Route path="/project/:id/checklist/:checklistId" element={<ChecklistDetail />} />
-          <Route path="/project/:id/approvals" element={<Approvals />} />
-          <Route path="/project/:id/approvals/:approvalId" element={<ApprovalDetail />} />
-          <Route path="/project/:id/members" element={<TeamMembers />} />
-          <Route path="/project/:id/history" element={<History />} />
-          
-          {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="members" element={<AdminMembers />} />
-            <Route path="members/create" element={<AdminMemberCreate />} />
-            <Route path="members/:id" element={<AdminMemberDetail />} />
-            <Route path="companies" element={<AdminCompanies />} />
-            <Route path="companies/create" element={<AdminCompanyCreate />} />
-            <Route path="companies/:id/edit" element={<AdminCompanyEdit />} />
-            <Route path="projects" element={<AdminProjects />} />
-            <Route path="projects/create" element={<AdminProjectCreate />} />
-            <Route path="projects/:id" element={<AdminProjectDetail />} />
-            <Route path="projects/:id/edit" element={<AdminProjectEdit />} />
-            <Route path="checklist-templates" element={<TemplateList />} />
-            <Route path="checklist-templates/create" element={<TemplateCreate />} />
-            <Route path="checklist-templates/:templateId" element={<TemplateDetail />} />
-            <Route path="checklist-templates/:templateId/edit" element={<TemplateEdit />} />
-            <Route path="logs" element={<AdminLogs />} />
-            <Route path="admin-users" element={<AdminUsers />} />
-            <Route path="admin-users/create" element={<AdminUserCreate />} />
-            <Route path="admin-users/:id" element={<AdminUserDetail />} />
-
-          </Route>
+// Wrapper component to force remount on id change
 const AdminProjectEditWrapper = () => {
   const { id } = useParams();
   return <AdminProjectEdit key={id} />;
@@ -135,7 +78,14 @@ function App() {
     if (!user) {
       authApi
         .getMe()
-        .then((me) => setUser(me))
+        .then((response: any) => {
+             // 응답 구조가 { success: true, data: user } 형태일 수 있으므로 확인
+             if(response.success && response.data) {
+                 setUser(response.data);
+             } else if(response.id) { // 직접 user 객체인 경우
+                 setUser(response);
+             }
+        })
         .catch(() => {
           localStorage.removeItem("accessToken");
         });
@@ -151,10 +101,12 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/first-password-change" element={<FirstPasswordChange />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/notifications/:id" element={<NotificationDetail />} />
             <Route path="/approval-requests" element={<ApprovalRequests />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/settings/password" element={<ChangePassword />} />
