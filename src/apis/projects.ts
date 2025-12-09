@@ -24,6 +24,7 @@ export interface ProjectSummaryResponse {
   name: string;
   status: ProjectStatus;
   projectRole?: ProjectRole | null;
+  customerCompanyName?: string | null;
 }
 
 export interface ProjectDetailResponse {

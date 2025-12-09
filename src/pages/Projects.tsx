@@ -253,6 +253,7 @@ export default function Projects() {
                   </div>
                   <CardDescription>
                     {(() => {
+                      if (userRole === "SYSTEM_ADMIN") return ""; // 시스템 관리자는 표시 생략
                       // 이미 서버에서 role 내려오면 → 참여중
                       if (project.projectRole) return "참여중";
 
@@ -274,10 +275,10 @@ export default function Projects() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">상태</span>
-                    <Badge variant="secondary">
-                      {statusLabelMap[project.status]}
-                    </Badge>
+                    <span className="text-muted-foreground">고객사</span>
+                    <span className="font-medium">
+                      {project.customerCompanyName ?? "정보 없음"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">프로젝트 ID</span>
