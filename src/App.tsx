@@ -2,22 +2,35 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useParams,
+} from "react-router-dom";
+import { useEffect } from "react";
+import { authApi } from "./apis/auth";
+import { useUserStore } from "./stores/user";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
 import ProjectDashboard from "./pages/ProjectDashboard";
 import Notifications from "./pages/Notifications";
+import NotificationDetail from "./pages/NotificationDetail";
 import ApprovalRequests from "./pages/ApprovalRequests";
 import Settings from "./pages/Settings";
 import ChangePassword from "./pages/ChangePassword";
+import FirstPasswordChange from "./pages/FirstPasswordChange";
 import Board from "./pages/Board";
 import BoardNew from "./pages/BoardNew";
 import BoardDetail from "./pages/BoardDetail";
 import Checklist from "./pages/Checklist";
 import ChecklistDetail from "./pages/ChecklistDetail";
-import ProjectChecklistCreate from "./pages/ProjectChecklistCreate";
+import ChecklistCreate from "./pages/ChecklistCreate";
+import ChecklistTemplates from "./pages/ChecklistTemplates";
+import ChecklistTemplateDetail from "./pages/ChecklistTemplateDetail";
 import Approvals from "./pages/Approvals";
 import ApprovalDetail from "./pages/ApprovalDetail";
 import TeamMembers from "./pages/TeamMembers";
@@ -47,67 +60,136 @@ import AdminUserDetail from "./pages/admin/AdminUserDetail";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/approval-requests" element={<ApprovalRequests />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/settings/password" element={<ChangePassword />} />
-          
-          {/* Project Member Routes */}
-          <Route path="/project/:id/dashboard" element={<ProjectDashboard />} />
-          <Route path="/project/:id/board" element={<Board />} />
-          <Route path="/project/:id/board/new" element={<BoardNew />} />
-          <Route path="/project/:id/board/:postId" element={<BoardDetail />} />
-          <Route path="/project/:id/checklist" element={<Checklist />} />
-          <Route path="/project/:id/checklist/create" element={<ProjectChecklistCreate />} />
-          <Route path="/project/:id/checklist/:checklistId" element={<ChecklistDetail />} />
-          <Route path="/project/:id/approvals" element={<Approvals />} />
-          <Route path="/project/:id/approvals/:approvalId" element={<ApprovalDetail />} />
-          <Route path="/project/:id/members" element={<TeamMembers />} />
-          <Route path="/project/:id/history" element={<History />} />
-          
-          {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="members" element={<AdminMembers />} />
-            <Route path="members/create" element={<AdminMemberCreate />} />
-            <Route path="members/:id" element={<AdminMemberDetail />} />
-            <Route path="companies" element={<AdminCompanies />} />
-            <Route path="companies/create" element={<AdminCompanyCreate />} />
-            <Route path="companies/:id/edit" element={<AdminCompanyEdit />} />
-            <Route path="projects" element={<AdminProjects />} />
-            <Route path="projects/create" element={<AdminProjectCreate />} />
-            <Route path="projects/:id" element={<AdminProjectDetail />} />
-            <Route path="projects/:id/edit" element={<AdminProjectEdit />} />
-            <Route path="checklist-templates" element={<TemplateList />} />
-            <Route path="checklist-templates/create" element={<TemplateCreate />} />
-            <Route path="checklist-templates/:templateId" element={<TemplateDetail />} />
-            <Route path="checklist-templates/:templateId/edit" element={<TemplateEdit />} />
-            <Route path="logs" element={<AdminLogs />} />
-            <Route path="admin-users" element={<AdminUsers />} />
-            <Route path="admin-users/create" element={<AdminUserCreate />} />
-            <Route path="admin-users/:id" element={<AdminUserDetail />} />
+// Wrapper component to force remount on id change
+const AdminProjectEditWrapper = () => {
+  const { id } = useParams();
+  return <AdminProjectEdit key={id} />;
+};
 
-          </Route>
+function App() {
+  const setUser = useUserStore((s) => s.setUser);
+  const user = useUserStore((s) => s.user);
 
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+
+    // 이미 로드된 경우 중복 요청 방지
+    if (!user) {
+      authApi
+        .getMe()
+        .then((response: any) => {
+             // 응답 구조가 { success: true, data: user } 형태일 수 있으므로 확인
+             if(response.success && response.data) {
+                 setUser(response.data);
+             } else if(response.id) { // 직접 user 객체인 경우
+                 setUser(response);
+             }
+        })
+        .catch(() => {
+          localStorage.removeItem("accessToken");
+        });
+    }
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/first-password-change" element={<FirstPasswordChange />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:id" element={<ProjectDetail />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/notifications/:id" element={<NotificationDetail />} />
+            <Route path="/approval-requests" element={<ApprovalRequests />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/password" element={<ChangePassword />} />
+
+            {/* Project Member Routes */}
+            <Route
+              path="/project/:id/dashboard"
+              element={<ProjectDashboard />}
+            />
+            <Route path="/project/:id/board" element={<Board />} />
+            <Route path="/project/:id/board/new" element={<BoardNew />} />
+            <Route
+              path="/project/:id/board/:postId"
+              element={<BoardDetail />}
+            />
+            <Route path="/project/:id/checklist" element={<Checklist />} />
+            <Route
+              path="/project/:id/checklist/create"
+              element={<ChecklistCreate />}
+            />
+            <Route
+              path="/project/:id/checklist/templates"
+              element={<ChecklistTemplates />}
+            />
+            <Route
+              path="/project/:id/checklist/templates/:templateId"
+              element={<ChecklistTemplateDetail />}
+            />
+            <Route
+              path="/project/:id/checklist/:checklistId"
+              element={<ChecklistDetail />}
+            />
+            <Route path="/project/:id/approvals" element={<Approvals />} />
+            <Route
+              path="/project/:id/approvals/:approvalId"
+              element={<ApprovalDetail />}
+            />
+            <Route path="/project/:id/members" element={<TeamMembers />} />
+            <Route path="/project/:id/history" element={<History />} />
+
+            {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="members" element={<AdminMembers />} />
+              <Route path="members/create" element={<AdminMemberCreate />} />
+              <Route path="members/:id" element={<AdminMemberDetail />} />
+              <Route path="companies" element={<AdminCompanies />} />
+              <Route path="companies/create" element={<AdminCompanyCreate />} />
+              <Route path="companies/:id/edit" element={<AdminCompanyEdit />} />
+              <Route path="projects" element={<AdminProjects />} />
+              <Route path="projects/create" element={<AdminProjectCreate />} />
+              <Route path="projects/:id" element={<AdminProjectDetail />} />
+              <Route
+                path="projects/:id/edit"
+                element={<AdminProjectEditWrapper />}
+              />
+              <Route path="checklist-templates" element={<TemplateList />} />
+              <Route
+                path="checklist-templates/create"
+                element={<TemplateCreate />}
+              />
+              <Route
+                path="checklist-templates/:templateId"
+                element={<TemplateDetail />}
+              />
+              <Route
+                path="checklist-templates/:templateId/edit"
+                element={<TemplateEdit />}
+              />
+              <Route path="logs" element={<AdminLogs />} />
+              <Route path="admin-users" element={<AdminUsers />} />
+              <Route path="admin-users/create" element={<AdminUserCreate />} />
+              <Route path="admin-users/:id" element={<AdminUserDetail />} />
+            </Route>
+
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
 
 export default App;

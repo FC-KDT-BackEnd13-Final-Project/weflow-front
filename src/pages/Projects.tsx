@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-type ProjectStatus = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE" | "CLOSED" | "APPROVAL" | "PLANNING" | "COMPLETE";
+import { ProjectStatus, fetchMyProjects, ProjectSummaryResponse } from "@/apis/projects";
 
 const statusLabelMap: Record<ProjectStatus, string> = {
   CONTRACT: "계약",
@@ -23,83 +22,48 @@ const statusLabelMap: Record<ProjectStatus, string> = {
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
   CLOSED: "종료",
-  APPROVAL: "승인",
-  PLANNING: "기획",
-  COMPLETE: "완료",
 };
 
-const statusBadgeMap: Record<ProjectStatus, "pending" | "progress" | "complete" | "approved" | "rejected" | "request"> = {
-  CONTRACT: "request",
+const statusBadgeMap: Record<ProjectStatus, "pending" | "progress" | "complete" | "rejected" | "approved" | "request"> = {
+  CONTRACT: "pending",
   IN_PROGRESS: "progress",
   DELIVERY: "progress",
-  MAINTENANCE: "pending",
+  MAINTENANCE: "progress",
   CLOSED: "complete",
-  APPROVAL: "approved",
-  PLANNING: "pending",
-  COMPLETE: "complete",
 };
-
-const mockProjects: Array<{
-  id: number;
-  name: string;
-  client: string;
-  status: ProjectStatus;
-  progress: number;
-  dueDate: string;
-  team: number;
-}> = [
-  {
-    id: 1,
-    name: "쇼핑몰 리뉴얼 프로젝트",
-    client: "ABC 커머스",
-    status: "IN_PROGRESS",
-    progress: 65,
-    dueDate: "2024.12.31",
-    team: 5,
-  },
-  {
-    id: 2,
-    name: "기업 홈페이지 제작",
-    client: "XYZ 그룹",
-    status: "CONTRACT",
-    progress: 20,
-    dueDate: "2025.01.15",
-    team: 3,
-  },
-  {
-    id: 3,
-    name: "모바일 앱 개발",
-    client: "스타트업 DEF",
-    status: "DELIVERY",
-    progress: 85,
-    dueDate: "2024.11.30",
-    team: 8,
-  },
-  {
-    id: 4,
-    name: "클라우드 포털 고도화",
-    client: "아크레버 테크놀로지스",
-    status: "COMPLETE",
-    progress: 10,
-    dueDate: "2025.12.30",
-    team: 7,
-  },
-];
 
 export default function Projects() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "ALL">("ALL");
+  const [projects, setProjects] = useState<ProjectSummaryResponse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadProjects = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchMyProjects();
+      setProjects(data ?? []);
+    } catch (err) {
+      setError("프로젝트 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
 
   const filteredProjects = useMemo(() => {
-    return mockProjects.filter((project) => {
-      const matchesSearch =
-        project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.client.toLowerCase().includes(searchQuery.toLowerCase());
+    return projects.filter((project) => {
+      const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === "ALL" || project.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchQuery, statusFilter]);
+  }, [projects, searchQuery, statusFilter]);
 
   return (
     <AppLayout>
@@ -141,15 +105,15 @@ export default function Projects() {
         {/* Projects Grid */}
         {filteredProjects.length === 0 ? (
           <div className="rounded-xl border border-dashed py-16 text-center text-muted-foreground">
-            조건에 맞는 프로젝트가 없습니다.
+            {loading ? "불러오는 중..." : error ?? "조건에 맞는 프로젝트가 없습니다."}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredProjects.map((project) => (
               <Card
-                key={project.id}
+                key={project.projectId}
                 className="card-hover cursor-pointer"
-                onClick={() => navigate(`/project/${project.id}/dashboard`)}
+                onClick={() => navigate(`/project/${project.projectId}/dashboard`)}
               >
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
@@ -158,27 +122,16 @@ export default function Projects() {
                       {statusLabelMap[project.status]}
                     </StatusBadge>
                   </div>
-                  <CardDescription>{project.client}</CardDescription>
+                  <CardDescription>내 역할: {project.projectRole}</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-muted-foreground">진행률</span>
-                      <span className="font-medium">{project.progress}%</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all"
-                        style={{ width: `${project.progress}%` }}
-                      />
-                    </div>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">상태</span>
+                    <Badge variant="secondary">{statusLabelMap[project.status]}</Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">마감일</span>
-                    <span className="font-medium">{project.dueDate}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Badge variant="secondary">{project.team}명 참여</Badge>
+                    <span className="text-muted-foreground">프로젝트 ID</span>
+                    <span className="font-medium">{project.projectId}</span>
                   </div>
                 </CardContent>
               </Card>

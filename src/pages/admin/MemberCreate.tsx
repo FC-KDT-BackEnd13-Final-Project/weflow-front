@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,96 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import BulkMemberUpload from "@/components/admin/BulkMemberUpload";
+import { adminApi } from "@/apis/admin";
+import { useToast } from "@/hooks/use-toast";
 
 const AdminMemberCreate = () => {
   const navigate = useNavigate();
-  const [role, setRole] = useState("system");
-  const [company, setCompany] = useState("");
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [formData, setFormData] = useState({
+    name: "",
+    phoneNumber: "",
+    email: "",
+    password: "company1234",
+    role: "AGENCY",
+    companyId: "",
+  });
+
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await adminApi.getCompanies();
+        if (response.success) {
+          setCompanies(response.data.content);
+        }
+      } catch (error) {
+        console.error("회사 목록 로딩 실패:", error);
+        toast({
+          variant: "destructive",
+          title: "회사 목록 로딩 실패",
+          description: "회사 목록을 불러오는 중 오류가 발생했습니다.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCompanies();
+  }, [toast]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.name || !formData.email || !formData.phoneNumber || !formData.companyId) {
+      toast({
+        variant: "destructive",
+        title: "입력 오류",
+        description: "모든 필드를 입력해주세요.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await adminApi.createUser({
+        email: formData.email,
+        password: formData.password,
+        name: formData.name,
+        role: formData.role,
+        phoneNumber: formData.phoneNumber,
+        companyId: parseInt(formData.companyId),
+      });
+
+      if (response.success) {
+        toast({
+          title: "회원 생성 성공",
+          description: response.message,
+        });
+        navigate("/admin/members");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "회원 생성 실패",
+        description: error.response?.data?.message || "회원 생성에 실패했습니다.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">로딩 중...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -54,77 +139,114 @@ const AdminMemberCreate = () => {
 
             {/* 개별 생성 */}
             <TabsContent value="individual" className="space-y-6 mt-6">
-              
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="name">이름</Label>
-                  <Input id="name" placeholder="이름 입력" />
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">이름 *</Label>
+                    <Input
+                      id="name"
+                      placeholder="이름 입력"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">전화번호 *</Label>
+                    <Input
+                      id="phone"
+                      placeholder="010-0000-0000"
+                      value={formData.phoneNumber}
+                      onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="phone">전화번호</Label>
-                  <Input id="phone" placeholder="전화번호 입력" />
+                  <Label htmlFor="email">이메일 *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    required
+                  />
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">이메일</Label>
-                <Input id="email" type="email" placeholder="이메일 입력" />
-              </div>
+                {/* 회사 선택 */}
+                <div className="space-y-2">
+                  <Label>소속 회사 *</Label>
+                  <Select
+                    value={formData.companyId}
+                    onValueChange={(value) => setFormData({ ...formData, companyId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="회사 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companies.map((company) => (
+                        <SelectItem key={company.id} value={company.id.toString()}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* 회사 선택 */}
-              <div className="space-y-2">
-                <Label>소속 회사</Label>
-                <Select value={company} onValueChange={setCompany}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="선택" />
-                  </SelectTrigger>
+                {/* 역할 선택 */}
+                <div className="space-y-3">
+                  <Label>역할 *</Label>
+                  <RadioGroup
+                    value={formData.role}
+                    onValueChange={(value) => setFormData({ ...formData, role: value })}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="AGENCY" id="agency" />
+                      <Label htmlFor="agency" className="cursor-pointer">
+                        에이전시 담당자
+                      </Label>
+                    </div>
 
-                  <SelectContent>
-                    <SelectItem value="devcorp">DevCorp</SelectItem>
-                    <SelectItem value="clienta">ClientA</SelectItem>
-                    <SelectItem value="weflow">weflow</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="CLIENT" id="client" />
+                      <Label htmlFor="client" className="cursor-pointer">
+                        고객사 담당자
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
 
-              {/* 역할 선택 */}
-              <div className="space-y-3">
-                <Label>역할</Label>
-                <RadioGroup value={role} onValueChange={setRole}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="agency" id="agency" />
-                    <Label htmlFor="agency" className="cursor-pointer">
-                      개발사 담당자
-                    </Label>
-                  </div>
+                {/* 초기 비밀번호 */}
+                <div className="space-y-2">
+                  <Label htmlFor="password">초기 비밀번호</Label>
+                  <Input
+                    id="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="bg-muted"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    회원이 첫 로그인 시 사용할 비밀번호입니다.
+                  </p>
+                </div>
 
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="client" id="client" />
-                    <Label htmlFor="client" className="cursor-pointer">
-                      고객사 담당자
-                    </Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {/* 초기 비밀번호 노출 */}
-              <div className="space-y-2">
-                <Label htmlFor="password">초기 비밀번호</Label>
-                <Input
-                  id="password"
-                  value="company1234@ 등 원하는 Pw"
-                  className="bg-muted"
-                  readOnly
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end pt-4">
-                <Button variant="outline" onClick={() => navigate("/admin/members")}>
-                  취소
-                </Button>
-                <Button>등록</Button>
-              </div>
+                <div className="flex gap-3 justify-end pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/admin/members")}
+                    disabled={isSubmitting}
+                  >
+                    취소
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "등록 중..." : "등록"}
+                  </Button>
+                </div>
+              </form>
             </TabsContent>
 
             {/* 일괄 등록 탭 → BulkMemberUpload 컴포넌트 사용 */}

@@ -389,6 +389,9 @@ export default function ApprovalDetail() {
             <Separator />
 
             <div className="space-y-3">
+            <Separator />
+
+            <div className="space-y-3">
               <Label className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 첨부파일
@@ -407,6 +410,7 @@ export default function ApprovalDetail() {
               </div>
             </div>
 
+            <div className="space-y-3">
             <div className="space-y-3">
               <Label className="flex items-center gap-2">
                 <LinkIcon className="h-4 w-4" />
@@ -631,6 +635,7 @@ export default function ApprovalDetail() {
             <DialogTitle>{decisionType === "CHANGE_REQUEST" ? "변경 요청" : "승인 반려"}</DialogTitle>
             <DialogDescription className="sr-only">결정 사유와 첨부를 입력하세요.</DialogDescription>
           </DialogHeader>
+          <div className="space-y-4">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>{decisionType === "CHANGE_REQUEST" ? "변경 요청 사유" : "반려 사유"}</Label>

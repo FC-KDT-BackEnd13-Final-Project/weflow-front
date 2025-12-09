@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -14,23 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
-
-const userInfoResponse = {
-  success: true,
-  message: "USER_INFO_FETCHED",
-  data: {
-    id: 12,
-    email: "user@example.com",
-    name: "홍길동",
-    phone: "010-1234-5678",
-    role: "CLIENT",
-    companyId: 2,
-    companyName: "ABC전자",
-    status: "ACTIVE",
-    lastLoginAt: "2025-02-01T10:10:00",
-    createdAt: "2025-01-10T12:00:00",
-  },
-};
+import { authApi } from "@/apis/auth";
+import { companiesApi } from "@/apis/companies";
 
 const roleOptions = [
   { value: "CLIENT", label: "고객" },
@@ -50,19 +35,63 @@ const formatDateTime = (value: string) =>
   });
 
 export default function Settings() {
-  const { data } = userInfoResponse;
   const { toast } = useToast();
   const navigate = useNavigate();
-  const initialProfile = {
-    name: data.name,
-    phone: data.phone,
-    role: data.role,
-    email: data.email,
-  };
-  const [profile, setProfile] = useState(initialProfile);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const [companyData, setCompanyData] = useState<any>(null);
+  const [profile, setProfile] = useState({
+    name: "",
+    phone: "",
+    role: "",
+    email: "",
+  });
   const [formData, setFormData] = useState(profile);
   const [isDirty, setIsDirty] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // 1. 사용자 정보 조회 (필수)
+        const userResponse = await authApi.getMe();
+        if (userResponse.success) {
+          setUserData(userResponse.data);
+          const initialProfile = {
+            name: userResponse.data.name,
+            phone: userResponse.data.phoneNumber,
+            role: userResponse.data.role,
+            email: userResponse.data.email,
+          };
+          setProfile(initialProfile);
+          setFormData(initialProfile);
+
+          // 2. 회사 정보 조회 (선택 - 실패해도 페이지는 표시)
+          try {
+            const companyResponse = await companiesApi.getMyCompany();
+            if (companyResponse.success) {
+              setCompanyData(companyResponse.data);
+            }
+          } catch (companyError) {
+            console.log("회사 정보가 없거나 조회 실패:", companyError);
+            // 회사 정보 조회 실패는 페이지 렌더링을 막지 않음
+          }
+        }
+      } catch (error: any) {
+        console.error("사용자 정보 조회 실패:", error);
+        toast({
+          variant: "destructive",
+          title: "정보 조회 실패",
+          description: error.response?.data?.message || "사용자 정보를 불러올 수 없습니다.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [toast]);
 
   const handleChange = (field: "name" | "phone") => (
     event: React.ChangeEvent<HTMLInputElement>
@@ -76,15 +105,48 @@ export default function Settings() {
     setIsDirty(true);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setProfile(formData);
-    toast({
-      title: "회원 정보가 저장되었습니다.",
-      description: `${formData.name}님의 정보가 업데이트되었습니다.`,
-    });
-    setIsDirty(false);
-    setIsEditing(false);
+    setIsSaving(true);
+
+    try {
+      const response = await authApi.updateMe({
+        name: formData.name,
+        phoneNumber: formData.phone,
+      });
+
+      if (response.success) {
+        const updatedProfile = {
+          name: response.data.name,
+          phone: response.data.phoneNumber,
+          role: formData.role,
+          email: response.data.email,
+        };
+        setProfile(updatedProfile);
+        setFormData(updatedProfile);
+
+        setUserData((prev: any) => ({
+          ...prev,
+          name: response.data.name,
+          phoneNumber: response.data.phoneNumber,
+        }));
+
+        toast({
+          title: "회원 정보가 저장되었습니다.",
+          description: response.message,
+        });
+        setIsDirty(false);
+        setIsEditing(false);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "회원 정보 수정 실패",
+        description: error.response?.data?.message || "정보 수정에 실패했습니다.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleReset = () => {
@@ -92,6 +154,26 @@ export default function Settings() {
     setIsDirty(false);
     setIsEditing(false);
   };
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">사용자 정보를 불러올 수 없습니다.</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -163,11 +245,11 @@ export default function Settings() {
                 </div>
 
                 <div className="flex items-center justify-end gap-3">
-                  <Button type="button" variant="outline" onClick={handleReset}>
+                  <Button type="button" variant="outline" onClick={handleReset} disabled={isSaving}>
                     취소
                   </Button>
-                  <Button type="submit" disabled={!isDirty}>
-                    저장
+                  <Button type="submit" disabled={!isDirty || isSaving}>
+                    {isSaving ? "저장 중..." : "저장"}
                   </Button>
                 </div>
               </form>
@@ -206,22 +288,56 @@ export default function Settings() {
           <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
             <div>
               <p className="text-muted-foreground">상태</p>
-              <Badge className="mt-1">{data.status}</Badge>
+              <Badge className="mt-1">{userData.status}</Badge>
             </div>
             <div>
               <p className="text-muted-foreground">회사</p>
-              <p className="font-medium mt-1">{data.companyName}</p>
+              <p className="font-medium mt-1">{userData.company?.name || "-"}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">최근 접속</p>
-              <p className="font-medium mt-1">{formatDateTime(data.lastLoginAt)}</p>
+              <p className="text-muted-foreground">사용자 ID</p>
+              <p className="font-medium mt-1">{userData.id}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">가입일</p>
-              <p className="font-medium mt-1">{formatDateTime(data.createdAt)}</p>
+              <p className="text-muted-foreground">회사 ID</p>
+              <p className="font-medium mt-1">{userData.company?.id || "-"}</p>
             </div>
           </CardContent>
         </Card>
+
+        {companyData && (
+          <Card>
+            <CardHeader>
+              <CardTitle>회사 정보</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
+              <div>
+                <p className="text-muted-foreground">회사명</p>
+                <p className="font-medium mt-1">{companyData.name}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">사업자번호</p>
+                <p className="font-medium mt-1">{companyData.businessNumber}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">대표자</p>
+                <p className="font-medium mt-1">{companyData.representative}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">이메일</p>
+                <p className="font-medium mt-1">{companyData.email}</p>
+              </div>
+              <div className="md:col-span-2">
+                <p className="text-muted-foreground">주소</p>
+                <p className="font-medium mt-1">{companyData.address}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">상태</p>
+                <Badge className="mt-1">{companyData.status}</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
