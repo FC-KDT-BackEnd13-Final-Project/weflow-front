@@ -17,7 +17,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
-import { createPost } from "@/apis/postApi";
+import { createPost, updatePost, getPost } from "@/apis/postApi";
 import { ProjectStatus } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
@@ -43,10 +43,11 @@ type PostFormData = z.infer<typeof postSchema>;
 
 export default function BoardNew() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id, postId } = useParams<{ id: string; postId?: string }>();
   const location = useLocation();
   const replyInfo = (location.state as { parentPostId?: number; parentTitle?: string } | null) ?? null;
   const isReply = Boolean(replyInfo?.parentPostId);
+  const isEditMode = Boolean(postId); // postId가 있으면 수정 모드
   const { toast } = useToast();
 
   const [formData, setFormData] = useState<PostFormData>({
@@ -87,6 +88,44 @@ export default function BoardNew() {
 
     fetchSteps();
   }, [id, toast]);
+
+  // 수정 모드일 때 기존 게시글 데이터 불러오기
+  useEffect(() => {
+    const fetchPost = async () => {
+      if (!isEditMode || !id || !postId) return;
+
+      try {
+        const post = await getPost(Number(id), Number(postId));
+
+        // status 역매핑 (임시)
+        const statusReverseMap: Record<string, string> = {
+          "IN_PROGRESS": "진행",
+          "COMPLETED": "납품",
+          "ON_HOLD": "유지보수",
+        };
+
+        setFormData({
+          title: post.title,
+          content: post.content,
+          status: statusReverseMap[post.projectStatus] || "진행",
+          step: post.step.stepId.toString(),
+        });
+
+        setLinks(post.links.map(link => link.url));
+        // 파일은 별도 처리 필요
+      } catch (error) {
+        console.error("게시글 조회 실패:", error);
+        toast({
+          title: "게시글 로딩 실패",
+          description: "게시글을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+        navigate(`/project/${id}/board`);
+      }
+    };
+
+    fetchPost();
+  }, [isEditMode, id, postId, toast, navigate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -167,28 +206,49 @@ export default function BoardNew() {
         return;
       }
 
-      const response = await createPost(Number(id), {
-        title: formData.title,
-        content: formData.content,
-        stepId: stepId,
-        projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
-        parentPostId: replyInfo?.parentPostId,
-        links: links.map(url => ({ url })),
-        // 파일 업로드는 별도 구현 필요
-      });
+      if (isEditMode && postId) {
+        // 수정 모드
+        await updatePost(Number(id), Number(postId), {
+          title: formData.title,
+          content: formData.content,
+          stepId: stepId,
+          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          links: links.map(url => ({ url })),
+          // 파일 업로드는 별도 구현 필요
+        });
 
-      toast({
-        title: "게시글 작성 완료",
-        description: "게시글이 성공적으로 작성되었습니다.",
-      });
+        toast({
+          title: "게시글 수정 완료",
+          description: "게시글이 성공적으로 수정되었습니다.",
+        });
 
-      // 방금 작성한 게시글 상세 페이지로 이동
-      navigate(`/project/${id}/board/${response.postId}`);
+        // 수정한 게시글 상세 페이지로 이동
+        navigate(`/project/${id}/board/${postId}`);
+      } else {
+        // 작성 모드
+        const response = await createPost(Number(id), {
+          title: formData.title,
+          content: formData.content,
+          stepId: stepId,
+          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          parentPostId: replyInfo?.parentPostId,
+          links: links.map(url => ({ url })),
+          // 파일 업로드는 별도 구현 필요
+        });
+
+        toast({
+          title: "게시글 작성 완료",
+          description: "게시글이 성공적으로 작성되었습니다.",
+        });
+
+        // 방금 작성한 게시글 상세 페이지로 이동
+        navigate(`/project/${id}/board/${response.postId}`);
+      }
     } catch (error) {
-      console.error("게시글 작성 실패:", error);
+      console.error(`게시글 ${isEditMode ? '수정' : '작성'} 실패:`, error);
       toast({
-        title: "게시글 작성 실패",
-        description: "게시글 작성 중 오류가 발생했습니다.",
+        title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
+        description: `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`,
         variant: "destructive",
       });
     }
@@ -217,7 +277,9 @@ export default function BoardNew() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{isReply ? "답글 작성" : "게시글 작성"}</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {isEditMode ? "게시글 수정" : isReply ? "답글 작성" : "게시글 작성"}
+            </h1>
             {isReply && (
               <p className="text-sm text-muted-foreground">원본 글: {replyInfo?.parentTitle}</p>
             )}
@@ -228,7 +290,9 @@ export default function BoardNew() {
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
-              <CardTitle>{isReply ? "답글 입력" : "새 게시글"}</CardTitle>
+              <CardTitle>
+                {isEditMode ? "게시글 수정" : isReply ? "답글 입력" : "새 게시글"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Status */}
@@ -432,7 +496,7 @@ export default function BoardNew() {
               {/* Actions */}
               <div className="flex gap-3 pt-4">
                 <Button type="submit" className="flex-1">
-                  게시글 작성
+                  {isEditMode ? "게시글 수정" : "게시글 작성"}
                 </Button>
                 <Button
                   type="button"

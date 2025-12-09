@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download } from "lucide-react";
+import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -23,7 +23,7 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
-import { getPost } from "@/apis/postApi";
+import { getPost, deletePost } from "@/apis/postApi";
 
 type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
 
@@ -564,6 +564,32 @@ export default function BoardDetail() {
     });
   };
 
+  const handleEdit = () => {
+    navigate(`/project/${id}/board/${postId}/edit`);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    try {
+      await deletePost(Number(id), Number(postId));
+      toast({
+        title: "게시글 삭제 완료",
+        description: "게시글이 성공적으로 삭제되었습니다.",
+      });
+      navigate(`/project/${id}/board`);
+    } catch (error) {
+      console.error("게시글 삭제 실패:", error);
+      toast({
+        title: "게시글 삭제 실패",
+        description: "게시글 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto">
@@ -576,10 +602,20 @@ export default function BoardDetail() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             목록으로
           </Button>
-          <Button className="gap-2" onClick={handleReply}>
-            <MessageSquare className="h-4 w-4" />
-            답글 작성
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={handleEdit}>
+              <Pencil className="h-4 w-4" />
+              수정
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={handleDelete}>
+              <Trash2 className="h-4 w-4" />
+              삭제
+            </Button>
+            <Button className="gap-2" onClick={handleReply}>
+              <MessageSquare className="h-4 w-4" />
+              답글 작성
+            </Button>
+          </div>
         </div>
 
         <Card>
