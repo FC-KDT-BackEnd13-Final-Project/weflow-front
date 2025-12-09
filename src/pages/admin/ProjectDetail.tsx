@@ -1,21 +1,81 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import {
+  AdminProjectDetailResponse,
+  AdminProjectMemberListItem,
+  ProjectStatus,
+  deleteAdminProject,
+  fetchAdminProjectDetail,
+  fetchAdminProjectMembers,
+} from "@/apis/adminProjects";
+
+const statusLabels: Record<ProjectStatus, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행중",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+  CLOSED: "종료",
+};
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
 
 const ProjectDetail = () => {
+  const { id: idParam } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [detail, setDetail] = useState<AdminProjectDetailResponse | null>(null);
+  const [members, setMembers] = useState<AdminProjectMemberListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const id = idParam ? Number(idParam) : null;
 
-  const project = {
-    name: "ClientA Web Renewal",
-    description: "고객사 웹 리뉴얼 프로젝트",
-    company: "ClientA Corporation",
-    stage: "디자인",
-    startDate: "2025-11-12",
-    endDate: "2025-12-12",
-    contract: "contract_v1.pdf",
+  const loadData = async () => {
+    if (!id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const [detailRes, memberRes] = await Promise.all([
+        fetchAdminProjectDetail(id),
+        fetchAdminProjectMembers(id),
+      ]);
+      setDetail(detailRes);
+      setMembers(memberRes.members ?? []);
+    } catch (err) {
+      setError("프로젝트 정보를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const statusText = useMemo(() => {
+    if (!detail) return "-";
+    const status = detail.status as ProjectStatus;
+    return statusLabels[status] ?? detail.status;
+  }, [detail]);
+
+  const handleDelete = async () => {
+    if (!id) return;
+    const confirmed = window.confirm("정말 삭제하시겠습니까?");
+    if (!confirmed) return;
+    try {
+      await deleteAdminProject(id);
+      navigate("/admin/projects");
+    } catch (err) {
+      setError("삭제에 실패했습니다.");
+    }
   };
 
   return (
@@ -36,69 +96,141 @@ const ProjectDetail = () => {
             <Button variant="outline" className="gap-2" onClick={() => navigate("/admin/projects")}>
               목록
             </Button>
-            <Button className="gap-2" onClick={() => navigate("/admin/projects/1/edit")}>수정</Button>
-            <Button variant="destructive" className="gap-2">
+            {id && (
+              <Button className="gap-2" onClick={() => navigate(`/admin/projects/${id}/edit`)}>
+                수정
+              </Button>
+            )}
+            <Button variant="destructive" className="gap-2" onClick={handleDelete}>
+              <Trash2 className="h-4 w-4" />
               삭제
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  프로젝트명
-                </Badge>
-                <span className="font-medium">{project.name}</span>
-              </div>
+          {loading && <div className="text-muted-foreground">불러오는 중...</div>}
+          {error && !loading && <div className="text-destructive">{error}</div>}
 
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  프로젝트 설명
-                </Badge>
-                <span className="text-muted-foreground">{project.description}</span>
-              </div>
+          {!loading && !error && detail && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      프로젝트명
+                    </Badge>
+                    <span className="font-medium">{detail.name}</span>
+                  </div>
 
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  고객사
-                </Badge>
-                <span className="font-medium">{project.company}</span>
-              </div>
+                  <div className="flex items-start gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      설명
+                    </Badge>
+                    <span className="text-muted-foreground">{detail.description || "-"}</span>
+                  </div>
 
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  현재 단계
-                </Badge>
-                <span className="text-muted-foreground">{project.stage}</span>
-              </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      상태
+                    </Badge>
+                    <span className="font-medium">{statusText}</span>
+                  </div>
 
-            </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      회사 ID
+                    </Badge>
+                    <span className="text-muted-foreground">
+                      {detail.customerCompanyId ?? "-"}
+                    </span>
+                  </div>
+                </div>
 
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <Badge variant="outline" className="text-sm font-medium">
-                  시작일
-                </Badge>
-                <span className="font-mono">{project.startDate}</span>
-                <Badge variant="outline" className="text-sm font-medium ml-4">
-                  종료일
-                </Badge>
-                <span className="font-mono">{project.endDate}</span>
-              </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      시작일
+                    </Badge>
+                    <span className="font-mono">{formatDateTime(detail.startDate)}</span>
+                    <Badge variant="outline" className="text-sm font-medium">
+                      종료예정
+                    </Badge>
+                    <span className="font-mono">{formatDateTime(detail.endDateExpected)}</span>
+                    <Badge variant="outline" className="text-sm font-medium">
+                      종료일
+                    </Badge>
+                    <span className="font-mono">{formatDateTime(detail.endDate)}</span>
+                  </div>
 
-              <div className="mt-6">
-                <div className="text-sm font-medium mb-2">계약서</div>
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-primary" />
-                  <a href="#" className="text-primary hover:underline">
-                    {project.contract}
-                  </a>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      계약 금액
+                    </Badge>
+                    <span className="font-mono">
+                      {detail.contractAmount ? `${detail.contractAmount.toLocaleString()}원` : "-"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      계약서
+                    </Badge>
+                    {detail.contractFileUrl ? (
+                      <a
+                        href={detail.contractFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline flex items-center gap-2"
+                      >
+                        <FileText className="h-4 w-4 text-primary" />
+                        {detail.contractFileUrl}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">멤버</h3>
+                  <span className="text-sm text-muted-foreground">
+                    총 {members.length}명
+                  </span>
+                </div>
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="grid grid-cols-6 gap-4 bg-muted p-3 text-sm font-medium">
+                    <div>이름</div>
+                    <div>이메일</div>
+                    <div>연락처</div>
+                    <div>회사</div>
+                    <div>역할</div>
+                    <div>가입일</div>
+                  </div>
+                  <div className="divide-y">
+                    {members.length === 0 && (
+                      <div className="p-4 text-center text-muted-foreground">
+                        등록된 멤버가 없습니다.
+                      </div>
+                    )}
+                    {members.map((member) => (
+                      <div key={member.projectMemberId} className="grid grid-cols-6 gap-4 p-3 text-sm">
+                        <div>{member.username}</div>
+                        <div className="text-muted-foreground">{member.email}</div>
+                        <div className="text-muted-foreground">{member.phone ?? "-"}</div>
+                        <div className="text-muted-foreground">{member.companyName}</div>
+                        <div className="font-medium">{member.projectRole}</div>
+                        <div className="text-muted-foreground">
+                          {formatDateTime(member.createdAt)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,117 +1,186 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Plus, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Badge } from "@/components/ui/badge";
+import type { StatusType } from "@/components/StatusBadge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowLeft, Plus, CheckCircle2, Clock, AlertCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import {
+  ProjectStatus,
+  fetchProjectDetail
+} from "@/apis/projects";
 
-const mockSteps = [
-  {
-    id: 1,
-    name: "요구사항 분석",
-    status: "complete" as const,
-    dueDate: "2024.11.15",
-    assignee: "김개발",
-  },
-  {
-    id: 2,
-    name: "디자인 시안",
-    status: "progress" as const,
-    dueDate: "2024.11.25",
-    assignee: "이디자인",
-  },
-  {
-    id: 3,
-    name: "퍼블리싱",
-    status: "pending" as const,
-    dueDate: "2024.12.05",
-    assignee: "박퍼블",
-  },
-];
+import {
+  fetchProjectSteps,
+  StepResponse,
+  StepStatus,
+} from "@/apis/steps";
 
-const mockPosts = [
-  {
-    id: 1,
-    title: "1차 디자인 시안 공유드립니다",
-    author: "이디자인",
-    date: "2024.11.20",
-    comments: 3,
-  },
-  {
-    id: 2,
-    title: "요구사항 확인 부탁드립니다",
-    author: "김개발",
-    date: "2024.11.18",
-    comments: 5,
-  },
-];
+const statusLabelMap: Record<ProjectStatus, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행중",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+  CLOSED: "종료",
+};
+
+const stepStatusLabelMap: Record<StepStatus, string> = {
+  PENDING: "대기",
+  IN_PROGRESS: "진행중",
+  COMPLETED: "완료",
+};
+
+const stepStatusToBadgeStatus: Record<StepStatus, StatusType> = {
+  PENDING: "pending",
+  IN_PROGRESS: "progress",
+  COMPLETED: "complete",
+};
 
 export default function ProjectDetail() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const projectId = id ? Number(id) : null;
+
   const [activeTab, setActiveTab] = useState("steps");
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [project, setProject] = useState<Awaited<ReturnType<typeof fetchProjectDetail>> | null>(null);
+  const [steps, setSteps] = useState<StepResponse[]>([]);
+  const [stepLoading, setStepLoading] = useState(true);
+
+  // 날짜 포맷터
+  const formatDate = (value?: string | null) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString();
+  };
+
+  /* -------------------------------------------------------
+     1) 프로젝트 상세 로딩
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (!projectId) return;
+
+    const loadProject = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const detail = await fetchProjectDetail(projectId);
+        setProject(detail);
+      } catch (err) {
+        setError("프로젝트 정보를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProject();
+  }, [projectId]);
+
+  /* -------------------------------------------------------
+     2) 프로젝트 단계(Steps) 로딩
+  ------------------------------------------------------- */
+  useEffect(() => {
+    if (!projectId) return;
+
+    const loadSteps = async () => {
+      try {
+        setStepLoading(true);
+        const data = await fetchProjectSteps(projectId);
+        setSteps(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setStepLoading(false);
+      }
+    };
+
+    loadSteps();
+  }, [projectId]);
 
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Header */}
+        {/* 헤더 */}
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/projects")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate("/projects")}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
+
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">쇼핑몰 리뉴얼 프로젝트</h1>
-              <StatusBadge status="progress">진행중</StatusBadge>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {project?.name ?? "프로젝트 상세"}
+              </h1>
+
+              {project && (
+                <StatusBadge status="progress">
+                  {statusLabelMap[project.status]}
+                </StatusBadge>
+              )}
             </div>
-            <p className="text-muted-foreground mt-1">ABC 커머스</p>
+            <p className="text-muted-foreground mt-1">
+              {project?.description ?? "프로젝트 상세 정보를 확인하세요"}
+            </p>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* 로딩 / 에러 */}
+        {loading && (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">진행률</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">65%</div>
-              <div className="h-2 bg-muted rounded-full overflow-hidden mt-2">
-                <div className="h-full bg-primary w-[65%]" />
-              </div>
-            </CardContent>
+            <CardContent className="p-6 text-muted-foreground">불러오는 중...</CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">완료된 단계</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-status-complete" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">1 / 3</div>
-              <p className="text-xs text-muted-foreground mt-1">2개 단계 진행중</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">남은 기간</CardTitle>
-              <AlertCircle className="h-4 w-4 text-status-pending" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">41일</div>
-              <p className="text-xs text-muted-foreground mt-1">2024.12.31 마감</p>
-            </CardContent>
-          </Card>
-        </div>
+        )}
 
-        {/* Main Content Tabs */}
+        {error && !loading && (
+          <Card>
+            <CardContent className="p-6 text-destructive">{error}</CardContent>
+          </Card>
+        )}
+
+        {/* 프로젝트 정보 요약 카드 */}
+        {!loading && !error && project && (
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">상태</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {statusLabelMap[project.status]}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">시작일</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-status-complete" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatDate(project.startDate)}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">종료 예정</CardTitle>
+                <AlertCircle className="h-4 w-4 text-status-pending" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatDate(project.endDateExpected)}</div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* 탭 UI ---------------------------------------------- */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="steps">단계 관리</TabsTrigger>
@@ -120,6 +189,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="settings">설정</TabsTrigger>
           </TabsList>
 
+          {/* ---------------- Steps 탭 ---------------- */}
           <TabsContent value="steps" className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">프로젝트 단계</h2>
@@ -128,33 +198,48 @@ export default function ProjectDetail() {
                 단계 추가
               </Button>
             </div>
-            <div className="space-y-3">
-              {mockSteps.map((step) => (
+
+            {/* 단계 로딩 */}
+            {stepLoading && (
+              <Card>
+                <CardContent className="p-4 text-muted-foreground">
+                  단계 정보를 불러오는 중...
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 단계 없음 */}
+            {!stepLoading && steps.length === 0 && (
+              <Card>
+                <CardContent className="p-4 text-muted-foreground text-center">
+                  단계가 없습니다.
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 단계 리스트 */}
+            {!stepLoading &&
+              steps.map((step) => (
                 <Card key={step.id} className="card-hover">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1">
-                        <StatusBadge status={step.status}>
-                          {step.status === "complete" && "완료"}
-                          {step.status === "progress" && "진행중"}
-                          {step.status === "pending" && "대기"}
+                        <StatusBadge status={stepStatusToBadgeStatus[step.status]}>
+                          {stepStatusLabelMap[step.status]}
                         </StatusBadge>
+
                         <div className="flex-1">
-                          <h3 className="font-medium">{step.name}</h3>
+                          <h3 className="font-medium">{step.title}</h3>
                           <p className="text-sm text-muted-foreground">
-                            마감: {step.dueDate}
+                            {step.description ?? ""}
                           </p>
                         </div>
                       </div>
+
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="text-xs">
-                              {step.assignee[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">{step.assignee}</span>
-                        </div>
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback className="text-xs">담</AvatarFallback>
+                        </Avatar>
                         <Button variant="outline" size="sm">
                           상세보기
                         </Button>
@@ -163,9 +248,9 @@ export default function ProjectDetail() {
                   </CardContent>
                 </Card>
               ))}
-            </div>
           </TabsContent>
 
+          {/* ---------------- Board 탭 ---------------- */}
           <TabsContent value="board" className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">게시판</h2>
@@ -174,20 +259,15 @@ export default function ProjectDetail() {
                 글 작성
               </Button>
             </div>
-            <div className="space-y-3">
-              {mockPosts.map((post) => (
-                <Card key={post.id} className="card-hover cursor-pointer">
-                  <CardHeader>
-                    <CardTitle className="text-base">{post.title}</CardTitle>
-                    <CardDescription>
-                      {post.author} · {post.date} · 댓글 {post.comments}
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              ))}
-            </div>
+            <Card className="card-hover cursor-pointer">
+              <CardHeader>
+                <CardTitle className="text-base">게시판 연동 예정</CardTitle>
+                <CardDescription>향후 게시판 데이터가 연동됩니다.</CardDescription>
+              </CardHeader>
+            </Card>
           </TabsContent>
 
+          {/* ---------------- Team 탭 ---------------- */}
           <TabsContent value="team" className="space-y-4">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">참여 팀원</h2>
@@ -196,37 +276,18 @@ export default function ProjectDetail() {
                 팀원 초대
               </Button>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {["김개발", "이디자인", "박퍼블", "최기획", "정관리"].map((name) => (
-                <Card key={name}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar>
-                        <AvatarFallback>{name[0]}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium">{name}</p>
-                        <p className="text-sm text-muted-foreground">개발팀</p>
-                      </div>
-                      <Badge variant="secondary">활성</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Card className="card-hover">
+              <CardContent className="p-4">팀원 데이터 연동 예정</CardContent>
+            </Card>
           </TabsContent>
 
-          <TabsContent value="settings">
-            <Card>
+          {/* ---------------- Settings 탭 ---------------- */}
+          <TabsContent value="settings" className="space-y-4">
+            <Card className="card-hover">
               <CardHeader>
-                <CardTitle>프로젝트 설정</CardTitle>
-                <CardDescription>
-                  프로젝트의 기본 정보를 관리합니다
-                </CardDescription>
+                <CardTitle className="text-lg">설정</CardTitle>
+                <CardDescription>추후 프로젝트 설정이 추가됩니다.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">설정 페이지는 개발 중입니다.</p>
-              </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
