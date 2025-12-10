@@ -846,6 +846,15 @@ export default function BoardDetail() {
     navigate(`/project/${id}/board/${postId}/edit`);
   };
 
+  // 작성자 본인 여부
+  const isAuthor = user?.id === post.author.memberId;
+
+  // 수정 가능 여부: 작성자 본인이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
+  const canEdit = isAuthor && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
+
+  // 삭제 가능 여부: 작성자 본인만 가능
+  const canDelete = isAuthor;
+
   const handleDelete = async () => {
     if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
       return;
@@ -884,7 +893,7 @@ export default function BoardDetail() {
 
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="space-y-6 max-w-7xl mx-auto w-full">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             variant="ghost"
@@ -895,14 +904,28 @@ export default function BoardDetail() {
             목록으로
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2" onClick={handleEdit}>
-              <Pencil className="h-4 w-4" />
-              수정
-            </Button>
-            <Button variant="outline" className="gap-2" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4" />
-              삭제
-            </Button>
+            {isAuthor && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleEdit}
+                  disabled={!canEdit}
+                >
+                  <Pencil className="h-4 w-4" />
+                  수정
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleDelete}
+                  disabled={!canDelete}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  삭제
+                </Button>
+              </>
+            )}
             <Button className="gap-2" onClick={handleReply}>
               <MessageSquare className="h-4 w-4" />
               답글 작성
@@ -1007,10 +1030,10 @@ export default function BoardDetail() {
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                        className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
                       >
-                        <span className="truncate font-medium">{link.title}</span>
-                        <span className="text-xs text-muted-foreground ml-3">{link.url}</span>
+                        <div className="font-medium break-all line-clamp-2">{link.title}</div>
+                        <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>
                       </a>
                     ))}
                   </div>

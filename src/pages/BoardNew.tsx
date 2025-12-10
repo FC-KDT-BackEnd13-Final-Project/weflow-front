@@ -521,19 +521,17 @@ export default function BoardNew() {
                     {links.map((link, index) => (
                       <div
                         key={`${link}-${index}`}
-                        className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
+                        className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <Link2 className="h-4 w-4 flex-shrink-0" />
-                          <a
-                            href={link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm truncate underline-offset-2 hover:underline"
-                          >
-                            {link}
-                          </a>
-                        </div>
+                        <Link2 className="h-4 w-4 flex-shrink-0" />
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm underline-offset-2 hover:underline flex-1 min-w-0 truncate"
+                        >
+                          {link}
+                        </a>
                         <Button
                           type="button"
                           variant="ghost"
