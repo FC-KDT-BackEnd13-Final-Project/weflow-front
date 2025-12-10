@@ -13,6 +13,8 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
+import { getPosts } from "@/apis/postApi";
+import type { PostItem } from "@/types/post";
 
 interface BoardPost {
   id: number;
@@ -93,7 +95,8 @@ export default function Board() {
   const [activeProjectStatus, setActiveProjectStatus] = useState("전체");
   const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const posts = mockPosts;
+  const [posts, setPosts] = useState<BoardPost[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
   const pageSize = 5;
 
@@ -103,6 +106,43 @@ export default function Board() {
     .filter((step): step is NonNullable<typeof step> => Boolean(step))
     .map((step) => ({ id: step.id, name: step.name }));
   const availableSteps = [{ id: null, name: "전체" }, ...stepOptions];
+
+  // 백엔드에서 게시글 목록 가져오기
+  useEffect(() => {
+    const fetchPosts = async () => {
+      if (!id) return;
+
+      setIsLoading(true);
+      try {
+        const response = await getPosts(Number(id));
+
+        // 백엔드 데이터를 프론트 형식으로 변환
+        const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => ({
+          id: post.postId,
+          title: post.title,
+          author: post.author.name,
+          date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
+          attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
+          comments: post.commentCount,
+          projectStatus: post.projectStatus, // 백엔드와 프론트 형식 맞춰야 함
+          stepId: post.stepId,
+          status: post.status === "CONFIRMED" ? "complete" : "progress",
+          questionStatus: post.hasQuestions
+            ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
+            : "request",
+        }));
+
+        setPosts(convertedPosts);
+      } catch (error) {
+        console.error("게시글 목록 조회 실패:", error);
+        setPosts(mockPosts); // 에러 시 목 데이터 사용
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPosts();
+  }, [id]);
 
   useEffect(() => {
     const stepsForStatus = statusStepMap[activeProjectStatus] || statusStepMap["전체"];
@@ -223,7 +263,15 @@ export default function Board() {
 
             {/* 게시글 목록 */}
             <div className="space-y-2">
-              {paginatedPosts.map((post) => (
+              {isLoading && (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <p className="text-muted-foreground">게시글을 불러오는 중...</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!isLoading && paginatedPosts.map((post) => (
                 <Card
                   key={post.id}
                   className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -293,7 +341,7 @@ export default function Board() {
                 </Card>
               ))}
 
-              {filteredPosts.length === 0 && (
+              {!isLoading && filteredPosts.length === 0 && (
                 <Card>
                   <CardContent className="p-12 text-center">
                     <p className="text-muted-foreground">게시글이 없습니다.</p>

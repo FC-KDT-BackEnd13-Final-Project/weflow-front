@@ -12,6 +12,7 @@ import {
   ProjectStatus,
   fetchProjectDetail
 } from "@/apis/projects";
+import axios from "axios";
 
 import {
   fetchProjectSteps,
@@ -53,6 +54,15 @@ export default function ProjectDetail() {
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [stepLoading, setStepLoading] = useState(true);
 
+  const extractErrorMessage = (err: unknown, fallback: string) => {
+    if (axios.isAxiosError(err)) {
+      const data = err.response?.data as { message?: string; code?: string } | undefined;
+      const combined = [data?.code, data?.message].filter(Boolean).join(" | ");
+      if (combined.trim()) return combined;
+    }
+    return fallback;
+  };
+
   // 날짜 포맷터
   const formatDate = (value?: string | null) => {
     if (!value) return "-";
@@ -73,7 +83,7 @@ export default function ProjectDetail() {
         const detail = await fetchProjectDetail(projectId);
         setProject(detail);
       } catch (err) {
-        setError("프로젝트 정보를 불러오지 못했습니다.");
+        setError(extractErrorMessage(err, "프로젝트 정보를 불러오지 못했습니다."));
       } finally {
         setLoading(false);
       }

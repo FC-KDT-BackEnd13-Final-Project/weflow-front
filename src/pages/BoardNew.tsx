@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,12 +14,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, X, Link2 } from "lucide-react";
+import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { createPost, updatePost, getPost } from "@/apis/postApi";
+import { ProjectStatus } from "@/types/post";
+import type { FileRequest, QuestionRequest } from "@/types/post";
+import { getStepsByProject } from "@/apis/stepApi";
+import type { StepResponse } from "@/types/step";
+import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
 
 const status = ["계약", "진행", "납품", "유지보수"];
-const step = ["요구사항 정의", "화면설계", "디자인", "퍼블리싱", "개발", "검수"];
 
 const postSchema = z.object({
   title: z.string()
@@ -40,24 +45,91 @@ type PostFormData = z.infer<typeof postSchema>;
 
 export default function BoardNew() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id, postId } = useParams<{ id: string; postId?: string }>();
   const location = useLocation();
   const replyInfo = (location.state as { parentPostId?: number; parentTitle?: string } | null) ?? null;
   const isReply = Boolean(replyInfo?.parentPostId);
+  const isEditMode = Boolean(postId); // postId가 있으면 수정 모드
   const { toast } = useToast();
-  
+
   const [formData, setFormData] = useState<PostFormData>({
     title: replyInfo?.parentTitle ? `Re: ${replyInfo.parentTitle}` : "",
     content: "",
     status: "",
     step: "",
   });
-  
+
   const [files, setFiles] = useState<File[]>([]);
   const [links, setLinks] = useState<string[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<QuestionRequest[]>([]);
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
+  const [steps, setSteps] = useState<StepResponse[]>([]);
+  const [isLoadingSteps, setIsLoadingSteps] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 프로젝트의 실제 step 목록 가져오기
+  useEffect(() => {
+    const fetchSteps = async () => {
+      if (!id) return;
+
+      setIsLoadingSteps(true);
+      try {
+        const response = await getStepsByProject(Number(id));
+        setSteps(response.steps);
+      } catch (error) {
+        console.error("Step 목록 조회 실패:", error);
+        toast({
+          title: "단계 로딩 실패",
+          description: "단계 목록을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingSteps(false);
+      }
+    };
+
+    fetchSteps();
+  }, [id, toast]);
+
+  // 수정 모드일 때 기존 게시글 데이터 불러오기
+  useEffect(() => {
+    const fetchPost = async () => {
+      if (!isEditMode || !id || !postId) return;
+
+      try {
+        const post = await getPost(Number(id), Number(postId));
+
+        // status 역매핑 (임시)
+        const statusReverseMap: Record<string, string> = {
+          "IN_PROGRESS": "진행",
+          "COMPLETED": "납품",
+          "ON_HOLD": "유지보수",
+        };
+
+        setFormData({
+          title: post.title,
+          content: post.content,
+          status: statusReverseMap[post.projectStatus] || "진행",
+          step: post.step.stepId.toString(),
+        });
+
+        setLinks(post.links.map(link => link.url));
+        // 파일은 별도 처리 필요
+      } catch (error) {
+        console.error("게시글 조회 실패:", error);
+        toast({
+          title: "게시글 로딩 실패",
+          description: "게시글을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+        navigate(`/project/${id}/board`);
+      }
+    };
+
+    fetchPost();
+  }, [isEditMode, id, postId, toast, navigate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -98,11 +170,31 @@ export default function BoardNew() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const addQuestion = () => {
+    setQuestions(prev => [
+      ...prev,
+      { questionText: "", confirmLabel: "승인", rejectLabel: "반려" }
+    ]);
+  };
+
+  const updateQuestion = (index: number, field: keyof QuestionRequest, value: string) => {
+    setQuestions(prev => prev.map((q, i) =>
+      i === index ? { ...q, [field]: value } : q
+    ));
+  };
+
+  const removeQuestion = (index: number) => {
+    setQuestions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // 중복 제출 방지
+    if (isSubmitting) return;
+
     const result = postSchema.safeParse(formData);
-    
+
     if (!result.success) {
       const fieldErrors: Partial<Record<keyof PostFormData, string>> = {};
       result.error.errors.forEach((error) => {
@@ -115,15 +207,107 @@ export default function BoardNew() {
     }
 
     setErrors({});
-    
-    // TODO: API 호출로 데이터 저장
-    // console.log({ ...formData, files, links, parentPostId: replyInfo?.parentPostId ?? null });
-    toast({
-      title: "게시글 작성 완료",
-      description: "게시글이 성공적으로 작성되었습니다.",
-    });
-    
-    navigate(`/project/${id}/board`);
+
+    // 백엔드 API 호출
+    setIsSubmitting(true);
+    try {
+      // status 매핑
+      const statusMap: Record<string, ProjectStatus> = {
+        "계약": ProjectStatus.CONTRACT,
+        "진행": ProjectStatus.IN_PROGRESS,
+        "납품": ProjectStatus.DELIVERY,
+        "유지보수": ProjectStatus.MAINTENANCE,
+      };
+
+      // formData.step은 이제 실제 stepId(문자열)
+      const stepId = Number(formData.step);
+
+      if (!stepId) {
+        toast({
+          title: "유효하지 않은 단계",
+          description: "단계를 다시 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // 파일 업로드
+      const uploadedFiles: FileRequest[] = [];
+      for (const file of files) {
+        try {
+          // 1. Presigned URL 요청
+          const key = `post/${Date.now()}_${file.name}`;
+          const presignedUrlResponse = await getPresignedUrl({
+            key,
+            contentType: file.type,
+          });
+
+          // 2. S3에 파일 업로드
+          await uploadFileToS3(presignedUrlResponse.url, file);
+
+          // 3. 파일 정보 저장
+          uploadedFiles.push({
+            fileName: file.name,
+            fileSize: file.size,
+            filePath: presignedUrlResponse.key,
+            contentType: file.type,
+          });
+        } catch (error) {
+          console.error(`파일 업로드 실패 (${file.name}):`, error);
+          throw error;
+        }
+      }
+
+      if (isEditMode && postId) {
+        // 수정 모드
+        await updatePost(Number(id), Number(postId), {
+          title: formData.title,
+          content: formData.content,
+          stepId: stepId,
+          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          links: links.map(url => ({ url })),
+          files: uploadedFiles,
+          questions: questions.length > 0 ? questions : undefined,
+        });
+
+        toast({
+          title: "게시글 수정 완료",
+          description: "게시글이 성공적으로 수정되었습니다.",
+        });
+
+        // 수정한 게시글 상세 페이지로 이동
+        navigate(`/project/${id}/board/${postId}`);
+      } else {
+        // 작성 모드
+        const response = await createPost(Number(id), {
+          title: formData.title,
+          content: formData.content,
+          stepId: stepId,
+          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          parentPostId: replyInfo?.parentPostId,
+          links: links.map(url => ({ url })),
+          files: uploadedFiles,
+          questions: questions.length > 0 ? questions : undefined,
+        });
+
+        toast({
+          title: "게시글 작성 완료",
+          description: "게시글이 성공적으로 작성되었습니다.",
+        });
+
+        // 방금 작성한 게시글 상세 페이지로 이동
+        navigate(`/project/${id}/board/${response.postId}`);
+      }
+    } catch (error) {
+      console.error(`게시글 ${isEditMode ? '수정' : '작성'} 실패:`, error);
+      toast({
+        title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
+        description: `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCancel = () => {
@@ -149,7 +333,9 @@ export default function BoardNew() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{isReply ? "답글 작성" : "게시글 작성"}</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {isEditMode ? "게시글 수정" : isReply ? "답글 작성" : "게시글 작성"}
+            </h1>
             {isReply && (
               <p className="text-sm text-muted-foreground">원본 글: {replyInfo?.parentTitle}</p>
             )}
@@ -160,7 +346,9 @@ export default function BoardNew() {
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
-              <CardTitle>{isReply ? "답글 입력" : "새 게시글"}</CardTitle>
+              <CardTitle>
+                {isEditMode ? "게시글 수정" : isReply ? "답글 입력" : "새 게시글"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Status */}
@@ -192,14 +380,15 @@ export default function BoardNew() {
                 <Select
                   value={formData.step}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, step: value }))}
+                  disabled={isLoadingSteps}
                 >
                   <SelectTrigger id="step">
-                    <SelectValue placeholder="단계를 선택하세요" />
+                    <SelectValue placeholder={isLoadingSteps ? "단계 로딩 중..." : "단계를 선택하세요"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {step.map((step) => (
-                      <SelectItem key={step} value={step}>
-                        {step}
+                    {steps.map((step) => (
+                      <SelectItem key={step.id} value={step.id.toString()}>
+                        {step.title}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -360,16 +549,92 @@ export default function BoardNew() {
                 )}
               </div>
 
+              {/* Questions */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    질문 추가
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addQuestion}
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    질문 추가
+                  </Button>
+                </div>
+
+                {questions.length > 0 && (
+                  <div className="space-y-4 mt-3">
+                    {questions.map((question, index) => (
+                      <div
+                        key={index}
+                        className="p-4 border rounded-md bg-muted/30 space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">질문 {index + 1}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeQuestion(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`question-text-${index}`}>질문 내용</Label>
+                          <Textarea
+                            id={`question-text-${index}`}
+                            placeholder="질문 내용을 입력하세요"
+                            value={question.questionText}
+                            onChange={(e) => updateQuestion(index, "questionText", e.target.value)}
+                            className="min-h-[80px]"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor={`confirm-label-${index}`}>승인 버튼 텍스트</Label>
+                            <Input
+                              id={`confirm-label-${index}`}
+                              placeholder="승인"
+                              value={question.confirmLabel}
+                              onChange={(e) => updateQuestion(index, "confirmLabel", e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`reject-label-${index}`}>반려 버튼 텍스트</Label>
+                            <Input
+                              id={`reject-label-${index}`}
+                              placeholder="반려"
+                              value={question.rejectLabel}
+                              onChange={(e) => updateQuestion(index, "rejectLabel", e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Actions */}
               <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1">
-                  게시글 작성
+                <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? `${isEditMode ? '수정' : '작성'} 중...`
+                    : isEditMode ? "게시글 수정" : "게시글 작성"}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleCancel}
                   className="flex-1"
+                  disabled={isSubmitting}
                 >
                   취소
                 </Button>
