@@ -846,8 +846,14 @@ export default function BoardDetail() {
     navigate(`/project/${id}/board/${postId}/edit`);
   };
 
-  // 수정 가능 여부: 댓글이 없고 질문에 답변이 없을 때만 가능
-  const canEdit = post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
+  // 작성자 본인 여부
+  const isAuthor = user?.id === post.author.memberId;
+
+  // 수정 가능 여부: 작성자 본인이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
+  const canEdit = isAuthor && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
+
+  // 삭제 가능 여부: 작성자 본인만 가능
+  const canDelete = isAuthor;
 
   const handleDelete = async () => {
     if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
@@ -898,19 +904,28 @@ export default function BoardDetail() {
             목록으로
           </Button>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={handleEdit}
-              disabled={!canEdit}
-            >
-              <Pencil className="h-4 w-4" />
-              수정
-            </Button>
-            <Button variant="outline" className="gap-2" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4" />
-              삭제
-            </Button>
+            {isAuthor && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleEdit}
+                  disabled={!canEdit}
+                >
+                  <Pencil className="h-4 w-4" />
+                  수정
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleDelete}
+                  disabled={!canDelete}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  삭제
+                </Button>
+              </>
+            )}
             <Button className="gap-2" onClick={handleReply}>
               <MessageSquare className="h-4 w-4" />
               답글 작성
