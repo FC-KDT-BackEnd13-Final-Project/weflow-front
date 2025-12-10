@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,10 @@ export default function ChecklistTemplates() {
   const [selectedCategory, setSelectedCategory] = useState<string>("전체");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [size] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,10 +37,26 @@ export default function ChecklistTemplates() {
       try {
         setIsLoading(true);
         setError(null);
-        const response = await api.get("/api/checklist-templates", { signal: controller.signal });
+        const response = await api.get("/api/checklist-templates", {
+          params: {
+            page,
+            size,
+            category: selectedCategory !== "전체" ? selectedCategory : undefined,
+          },
+          signal: controller.signal,
+        });
         const data = response.data?.data;
-        if (!Array.isArray(data)) throw new Error("템플릿 목록을 가져올 수 없습니다.");
-        setTemplates(data);
+        if (Array.isArray(data)) {
+          setTemplates(data);
+          setTotalPages(1);
+          setTotalElements(data.length);
+        } else if (data?.content) {
+          setTemplates(data.content);
+          setTotalPages(data.totalPages ?? 1);
+          setTotalElements(data.totalElements ?? data.content.length);
+        } else {
+          throw new Error("템플릿 목록을 가져올 수 없습니다.");
+        }
       } catch (err) {
         if (!controller.signal.aborted) {
           setError("템플릿 목록을 불러오지 못했습니다.");
@@ -47,7 +67,11 @@ export default function ChecklistTemplates() {
     };
     fetchTemplates();
     return () => controller.abort();
-  }, []);
+  }, [page, size, selectedCategory]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCategory]);
 
   return (
     <ProjectLayout>
@@ -129,6 +153,26 @@ export default function ChecklistTemplates() {
               </CardContent>
             </Card>
           ))}
+          {!isLoading && !error && templates.length > 0 && (
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
+              <p className="text-sm text-muted-foreground">
+                총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((prev) => Math.max(0, prev - 1))}>
+                  이전
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                >
+                  다음
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </ProjectLayout>
