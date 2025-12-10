@@ -35,8 +35,10 @@ export default function ApprovalDetail() {
   const [editAttachments, setEditAttachments] = useState<UploadedAttachment[]>([]);
   const [decisionAttachments, setDecisionAttachments] = useState<UploadedAttachment[]>([]);
 
+  const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
+  const parsedProjectId = Number(id);
+  const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
   const requestId = Number(approvalId);
-  const projectId = Number(id);
   const { data: requestData, isLoading } = useQuery({
     queryKey: ["step-request-detail", requestId],
     queryFn: () => getStepRequest(requestId),
@@ -185,7 +187,7 @@ export default function ApprovalDetail() {
           ) : (
             <>
               <p className="text-muted-foreground">승인 요청을 찾을 수 없습니다.</p>
-              <Button onClick={() => navigate(`/project/${id}/approvals`)} className="mt-4">
+              <Button onClick={() => navigate(`/project/${projectId}/approvals`)} className="mt-4">
             목록으로 돌아가기
           </Button>
             </>
@@ -351,7 +353,7 @@ export default function ApprovalDetail() {
       <div className="space-y-6 max-w-7xl mx-auto w-full">
         <Button
           variant="ghost"
-          onClick={() => navigate(`/project/${id}/approvals`)}
+          onClick={() => navigate(`/project/${projectId}/approvals`)}
           className="-ml-2 w-fit"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />

@@ -32,7 +32,9 @@ export default function Approvals() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const projectId = Number(id);
+  const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
+  const parsedProjectId = Number(id);
+  const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<string>("ALL");
   const [page, setPage] = useState(0);
@@ -247,7 +249,7 @@ export default function Approvals() {
                         return (
                           <button
                             key={approval.id}
-                            onClick={() => navigate(`/project/${id}/approvals/${approval.id}`)}
+                            onClick={() => navigate(`/project/${projectId}/approvals/${approval.id}`)}
                             className={cn(
                               "w-full rounded-lg border-2 bg-white p-3 text-left transition-shadow",
                               approval.status === "CANCELED"
