@@ -243,6 +243,7 @@ export default function ProjectDetail() {
                           <p className="text-sm text-muted-foreground">
                             {step.description ?? ""}
                           </p>
+                          {step.description && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{step.description}</p>}
                         </div>
                       </div>
 
