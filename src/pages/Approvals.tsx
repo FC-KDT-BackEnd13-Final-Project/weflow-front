@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,13 +30,15 @@ import {
 export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
   const parsedProjectId = Number(id);
   const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState<string>("ALL");
+  const tabParam = searchParams.get("tab") ?? "ALL";
+  const currentPhase = ["ALL", "CONTRACT", "IN_PROGRESS", "DELIVERY", "MAINTENANCE"].includes(tabParam) ? tabParam : "ALL";
   const [page, setPage] = useState(0);
   const pageSize = 20;
   const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
@@ -189,7 +191,7 @@ export default function Approvals() {
             return (
               <button
                 key={phase.value}
-                onClick={() => setCurrentPhase(phase.value)}
+                onClick={() => setSearchParams({ tab: phase.value })}
                 className={cn(
                   "cursor-pointer px-4 py-2 text-sm rounded-full border transition-colors",
                   isActive
@@ -249,7 +251,7 @@ export default function Approvals() {
                         return (
                           <button
                             key={approval.id}
-                            onClick={() => navigate(`/project/${projectId}/approvals/${approval.id}`)}
+                            onClick={() => navigate(`/project/${projectId}/approvals/${approval.id}?tab=${currentPhase}`)}
                             className={cn(
                               "w-full rounded-lg border-2 bg-white p-3 text-left transition-shadow",
                               approval.status === "CANCELED"

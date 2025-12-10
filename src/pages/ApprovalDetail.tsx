@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,28 @@ export default function ApprovalDetail() {
   const [editAttachments, setEditAttachments] = useState<UploadedAttachment[]>([]);
   const [decisionAttachments, setDecisionAttachments] = useState<UploadedAttachment[]>([]);
 
+  const buildQueryString = (params: Record<string, string | null | undefined>) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") {
+        searchParams.set(key, value);
+      }
+    });
+    const result = searchParams.toString();
+    return result ? `?${result}` : "";
+  };
   const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
   const parsedProjectId = Number(id);
   const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get("tab") ?? "ALL";
+  const from = searchParams.get("from");
+  const statusQuery = searchParams.get("status");
+  const pageQuery = searchParams.get("page");
+  const listPath =
+    from === "approval-requests"
+      ? `/approval-requests${buildQueryString({ status: statusQuery, page: pageQuery })}`
+      : `/project/${projectId}/approvals${tab ? `?tab=${tab}` : ""}`;
   const requestId = Number(approvalId);
   const { data: requestData, isLoading } = useQuery({
     queryKey: ["step-request-detail", requestId],
@@ -118,7 +137,7 @@ export default function ApprovalDetail() {
       queryClient.invalidateQueries({ queryKey: ["step-request-detail", requestId] });
       queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
-      navigate(`/project/${projectId}/approvals`);
+      navigate(listPath);
     },
     onError: (error: unknown) =>
       toast({
@@ -187,9 +206,9 @@ export default function ApprovalDetail() {
           ) : (
             <>
               <p className="text-muted-foreground">승인 요청을 찾을 수 없습니다.</p>
-              <Button onClick={() => navigate(`/project/${projectId}/approvals`)} className="mt-4">
-            목록으로 돌아가기
-          </Button>
+              <Button onClick={() => navigate(listPath)} className="mt-4">
+                목록으로 돌아가기
+              </Button>
             </>
           )}
         </div>
@@ -353,7 +372,7 @@ export default function ApprovalDetail() {
       <div className="space-y-6 max-w-7xl mx-auto w-full">
         <Button
           variant="ghost"
-          onClick={() => navigate(`/project/${projectId}/approvals`)}
+          onClick={() => navigate(listPath)}
           className="-ml-2 w-fit"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
