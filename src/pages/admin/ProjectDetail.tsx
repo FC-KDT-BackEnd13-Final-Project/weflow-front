@@ -206,7 +206,7 @@ const ProjectDetail = () => {
                     <div>연락처</div>
                     <div>회사</div>
                     <div>역할</div>
-                    <div>가입일</div>
+                    <div>삭제 여부</div>
                   </div>
                   <div className="divide-y">
                     {members.length === 0 && (
@@ -222,7 +222,9 @@ const ProjectDetail = () => {
                         <div className="text-muted-foreground">{member.companyName}</div>
                         <div className="font-medium">{member.projectRole}</div>
                         <div className="text-muted-foreground">
-                          {formatDateTime(member.createdAt)}
+                          {member.removedAt
+                            ? `삭제됨: ${formatDateTime(member.removedAt)}`
+                            : "활성"}
                         </div>
                       </div>
                     ))}
