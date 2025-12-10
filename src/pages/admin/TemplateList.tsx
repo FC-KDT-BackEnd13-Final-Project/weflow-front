@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import api from "@/apis/api";
+import { cn } from "@/lib/utils";
 
 interface ChecklistTemplateSummary {
   templateId: number;
@@ -14,6 +15,7 @@ interface ChecklistTemplateSummary {
   createdAt: string;
   updatedAt?: string;
   locked?: boolean;
+  deleted?: boolean;
 }
 
 const TemplateList = () => {
@@ -46,6 +48,15 @@ const TemplateList = () => {
     fetchTemplates();
     return () => controller.abort();
   }, []);
+
+  const filteredTemplates = templates
+    .filter((template) => selectedCategory === "전체" || template.category === selectedCategory)
+    .sort((a, b) => {
+      if (a.deleted === b.deleted) {
+        return new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime();
+      }
+      return a.deleted ? 1 : -1;
+    });
 
   return (
     <div className="space-y-6">
@@ -98,12 +109,15 @@ const TemplateList = () => {
 
           {!isLoading &&
             !error &&
-            templates
-              .filter((template) => selectedCategory === "전체" || template.category === selectedCategory)
-              .map((template) => (
+            filteredTemplates.map((template) => (
                 <Card
                   key={template.templateId}
-                  className="cursor-pointer hover:shadow transition"
+                  className={cn(
+                    "cursor-pointer transition",
+                    template.deleted
+                      ? "border-dashed bg-muted text-muted-foreground hover:border-muted"
+                      : "hover:shadow"
+                  )}
                   onClick={() => navigate(`/admin/checklist-templates/${template.templateId}`)}
                 >
                   <CardHeader className="flex flex-row items-center justify-between">
@@ -111,8 +125,15 @@ const TemplateList = () => {
                       <CardTitle>{template.title}</CardTitle>
                       <p className="text-sm text-muted-foreground mt-1">{template.description}</p>
                     </div>
-                    <Badge variant={template.locked ? "outline" : "default"}>
-                      {template.locked ? "잠금" : "사용 가능"}
+                    <Badge
+                      className={
+                        template.deleted
+                          ? "bg-destructive/80 text-destructive-foreground"
+                          : undefined
+                      }
+                      variant={template.locked ? "outline" : "default"}
+                    >
+                      {template.deleted ? "사용 불가" : template.locked ? "잠금" : "사용 가능"}
                     </Badge>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

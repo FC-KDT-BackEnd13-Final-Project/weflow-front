@@ -16,6 +16,7 @@ interface ChecklistTemplate {
   createdAt: string;
   updatedAt: string;
   locked: boolean;
+  deleted?: boolean;
 }
 
 export default function ChecklistTemplates() {
@@ -93,6 +94,7 @@ export default function ChecklistTemplates() {
         <div className="space-y-4">
           {templates
             .filter((template) => selectedCategory === "전체" || template.category === selectedCategory)
+            .filter((template) => !template.deleted)
             .map((template) => (
               <Card
                 key={template.templateId}
