@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download } from "lucide-react";
+import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -23,6 +23,9 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
+import { getPost, deletePost } from "@/apis/postApi";
+import { getDownloadUrl } from "@/apis/attachmentApi";
+import { useUserStore } from "@/stores/user";
 
 type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
 
@@ -274,17 +277,89 @@ export default function BoardDetail() {
   const navigate = useNavigate();
   const { id, postId } = useParams();
   const { toast } = useToast();
+  const { user } = useUserStore();
   const [newComment, setNewComment] = useState("");
   const [questionSelections, setQuestionSelections] = useState<Record<number, "confirm" | "reject">>({});
   const [actionDialog, setActionDialog] = useState<{ questionId: number; action: "confirm" | "reject" } | null>(null);
   const [actionComment, setActionComment] = useState("");
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
   const [visibleReplyForms, setVisibleReplyForms] = useState<Record<string, boolean>>({});
+  const [post, setPost] = useState<BoardPostDetail | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const post = useMemo(() => {
-    if (!postId) return undefined;
-    return mockPostDetails.find((item) => item.id.toString() === postId);
-  }, [postId]);
+  // 백엔드에서 게시글 상세 조회
+  useEffect(() => {
+    const fetchPost = async () => {
+      if (!id || !postId) return;
+
+      setIsLoading(true);
+      try {
+        const response = await getPost(Number(id), Number(postId));
+
+        // 백엔드 데이터를 프론트 형식으로 변환
+        const convertedPost: BoardPostDetail = {
+          id: response.postId,
+          title: response.title,
+          content: response.content,
+          status: response.projectStatus as ApiPostStatus,
+          author: {
+            memberId: response.author.memberId,
+            name: response.author.name,
+            role: response.author.role,
+            companyName: response.author.companyName,
+          },
+          projectStatus: response.projectStatus as ApiPostStatus,
+          step: {
+            stepId: response.step.stepId,
+            stepName: response.step.stepName,
+          },
+          files: response.files.map(file => ({
+            fileId: file.fileId,
+            fileName: file.fileName,
+            fileSize: file.fileSize,
+            downloadUrl: file.downloadUrl,
+          })),
+          links: response.links.map(link => ({
+            linkId: link.linkId,
+            url: link.url,
+            title: link.title,
+          })),
+          questions: response.questions.map(q => ({
+            questionId: q.questionId,
+            content: q.content,
+            buttonLabels: {
+              yes: q.buttonLabels.yes,
+              no: q.buttonLabels.no,
+            },
+            answer: q.answer ? {
+              response: q.answer.response as "YES" | "NO" | "ETC",
+              respondent: {
+                memberId: q.answer.respondent.memberId,
+                name: q.answer.respondent.name,
+              },
+              respondedAt: q.answer.respondedAt,
+            } : null,
+          })),
+          parentPost: response.parentPost?.postId || null,
+          isEdited: response.isEdited,
+          createdAt: response.createdAt,
+          updatedAt: response.updatedAt,
+          comments: [], // 댓글은 별도 API로 가져와야 함
+        };
+
+        setPost(convertedPost);
+      } catch (error) {
+        console.error("게시글 조회 실패:", error);
+        // 에러 시 목 데이터 사용 (임시)
+        const mockPost = mockPostDetails.find((item) => item.id.toString() === postId);
+        setPost(mockPost);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPost();
+  }, [id, postId]);
 
   useEffect(() => {
     if (!post) return;
@@ -298,6 +373,16 @@ export default function BoardDetail() {
     });
     setQuestionSelections(initialSelections);
   }, [post]);
+
+  if (isLoading) {
+    return (
+      <ProjectLayout>
+        <div className="max-w-2xl mx-auto py-16 text-center space-y-4">
+          <p className="text-lg font-medium text-foreground">게시글을 불러오는 중...</p>
+        </div>
+      </ProjectLayout>
+    );
+  }
 
   if (!post) {
     return (
@@ -320,6 +405,33 @@ export default function BoardDetail() {
     : post.questions.every((q) => q.answer)
       ? "approved"
       : "request";
+
+  // 작성자의 role을 CLIENT/AGENCY/ADMIN으로 매핑
+  const getAuthorUserRole = (authorRole: string): "CLIENT" | "AGENCY" | "ADMIN" => {
+    if (authorRole === "CLIENT") return "CLIENT";
+    if (authorRole === "ADMIN") return "ADMIN";
+    return "AGENCY"; // DEVELOPER, PM 등은 모두 AGENCY로 간주
+  };
+
+  // 현재 사용자가 질문에 답변할 수 있는지 체크
+  const canAnswerQuestion = () => {
+    if (!user) return false;
+
+    // 자문자답 방지: 작성자 본인이면 답변 불가
+    if (user.id === post.author.memberId) return false;
+
+    const authorUserRole = getAuthorUserRole(post.author.role);
+    const currentUserRole = user.projectRole === "ADMIN" ? "ADMIN" : user.userRole;
+
+    // 관리자는 모든 게시글에 답변 가능 (자신이 작성한 게시글 제외)
+    if (currentUserRole === "ADMIN") return true;
+
+    // 작성자가 관리자면 AGENCY, CLIENT 모두 답변 가능
+    if (authorUserRole === "ADMIN") return true;
+
+    // 작성자와 다른 역할인 경우에만 답변 가능
+    return currentUserRole !== authorUserRole;
+  };
 
   const handleAddComment = () => {
     if (!newComment.trim()) return;
@@ -482,6 +594,46 @@ export default function BoardDetail() {
     });
   };
 
+  const handleEdit = () => {
+    navigate(`/project/${id}/board/${postId}/edit`);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    try {
+      await deletePost(Number(id), Number(postId));
+      toast({
+        title: "게시글 삭제 완료",
+        description: "게시글이 성공적으로 삭제되었습니다.",
+      });
+      navigate(`/project/${id}/board`);
+    } catch (error) {
+      console.error("게시글 삭제 실패:", error);
+      toast({
+        title: "게시글 삭제 실패",
+        description: "게시글 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownload = async (fileId: number) => {
+    try {
+      const downloadUrl = await getDownloadUrl(fileId);
+      window.open(downloadUrl, '_blank');
+    } catch (error) {
+      console.error("파일 다운로드 실패:", error);
+      toast({
+        title: "파일 다운로드 실패",
+        description: "파일 다운로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto">
@@ -494,10 +646,20 @@ export default function BoardDetail() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             목록으로
           </Button>
-          <Button className="gap-2" onClick={handleReply}>
-            <MessageSquare className="h-4 w-4" />
-            답글 작성
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={handleEdit}>
+              <Pencil className="h-4 w-4" />
+              수정
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={handleDelete}>
+              <Trash2 className="h-4 w-4" />
+              삭제
+            </Button>
+            <Button className="gap-2" onClick={handleReply}>
+              <MessageSquare className="h-4 w-4" />
+              답글 작성
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -567,16 +729,14 @@ export default function BoardDetail() {
                             <p className="text-xs text-muted-foreground">{formatFileSize(file.fileSize)}</p>
                           </div>
                         </div>
-                        <Button asChild variant="ghost" size="icon">
-                          <a
-                            href={file.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`${file.fileName} 다운로드`}
-                          >
-                            <Download className="h-4 w-4" />
-                            <span className="sr-only">다운로드</span>
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownload(file.fileId)}
+                          aria-label={`${file.fileName} 다운로드`}
+                        >
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only">다운로드</span>
                         </Button>
                       </div>
                     ))}
@@ -652,7 +812,7 @@ export default function BoardDetail() {
                                   ? "ring-2 ring-primary hover:bg-primary/90"
                                   : "border-primary/40 text-primary hover:bg-primary/10"
                               )}
-                              disabled={isAnswered}
+                              disabled={isAnswered || !canAnswerQuestion()}
                               aria-pressed={selectedAction === "confirm"}
                               onClick={() => openQuestionAction(question.questionId, "confirm")}
                             >
@@ -667,7 +827,7 @@ export default function BoardDetail() {
                                   ? "ring-2 ring-destructive hover:bg-destructive/90 text-white"
                                   : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                               )}
-                              disabled={isAnswered}
+                              disabled={isAnswered || !canAnswerQuestion()}
                               aria-pressed={selectedAction === "reject"}
                               onClick={() => openQuestionAction(question.questionId, "reject")}
                             >
