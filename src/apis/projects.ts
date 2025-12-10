@@ -37,6 +37,13 @@ export interface ProjectDetailResponse {
   contractAmount: number | null;
 }
 
+export interface ProjectListResponse {
+  totalCount: number;
+  page: number;
+  size: number;
+  projects: ProjectSummaryResponse[];
+}
+
 /* ===========================
       API CALL HELPERS
 =========================== */
@@ -47,7 +54,7 @@ const unwrap = async <T>(promise: Promise<{ data: ApiResponse<T> }>) => {
 };
 
 export const fetchMyProjects = () =>
-  unwrap<ProjectSummaryResponse[]>(api.get("/api/projects/my"));
+  unwrap<ProjectListResponse>(api.get("/api/projects/my"));
 
 export const fetchProjectDetail = (projectId: number) =>
   unwrap<ProjectDetailResponse>(api.get(`/api/projects/${projectId}`));

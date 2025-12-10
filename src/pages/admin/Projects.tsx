@@ -20,7 +20,7 @@ import {
   fetchAdminProjects,
 } from "@/apis/adminProjects";
 
-// 📌 프로젝트 상태 라벨
+// 프로젝트 상태 라벨
 const statusLabels: Record<ProjectStatus, string> = {
   CONTRACT: "계약",
   IN_PROGRESS: "진행중",
@@ -37,11 +37,14 @@ const AdminProjects = () => {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [projects, setProjects] = useState<AdminProjectSummary[]>([]);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 📌 프로젝트 목록 조회
-  const fetchList = async () => {
+  // 프로젝트 목록 조회
+  const fetchList = async (pageParam = page, sizeParam = size) => {
     try {
       setLoading(true);
       setError(null);
@@ -50,11 +53,14 @@ const AdminProjects = () => {
         status: statusFilter || undefined,
         companyId: companyIdFilter ? Number(companyIdFilter) : undefined,
         keyword: searchQuery || undefined,
-        page: 0,
-        size: 20,
+        page: pageParam,
+        size: sizeParam,
       });
 
       setProjects(data.projects ?? []);
+      setTotalCount(data.totalCount ?? 0);
+      setPage(data.page ?? pageParam);
+      setSize(data.size ?? sizeParam);
     } catch {
       setError("프로젝트 목록을 불러오지 못했습니다.");
     } finally {
@@ -63,10 +69,10 @@ const AdminProjects = () => {
   };
 
   useEffect(() => {
-    fetchList();
+    fetchList(0, size);
   }, []);
 
-  // 📌 Select 옵션
+  // Select 옵션
   const statusOptions = useMemo(
     () => [
       { value: "ALL", label: "전체" },
@@ -81,13 +87,12 @@ const AdminProjects = () => {
 
   return (
     <div className="space-y-6">
-
-      {/* 📌 헤더 */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">프로젝트 관리</h1>
           <p className="text-muted-foreground mt-1">
-            프로젝트 관리 {'>'} 프로젝트 목록
+            프로젝트 관리 {">"} 프로젝트 목록
           </p>
         </div>
 
@@ -103,10 +108,8 @@ const AdminProjects = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
-
-          {/* 📌 필터 영역 */}
+          {/* 필터 영역 */}
           <div className="flex flex-wrap gap-4 items-end">
-
             {/* 상태 필터 */}
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">진행 상태</label>
@@ -155,12 +158,16 @@ const AdminProjects = () => {
               </div>
             </div>
 
-            <Button variant="outline" onClick={fetchList} disabled={loading}>
+            <Button
+              variant="outline"
+              onClick={() => fetchList(0, size)}
+              disabled={loading}
+            >
               조회
             </Button>
           </div>
 
-          {/* 📌 목록 테이블 */}
+          {/* 목록 테이블 */}
           <div className="border rounded-lg overflow-hidden">
             <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
               <div>프로젝트명</div>
@@ -171,7 +178,6 @@ const AdminProjects = () => {
             </div>
 
             <div className="divide-y">
-
               {loading && (
                 <div className="p-4 text-center text-muted-foreground">
                   불러오는 중...
@@ -217,6 +223,53 @@ const AdminProjects = () => {
                     </div>
                   </div>
                 ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-0">
+            <div className="text-sm text-muted-foreground">
+              총 {totalCount.toLocaleString()}건 · {page + 1} /{" "}
+              {Math.max(1, Math.ceil((totalCount || 0) / size))} 페이지
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(size)}
+                onValueChange={(value) => {
+                  const newSize = Number(value);
+                  setSize(newSize);
+                  setPage(0);
+                  fetchList(0, newSize);
+                }}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder="페이지 크기" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 20, 50, 100].map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}개
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page === 0}
+                  onClick={() => fetchList(Math.max(0, page - 1), size)}
+                >
+                  ‹
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={(page + 1) * size >= totalCount}
+                  onClick={() => fetchList(page + 1, size)}
+                >
+                  ›
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
