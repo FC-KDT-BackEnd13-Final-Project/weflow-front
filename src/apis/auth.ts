@@ -10,6 +10,7 @@ interface User {
   email: string;
   name: string;
   role: string;
+  isTemporaryPassword: boolean;
 }
 
 interface LoginResponse {
@@ -76,9 +77,9 @@ export const authApi = {
     return response.data;
   },
 
-  getMe: async (): Promise<UserProfile> => {
+  getMe: async (): Promise<UserProfileResponse> => {
     const response = await api.get<UserProfileResponse>("/api/users/me");
-    return response.data.data;
+    return response.data;
   },
 
   updateMe: async (data: UpdateUserRequest): Promise<UpdateUserResponse> => {
