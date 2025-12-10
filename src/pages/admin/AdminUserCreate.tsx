@@ -1,21 +1,37 @@
+// src/pages/admin/AdminUserCreate.tsx
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createAdminUser } from "@/lib/adminUsersStore";
+
+import { createSystemAdmin } from "@/apis/systemAdmins";
 
 const AdminUserCreate = () => {
   const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [name, setName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createAdminUser({ name, phone, email, role: "system_admin" });
-    navigate("/admin/admin-users");
+
+    try {
+      await createSystemAdmin({
+        name,
+        phoneNumber,
+        email,
+        password,
+      });
+      navigate("/admin/admin-users");
+    } catch (err) {
+      console.error("관리자 생성 실패:", err);
+      alert("관리자 생성 중 오류가 발생했습니다.");
+    }
   };
 
   return (
@@ -23,7 +39,9 @@ const AdminUserCreate = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">관리자 계정 생성</h1>
-          <p className="text-muted-foreground mt-1">관리자 계정 {'>'} 관리자 추가</p>
+          <p className="text-muted-foreground mt-1">
+            관리자 계정 {">"} 관리자 추가
+          </p>
         </div>
       </div>
 
@@ -31,54 +49,60 @@ const AdminUserCreate = () => {
         <CardHeader>
           <CardTitle>관리자 정보</CardTitle>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
+                <Label>이름</Label>
                 <Input
-                  id="name"
-                  placeholder="이름 입력"
+                  required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  required
                 />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="phone">전화번호</Label>
+                <Label>전화번호</Label>
                 <Input
-                  id="phone"
-                  placeholder="전화번호 입력"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
                   required
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">이메일</Label>
+              <Label>이메일</Label>
               <Input
-                id="email"
                 type="email"
-                placeholder="이메일 입력"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>비밀번호</Label>
+              <Input
+                type="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
               <Label>역할</Label>
-              <div className="p-3 border rounded-md bg-muted/50 text-sm">
-                시스템 관리자
+              <div className="p-3 border rounded-md bg-muted/50">
+                SYSTEM_ADMIN
               </div>
             </div>
 
             <div className="flex gap-3 justify-end pt-4">
               <Button
-                type="button"
                 variant="outline"
+                type="button"
                 onClick={() => navigate("/admin/admin-users")}
               >
                 취소
