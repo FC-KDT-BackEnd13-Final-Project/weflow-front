@@ -58,6 +58,9 @@ export default function Projects() {
     "ALL"
   );
   const [projects, setProjects] = useState<ProjectSummaryResponse[]>([]);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
   const [membershipStatus, setMembershipStatus] = useState<
     Record<number, "joined" | "not-joined" | "unknown">
   >({});
@@ -69,7 +72,10 @@ export default function Projects() {
       setLoading(true);
       setError(null);
       const data = await fetchMyProjects();
-      setProjects(data ?? []);
+      setProjects(data.projects ?? []);
+      setTotalCount(data.totalCount ?? 0);
+      setPage(data.page);
+      setSize(data.size);
     } catch (err) {
       setError("프로젝트 목록을 불러오지 못했습니다.");
     } finally {
@@ -125,6 +131,18 @@ export default function Projects() {
       return matchesSearch && matchesStatus;
     });
   }, [projects, searchQuery, statusFilter]);
+
+  // 필터 변경 시 첫 페이지로 이동
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / size));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginatedProjects = filteredProjects.slice(
+    currentPage * size,
+    currentPage * size + size
+  );
 
   const handleCardClick = async (project: ProjectSummaryResponse) => {
     const isMember =
@@ -230,7 +248,7 @@ export default function Projects() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredProjects.map((project) => (
+            {paginatedProjects.map((project) => (
               <Card
                 key={project.projectId}
                 className={`card-hover ${
@@ -287,6 +305,56 @@ export default function Projects() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        )}
+
+        {filteredProjects.length > 0 && (
+          <div className="flex items-center justify-between pt-0">
+            <div className="text-sm text-muted-foreground">
+              총 {totalCount.toLocaleString()}건 · {currentPage + 1} /{" "}
+              {totalPages} 페이지
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(size)}
+                onValueChange={(value) => {
+                  const newSize = Number(value);
+                  setSize(newSize);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder="페이지 크기" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 20, 50, 100].map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}개
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === 0}
+                  onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                >
+                  ‹
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage + 1 >= totalPages}
+                  onClick={() =>
+                    setPage((prev) => Math.min(totalPages - 1, prev + 1))
+                  }
+                >
+                  ›
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
