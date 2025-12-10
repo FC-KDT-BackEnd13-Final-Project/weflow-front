@@ -235,7 +235,7 @@ export default function ApprovalDetail() {
       toast({ title: "승인할 수 없는 상태입니다.", variant: "destructive" });
       return;
     }
-    feedbackMutation.mutate({ response: "APPROVE" });
+    openDecisionDialog("APPROVE");
   };
 
   const openDecisionDialog = (type: FeedbackResponseType) => {
@@ -649,14 +649,32 @@ export default function ApprovalDetail() {
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{decisionType === "CHANGE_REQUEST" ? "변경 요청" : "승인 반려"}</DialogTitle>
+            <DialogTitle>
+              {decisionType === "CHANGE_REQUEST"
+                ? "수정 요청"
+                : decisionType === "APPROVE"
+                  ? "승인"
+                  : "반려"}
+            </DialogTitle>
             <DialogDescription className="sr-only">결정 사유와 첨부를 입력하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{decisionType === "CHANGE_REQUEST" ? "변경 요청 사유" : "반려 사유"}</Label>
+              <Label>
+                {decisionType === "CHANGE_REQUEST"
+                  ? "수정 요청 사유"
+                  : decisionType === "APPROVE"
+                    ? "승인 메모 (선택)"
+                    : "반려 사유"}
+              </Label>
               <Textarea
-                placeholder={decisionType === "CHANGE_REQUEST" ? "무엇을 수정해야 하는지 구체적으로 작성해주세요." : "반려 사유를 입력해주세요."}
+                placeholder={
+                  decisionType === "CHANGE_REQUEST"
+                    ? "무엇을 수정해야 하는지 구체적으로 작성해주세요."
+                    : decisionType === "APPROVE"
+                      ? "승인 시 메모를 남길 수 있습니다. (선택)"
+                      : "반려 사유를 입력해주세요."
+                }
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 className="min-h-[120px]"
@@ -681,8 +699,24 @@ export default function ApprovalDetail() {
             >
               취소
             </Button>
-            <Button variant={decisionType === "CHANGE_REQUEST" ? "secondary" : "destructive"} onClick={handleDecision} disabled={feedbackMutation.isPending}>
-              {feedbackMutation.isPending ? "처리 중..." : decisionType === "CHANGE_REQUEST" ? "변경 요청" : "반려"}
+            <Button
+              variant={
+                decisionType === "CHANGE_REQUEST"
+                  ? "secondary"
+                  : decisionType === "APPROVE"
+                    ? "default"
+                    : "destructive"
+              }
+              onClick={handleDecision}
+              disabled={feedbackMutation.isPending}
+            >
+              {feedbackMutation.isPending
+                ? "처리 중..."
+                : decisionType === "CHANGE_REQUEST"
+                  ? "변경 요청"
+                  : decisionType === "APPROVE"
+                    ? "승인"
+                    : "반려"}
             </Button>
           </DialogFooter>
         </DialogContent>
