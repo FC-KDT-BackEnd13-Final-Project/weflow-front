@@ -34,7 +34,6 @@ import ChecklistTemplateDetail from "./pages/ChecklistTemplateDetail";
 import Approvals from "./pages/Approvals";
 import ApprovalDetail from "./pages/ApprovalDetail";
 import TeamMembers from "./pages/TeamMembers";
-import History from "./pages/History";
 import NotFound from "./pages/NotFound";
 
 import AdminLayout from "./components/admin/AdminLayout";
@@ -143,7 +142,6 @@ function App() {
               element={<ApprovalDetail />}
             />
             <Route path="/project/:id/members" element={<TeamMembers />} />
-            <Route path="/project/:id/history" element={<History />} />
 
             {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
             <Route path="/admin" element={<AdminLayout />}>
