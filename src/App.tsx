@@ -78,12 +78,9 @@ function App() {
     if (!user) {
       authApi
         .getMe()
-        .then((response: any) => {
-             // 응답 구조가 { success: true, data: user } 형태일 수 있으므로 확인
+        .then((response) => {
              if(response.success && response.data) {
                  setUser(response.data);
-             } else if(response.id) { // 직접 user 객체인 경우
-                 setUser(response);
              }
         })
         .catch(() => {

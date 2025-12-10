@@ -27,7 +27,7 @@ export default function Login() {
         localStorage.setItem("accessToken", response.data.accessToken);
         localStorage.setItem("user", JSON.stringify(response.data.user));
         const me = await authApi.getMe();
-        setUser(me);
+        setUser(me.data);
 
         toast({
           title: "로그인 성공",
