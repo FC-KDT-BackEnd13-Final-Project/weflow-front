@@ -32,5 +32,3 @@ Thumbs.db
 # Logs
 logs
 *.log
-
-package-lock.json
