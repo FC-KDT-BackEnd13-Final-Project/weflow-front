@@ -884,7 +884,7 @@ export default function BoardDetail() {
 
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="space-y-6 max-w-7xl mx-auto w-full">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             variant="ghost"
@@ -1007,10 +1007,10 @@ export default function BoardDetail() {
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                        className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
                       >
-                        <span className="truncate font-medium">{link.title}</span>
-                        <span className="text-xs text-muted-foreground ml-3">{link.url}</span>
+                        <div className="font-medium break-all line-clamp-2">{link.title}</div>
+                        <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>
                       </a>
                     ))}
                   </div>
