@@ -489,13 +489,13 @@ export default function Approvals() {
                       })
                     ) : (
                       <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
-                        <div>승인 요청이 없습니다.</div>
+                        {/* <div>승인 요청이 없습니다.</div> */}
                         {canShowCreateButton ? (
                           <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
                             승인 요청 생성
                           </Button>
                         ) : (
-                          <div className="text-muted-foreground">이전 단계 완료 후 승인 요청이 가능합니다.</div>
+                          <div className="text-muted-foreground">이전 단계 완료 후 <br></br> 승인 요청이 가능합니다.</div>
                         )}
                       </div>
                     )}
