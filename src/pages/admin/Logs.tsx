@@ -213,6 +213,11 @@ export default function Logs() {
     );
   }, [logs, actionFilter, targetFilter, userFilter, projectFilter, search, startDate, endDate, sortOrder]);
 
+  useEffect(() => {
+    setPage(0);
+    setSize(20);
+  }, [actionFilter, targetFilter, userFilter, projectFilter, startDate, endDate]);
+
   const clearFilters = () => {
     setSearch("");
     setActionFilter("all");
