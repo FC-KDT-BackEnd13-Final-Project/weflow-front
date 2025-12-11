@@ -30,13 +30,38 @@ const Members = () => {
   const [totalElements, setTotalElements] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [roleFilter, setRoleFilter] = useState("전체");
-  const [companyFilter, setCompanyFilter] = useState("전체");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState(""); // 입력 중인 검색어
+  const [searchQuery, setSearchQuery] = useState(""); // 실제 검색에 사용되는 검색어
+
+  // 역할 필터 변경 시 첫 페이지로 리셋
+  const handleRoleFilterChange = (value: string) => {
+    setRoleFilter(value);
+    setCurrentPage(0);
+  };
+
+  // 검색 실행 (엔터키 또는 검색 버튼)
+  const handleSearch = () => {
+    setSearchQuery(searchInput);
+    setCurrentPage(0);
+  };
+
+  // 엔터키 입력 시 검색
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
 
   useEffect(() => {
     const fetchMembers = async () => {
       try {
-        const response = await adminApi.getUsers(currentPage, 10);
+        setIsLoading(true);
+        const response = await adminApi.getUsers(
+          currentPage,
+          10,
+          searchQuery,
+          roleFilter
+        );
         if (response.success) {
           setMembers(response.data.content);
           setTotalPages(response.data.totalPages);
@@ -54,7 +79,7 @@ const Members = () => {
     };
 
     fetchMembers();
-  }, [currentPage, toast]);
+  }, [currentPage, searchQuery, roleFilter, toast]);
 
   if (isLoading) {
     return (
@@ -72,7 +97,7 @@ const Members = () => {
         <div>
           <h1 className="text-3xl font-bold">회원 관리</h1>
           <p className="text-muted-foreground mt-1">
-            회원 목록 {'>'} 회원 목록
+            회원 관리 {'>'} 회원 목록
           </p>
         </div>
         <Button size="lg" className="gap-2" onClick={() => navigate("/admin/members/create")}>
@@ -87,32 +112,18 @@ const Members = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 필터 */}
-          <div className="flex flex-wrap gap-4">
+          <div classNam사="flex flex-wrap gap-4 items-center">
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">역할</label>
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="관리자">관리자</SelectItem>
-                  <SelectItem value="개발자">개발자</SelectItem>
-                  <SelectItem value="고객사">고객사</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">회사</label>
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="회사1">회사1</SelectItem>
-                  <SelectItem value="회사2">회사2</SelectItem>
+                  <SelectItem value="SYSTEM_ADMIN">시스템 관리자</SelectItem>
+                  <SelectItem value="AGENCY">에이전시</SelectItem>
+                  <SelectItem value="CLIENT">고객사</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -120,13 +131,21 @@ const Members = () => {
             <div className="flex items-center gap-2 flex-1">
               <label className="text-sm font-medium">검색:</label>
               <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="이름 / 이메일 입력"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
+                  placeholder="이름 / 이메일"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="pr-10"
                 />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSearch}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>
@@ -146,25 +165,35 @@ const Members = () => {
                   회원이 없습니다.
                 </div>
               ) : (
-                members.map((member) => (
-                  <div
-                    key={member.id}
-                    className="grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/admin/members/${member.id}`, { state: { member } })}
-                  >
-                    <div className="font-medium">{member.name}</div>
-                    <div className="text-muted-foreground">{member.email}</div>
-                    <div>
-                      <Badge variant="outline">{roleLabels[member.role] || member.role}</Badge>
+                members.map((member) => {
+                  const isDeleted = member.deletedAt != null;
+                  return (
+                    <div
+                      key={member.id}
+                      className={`grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${isDeleted ? 'opacity-60' : ''}`}
+                      onClick={() => navigate(`/admin/members/${member.id}`, { state: { member } })}
+                    >
+                      <div className="font-medium">
+                        {member.name}
+                        {isDeleted && <span className="ml-2 text-red-500 text-sm">(삭제됨)</span>}
+                      </div>
+                      <div className="text-muted-foreground">{member.email}</div>
+                      <div>
+                        <Badge variant="outline">{roleLabels[member.role] || member.role}</Badge>
+                      </div>
+                      <div>{member.companyName || "-"}</div>
+                      <div>
+                        <Badge variant={
+                          member.status === "ACTIVE" ? "default" :
+                          member.status === "DELETED" ? "destructive" :
+                          "secondary"
+                        }>
+                          {member.status}
+                        </Badge>
+                      </div>
                     </div>
-                    <div>{member.companyName || "-"}</div>
-                    <div>
-                      <Badge variant={member.status === "ACTIVE" ? "default" : "secondary"}>
-                        {member.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

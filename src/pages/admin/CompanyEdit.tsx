@@ -21,6 +21,7 @@ const AdminCompanyEdit = () => {
     businessNumber: "",
     memo: "",
     status: "ACTIVE",
+    deletedAt: null as string | null,
   });
 
   useEffect(() => {
@@ -39,6 +40,7 @@ const AdminCompanyEdit = () => {
             businessNumber: company.businessNumber || "",
             memo: company.memo || "",
             status: company.status,
+            deletedAt: company.deletedAt || null,
           });
         }
       } catch (error: any) {
@@ -78,6 +80,27 @@ const AdminCompanyEdit = () => {
     }
   };
 
+  const handleRestore = async () => {
+    if (!id) return;
+
+    try {
+      const response = await adminApi.restoreCompany(Number(id));
+      if (response.success) {
+        toast({
+          title: "회사 복구 성공",
+          description: "회사가 성공적으로 복구되었습니다.",
+        });
+        navigate("/admin/companies");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "회사 복구 실패",
+        description: error.response?.data?.message || "회사 복구 중 오류가 발생했습니다.",
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -86,18 +109,23 @@ const AdminCompanyEdit = () => {
     );
   }
 
+  const isDeleted = formData.deletedAt != null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">회사 관리</h1>
+          <h1 className="text-3xl font-bold">
+            회사 관리
+            {isDeleted && <span className="ml-3 text-red-500 text-xl">(삭제됨)</span>}
+          </h1>
           <p className="text-muted-foreground mt-1">
             회사 관리 {'>'} 회사 목록 {'>'} 회사 상세
           </p>
         </div>
       </div>
 
-      <Card>
+      <Card className={isDeleted ? "opacity-70" : ""}>
         <CardHeader>
           <CardTitle>회사명</CardTitle>
         </CardHeader>
@@ -112,6 +140,7 @@ const AdminCompanyEdit = () => {
                   setFormData({ ...formData, name: e.target.value })
                 }
                 placeholder="회사명 입력"
+                disabled={isDeleted}
                 required
               />
             </div>
@@ -125,6 +154,7 @@ const AdminCompanyEdit = () => {
                   setFormData({ ...formData, representative: e.target.value })
                 }
                 placeholder="대표자명 입력"
+                disabled={isDeleted}
                 required
               />
             </div>
@@ -139,6 +169,7 @@ const AdminCompanyEdit = () => {
                   setFormData({ ...formData, email: e.target.value })
                 }
                 placeholder="example@company.com"
+                disabled={isDeleted}
                 required
               />
             </div>
@@ -152,6 +183,7 @@ const AdminCompanyEdit = () => {
                   setFormData({ ...formData, address: e.target.value })
                 }
                 placeholder="예: 서울특별시 강남구 테헤란로 231, 11층"
+                disabled={isDeleted}
               />
             </div>
 
@@ -160,10 +192,13 @@ const AdminCompanyEdit = () => {
               <Input
                 id="businessNumber"
                 value={formData.businessNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, businessNumber: e.target.value })
-                }
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^0-9-]/g, '');
+                  setFormData({ ...formData, businessNumber: value });
+                }}
                 placeholder="123-45-67890"
+                maxLength={12}
+                disabled={isDeleted}
               />
             </div>
 
@@ -177,45 +212,68 @@ const AdminCompanyEdit = () => {
                 }
                 placeholder="회사 주소 이전 예정(12월 초 계획). 프로젝트 문서에도 반영해야 함."
                 rows={4}
+                disabled={isDeleted}
               />
             </div>
 
             <div className="flex gap-3 justify-end">
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={async () => {
-                  if (!id) return;
-                  if (window.confirm("정말로 이 회사를 삭제하시겠습니까?")) {
-                    try {
-                      const response = await adminApi.deleteCompany(Number(id));
-                      if (response.success) {
-                        toast({
-                          title: "회사 삭제 성공",
-                          description: "회사가 성공적으로 삭제되었습니다.",
-                        });
-                        navigate("/admin/companies");
+              {isDeleted ? (
+                // 삭제된 회사: 복구 버튼만 표시
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/admin/companies")}
+                  >
+                    목록
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleRestore}
+                  >
+                    복구
+                  </Button>
+                </>
+              ) : (
+                // 활성 회사: 삭제, 수정 버튼 표시
+                <>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={async () => {
+                      if (!id) return;
+                      if (window.confirm("정말로 이 회사를 삭제하시겠습니까?")) {
+                        try {
+                          const response = await adminApi.deleteCompany(Number(id));
+                          if (response.success) {
+                            toast({
+                              title: "회사 삭제 성공",
+                              description: "회사가 성공적으로 삭제되었습니다.",
+                            });
+                            navigate("/admin/companies");
+                          }
+                        } catch (error: any) {
+                          toast({
+                            variant: "destructive",
+                            title: "회사 삭제 실패",
+                            description: error.response?.data?.message || "회사 삭제 중 오류가 발생했습니다.",
+                          });
+                        }
                       }
-                    } catch (error: any) {
-                      toast({
-                        variant: "destructive",
-                        title: "회사 삭제 실패",
-                        description: error.response?.data?.message || "회사 삭제 중 오류가 발생했습니다.",
-                      });
-                    }
-                  }
-                }}
-              >
-                삭제
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/admin/companies")}
-              >
-                취소
-              </Button>
-              <Button type="submit">저장</Button>
+                    }}
+                  >
+                    삭제
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/admin/companies")}
+                  >
+                    목록
+                  </Button>
+                  <Button type="submit">저장</Button>
+                </>
+              )}
             </div>
           </form>
         </CardContent>

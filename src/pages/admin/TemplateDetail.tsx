@@ -28,6 +28,7 @@ interface ChecklistTemplateDetail {
   createdDate: string;
   lastModifiedDate: string;
   locked: boolean;
+  deleted?: boolean;
   questions: TemplateQuestion[];
 }
 
@@ -61,16 +62,16 @@ export default function TemplateDetail() {
           const detail = response.data?.data;
           if (!detail) throw new Error("템플릿을 불러올 수 없습니다.");
         setTemplate({
-            ...detail,
-            questions: [...(detail.questions ?? [])]
-              .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
-              .map((question: any) => ({
-                ...question,
-                options: (question.options ?? []).sort(
-                  (a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-                ),
-              })),
-          });
+          ...detail,
+          questions: [...(detail.questions ?? [])]
+            .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+            .map((question: any) => ({
+              ...question,
+              options: (question.options ?? []).sort(
+                (a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+              ),
+            })),
+        });
       } catch (err) {
         if (!controller.signal.aborted) {
           setError("템플릿을 불러오는 중 오류가 발생했습니다.");
@@ -110,36 +111,40 @@ export default function TemplateDetail() {
           <Button variant="outline" onClick={() => navigate("/admin/checklist-templates")}>
             목록
           </Button>
-          <Button onClick={() => navigate(`/admin/checklist-templates/${templateId}/edit`)}>
-            수정
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={isDeleting}
-            onClick={async () => {
-              if (!templateId) return;
-              const confirmed = window.confirm("정말로 이 템플릿을 삭제하시겠습니까?");
-              if (!confirmed) return;
-              try {
-                setIsDeleting(true);
-                await api.delete(`/api/checklist-templates/${templateId}`);
-                toast({
-                  title: "템플릿이 삭제되었습니다.",
-                });
-                navigate("/admin/checklist-templates");
-              } catch (err) {
-                toast({
-                  title: "삭제에 실패했습니다.",
-                  description: "잠시 후 다시 시도해주세요.",
-                  variant: "destructive",
-                });
-              } finally {
-                setIsDeleting(false);
-              }
-            }}
-          >
-            {isDeleting ? "삭제 중..." : "삭제"}
-          </Button>
+          {!template.deleted && (
+            <>
+              <Button onClick={() => navigate(`/admin/checklist-templates/${templateId}/edit`)}>
+                수정
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (!templateId) return;
+                  const confirmed = window.confirm("정말로 이 템플릿을 삭제하시겠습니까?");
+                  if (!confirmed) return;
+                  try {
+                    setIsDeleting(true);
+                    await api.delete(`/api/checklist-templates/${templateId}`);
+                    toast({
+                      title: "템플릿이 삭제되었습니다.",
+                    });
+                    navigate("/admin/checklist-templates");
+                  } catch (err) {
+                    toast({
+                      title: "삭제에 실패했습니다.",
+                      description: "잠시 후 다시 시도해주세요.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+              >
+                {isDeleting ? "삭제 중..." : "삭제"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

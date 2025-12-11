@@ -1,4 +1,4 @@
-import { LayoutDashboard, CheckSquare, MessageSquare, Users, History, ChevronLeft, ClipboardCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LayoutDashboard, CheckSquare, MessageSquare, Users, ChevronLeft, ClipboardCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -21,7 +21,6 @@ const projectMenuItems = [
   { title: "단계별 승인", url: "/project/:id/approvals", icon: ClipboardCheck },
   { title: "게시판", url: "/project/:id/board", icon: MessageSquare },
   { title: "멤버 관리", url: "/project/:id/members", icon: Users },
-  { title: "히스토리", url: "/project/:id/history", icon: History },
 ];
 
 export function ProjectSidebar() {

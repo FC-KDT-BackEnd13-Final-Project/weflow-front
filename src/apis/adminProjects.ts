@@ -13,7 +13,9 @@ export interface AdminProjectSummary {
   name: string;
   status: ProjectStatus;
   customerCompanyId: number | null;
+  customerCompanyName?: string | null;
   createdBy: number | null;
+  createdByName?: string | null;
   deleted: boolean;
   deletedAt: string | null;
 }

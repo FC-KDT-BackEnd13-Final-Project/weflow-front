@@ -13,11 +13,17 @@ import {
 import { Filter } from "lucide-react";
 import api from "@/apis/api";
 import { cn } from "@/lib/utils";
+import {
+  ActionType,
+  TargetTable,
+  actionTypeLabels,
+  targetTableLabels,
+} from "@/constants/logs";
 
 interface ActivityLog {
   logId: number;
-  actionType: string;
-  targetTable: string;
+  actionType: ActionType;
+  targetTable: TargetTable;
   targetId: number;
   ipAddress: string;
   createdAt: string;
@@ -27,69 +33,8 @@ interface ActivityLog {
   projectName: string | null;
 }
 
-const actionTypeLabels: Record<string, string> = {
-  CREATE: "생성",
-  UPDATE: "수정",
-  DELETE: "삭제",
-  LOGIN: "로그인",
-  LOGOUT: "로그아웃",
-  APPROVE: "승인",
-  REJECT: "반려",
-  UPLOAD: "업로드",
-  DOWNLOAD: "다운로드",
-  REMOVE: "제거",
-  SUBMIT: "제출",
-};
-
-const targetTableLabels: Record<string, string> = {
-  POST: "게시글",
-  POST_ANSWER: "게시글 답변",
-  COMMENT: "댓글",
-  PROJECT: "프로젝트",
-  PROJECT_MEMBER: "프로젝트 멤버",
-  USER: "회원",
-  COMPANY: "회사",
-  CHECKLIST: "체크리스트",
-  CHECKLIST_QUESTION: "체크리스트 질문",
-  CHECKLIST_OPTION: "체크리스트 옵션",
-  ATTACHMENT: "첨부파일",
-  STEP: "단계",
-  STEP_REQUEST: "단계 요청",
-  STEP_RESPONSE: "단계 응답",
-  TEMPLATE: "템플릿",
-};
-
-const actionTypeOptions = [
-  "CREATE",
-  "UPDATE",
-  "DELETE",
-  "LOGIN",
-  "LOGOUT",
-  "APPROVE",
-  "REJECT",
-  "UPLOAD",
-  "DOWNLOAD",
-  "REMOVE",
-  "SUBMIT",
-];
-
-const targetTableOptions = [
-  "POST",
-  "POST_ANSWER",
-  "COMMENT",
-  "PROJECT",
-  "PROJECT_MEMBER",
-  "USER",
-  "COMPANY",
-  "CHECKLIST",
-  "CHECKLIST_QUESTION",
-  "CHECKLIST_OPTION",
-  "ATTACHMENT",
-  "STEP",
-  "STEP_REQUEST",
-  "STEP_RESPONSE",
-  "TEMPLATE",
-];
+const actionTypeOptions = Object.keys(actionTypeLabels) as ActionType[];
+const targetTableOptions = Object.keys(targetTableLabels) as TargetTable[];
 
 const targetBadgeClass = (table: string) => {
   const map: Record<string, string> = {
@@ -212,6 +157,11 @@ export default function Logs() {
         : a.createdAt.localeCompare(b.createdAt)
     );
   }, [logs, actionFilter, targetFilter, userFilter, projectFilter, search, startDate, endDate, sortOrder]);
+
+  useEffect(() => {
+    setPage(0);
+    setSize(20);
+  }, [actionFilter, targetFilter, userFilter, projectFilter, startDate, endDate]);
 
   const clearFilters = () => {
     setSearch("");

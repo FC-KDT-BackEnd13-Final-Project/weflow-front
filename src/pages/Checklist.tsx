@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
@@ -18,6 +18,7 @@ interface ChecklistItem {
   category: ChecklistCategory;
   locked: boolean;
   count: number;
+  stepId?: number;
 }
 
 interface ProjectStep {
@@ -39,6 +40,10 @@ export default function Checklist() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isStepLoading, setIsStepLoading] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [size] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
   const navigate = useNavigate();
   const { id } = useParams();
   const { user } = useCurrentUser();
@@ -50,10 +55,13 @@ export default function Checklist() {
       try {
         setIsLoading(true);
         setFetchError(null);
-        const response = await checklistsApi.getList(id!, { signal: controller.signal });
+        const response = await checklistsApi.getList(id!, {
+          signal: controller.signal,
+          params: { page, size },
+        });
         const responseData = response.data?.data;
-        if (Array.isArray(responseData)) {
-          const mapped = responseData.map((item: any) => ({
+        const mapItems = (list: any[]) =>
+          list.map((item: any) => ({
             id: item.checklistId,
             title: item.title,
             category: item.stepName,
@@ -61,7 +69,15 @@ export default function Checklist() {
             count: item.questionCount,
             stepId: item.stepId,
           })) as ChecklistItem[];
-          setChecklists(mapped);
+
+        if (Array.isArray(responseData)) {
+          setChecklists(mapItems(responseData));
+          setTotalPages(1);
+          setTotalElements(responseData.length);
+        } else if (responseData?.content) {
+          setChecklists(mapItems(responseData.content));
+          setTotalPages(responseData.totalPages ?? 1);
+          setTotalElements(responseData.totalElements ?? responseData.content.length);
         } else {
           throw new Error("잘못된 응답 형식입니다.");
         }
@@ -75,7 +91,7 @@ export default function Checklist() {
     };
     fetchChecklists();
     return () => controller.abort();
-  }, [id]);
+  }, [id, page, size]);
 
   useEffect(() => {
     if (!id) return;
@@ -104,20 +120,27 @@ export default function Checklist() {
     return () => controller.abort();
   }, [id]);
 
-  const canCreateChecklist = user?.role === "AGENCY";
+  const canCreateChecklist = user?.role === "AGENCY" || "SYSTEM_ADMIN";
 
   const stepNames = steps.map((step) => step.title);
   const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];
 
-  const baseChecklists = selectedCategory === "전체"
-    ? checklists
-    : checklists.filter(item => item.category === selectedCategory);
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCategory, selectedStatus]);
 
-  const filteredChecklists = baseChecklists.filter((item) => {
-    if (selectedStatus === "완료") return item.locked === true;
-    if (selectedStatus === "대기") return item.locked === false;
-    return true;
-  });
+  const filteredChecklists = useMemo(() => {
+    const base =
+      selectedCategory === "전체"
+        ? checklists
+        : checklists.filter((item) => item.category === selectedCategory);
+
+    return base.filter((item) => {
+      if (selectedStatus === "완료") return item.locked === true;
+      if (selectedStatus === "대기") return item.locked === false;
+      return true;
+    });
+  }, [checklists, selectedCategory, selectedStatus]);
 
   const handleViewDetail = (checklistId: number) => {
     navigate(`/project/${id}/checklist/${checklistId}`);
@@ -200,7 +223,7 @@ export default function Checklist() {
                 조건에 맞는 체크리스트가 없습니다.
               </div>
             )}
-            {filteredChecklists.map((item) => (
+           {filteredChecklists.map((item) => (
               <Card
                 key={item.id}
                 role="button"
@@ -232,6 +255,31 @@ export default function Checklist() {
                 </CardContent>
               </Card>
             ))}
+            {!isLoading && !fetchError && (
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
+                <p className="text-sm text-muted-foreground">
+                  총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                  >
+                    이전
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                  >
+                    다음
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
