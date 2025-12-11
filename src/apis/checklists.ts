@@ -24,9 +24,10 @@ export interface ChecklistDetailResponse {
 
 export const checklistsApi = {
   getList(projectId: string | number, config?: AxiosRequestConfig) {
+    const { params, ...rest } = config ?? {};
     return api.get("/api/checklists", {
-      params: { projectId },
-      ...(config ?? {}),
+      params: { projectId, ...(params ?? {}) },
+      ...rest,
     });
   },
   getDetail(checklistId: string | number, config?: AxiosRequestConfig) {

@@ -148,9 +148,11 @@ export default function ChecklistDetail() {
     setCustomInputs(nextInput);
   }, [detail]);
 
-  const canSubmitChecklist = user?.role === "CLIENT";
-  const canManageChecklist = user?.role === "AGENCY";
-  const canEditCurrentChecklist = Boolean(detail && canManageChecklist && user?.id === detail.createdById);
+  const canSubmitChecklist = user?.role === "CLIENT" || user?.role === "SYSTEM_ADMIN";
+  const canManageChecklist = user?.role === "AGENCY" || user?.role === "SYSTEM_ADMIN";
+  const canEditCurrentChecklist = Boolean(
+    detail && canManageChecklist && (user?.role === "SYSTEM_ADMIN" || user?.id === detail.createdById)
+  );
 
   // 3) SINGLE 선택
   const handleSingleOptionChange = (questionId: number, value: string) => {
