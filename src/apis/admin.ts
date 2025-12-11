@@ -177,7 +177,6 @@ export const adminApi = {
     size: number = 10,
     keyword?: string,
     role?: string,
-    status?: string,
     companyId?: number
   ): Promise<UsersResponse> => {
     const params: any = { page, size };
@@ -188,10 +187,6 @@ export const adminApi = {
 
     if (role && role !== "전체") {
       params.role = role;
-    }
-
-    if (status && status !== "전체") {
-      params.status = status;
     }
 
     if (companyId) {
@@ -226,11 +221,6 @@ export const adminApi = {
 
   restoreUser: async (userId: number): Promise<UserDetailResponse> => {
     const response = await api.patch<UserDetailResponse>(`/api/admin/users/${userId}/restore`);
-    return response.data;
-  },
-
-  resetPassword: async (userId: number, data: ResetPasswordRequest): Promise<ResetPasswordResponse> => {
-    const response = await api.patch<ResetPasswordResponse>(`/api/admin/users/${userId}/reset-password`, data);
     return response.data;
   },
 

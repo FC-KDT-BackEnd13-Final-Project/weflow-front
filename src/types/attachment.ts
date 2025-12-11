@@ -5,6 +5,7 @@ export enum TargetType {
   STEP_REQUEST = "STEP_REQUEST",
   SUPPORT = "SUPPORT",
   SUPPORT_COMMENT = "SUPPORT_COMMENT",
+  PROJECT_CONTRACT = "PROJECT_CONTRACT",
 }
 
 export enum AttachmentType {
