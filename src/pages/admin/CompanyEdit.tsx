@@ -4,6 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useNavigate, useParams } from "react-router-dom";
 import { adminApi } from "@/apis/admin";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +28,7 @@ const AdminCompanyEdit = () => {
     businessNumber: "",
     memo: "",
     status: "ACTIVE",
+    companyType: "CLIENT" as string | null,
     deletedAt: null as string | null,
   });
 
@@ -40,6 +48,7 @@ const AdminCompanyEdit = () => {
             businessNumber: company.businessNumber || "",
             memo: company.memo || "",
             status: company.status,
+            companyType: company.companyType || null,
             deletedAt: company.deletedAt || null,
           });
         }
@@ -214,6 +223,28 @@ const AdminCompanyEdit = () => {
                 rows={4}
                 disabled={isDeleted}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="companyType">회사 유형 *</Label>
+              <Select
+                value={formData.companyType || ""}
+                onValueChange={(value) => setFormData({ ...formData, companyType: value })}
+                disabled={isDeleted}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="회사 유형 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AGENCY">에이전시 (개발사)</SelectItem>
+                  <SelectItem value="CLIENT">고객사</SelectItem>
+                </SelectContent>
+              </Select>
+              {!formData.companyType && (
+                <p className="text-xs text-destructive">
+                  ⚠️ 회사 유형을 설정하지 않으면 해당 회사의 사용자를 생성할 수 없습니다.
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end">

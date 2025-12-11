@@ -30,12 +30,19 @@ const Members = () => {
   const [totalElements, setTotalElements] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [roleFilter, setRoleFilter] = useState("전체");
+  const [statusFilter, setStatusFilter] = useState("전체");
   const [searchInput, setSearchInput] = useState(""); // 입력 중인 검색어
   const [searchQuery, setSearchQuery] = useState(""); // 실제 검색에 사용되는 검색어
 
   // 역할 필터 변경 시 첫 페이지로 리셋
   const handleRoleFilterChange = (value: string) => {
     setRoleFilter(value);
+    setCurrentPage(0);
+  };
+
+  // 상태 필터 변경 시 첫 페이지로 리셋
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
     setCurrentPage(0);
   };
 
@@ -60,9 +67,11 @@ const Members = () => {
           currentPage,
           10,
           searchQuery,
-          roleFilter
+          roleFilter,
+          statusFilter
         );
         if (response.success) {
+          // SYSTEM_ADMIN은 백엔드에서 제외됨
           setMembers(response.data.content);
           setTotalPages(response.data.totalPages);
           setTotalElements(response.data.totalElements);
@@ -79,7 +88,7 @@ const Members = () => {
     };
 
     fetchMembers();
-  }, [currentPage, searchQuery, roleFilter, toast]);
+  }, [currentPage, searchQuery, roleFilter, statusFilter, toast]);
 
   if (isLoading) {
     return (
@@ -112,7 +121,21 @@ const Members = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 필터 */}
-          <div classNam사="flex flex-wrap gap-4 items-center">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">활성 상태</label>
+              <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전체">전체</SelectItem>
+                  <SelectItem value="ACTIVE">활성</SelectItem>
+                  <SelectItem value="DELETED">삭제됨</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">역할</label>
               <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
@@ -121,7 +144,6 @@ const Members = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="SYSTEM_ADMIN">시스템 관리자</SelectItem>
                   <SelectItem value="AGENCY">에이전시</SelectItem>
                   <SelectItem value="CLIENT">고객사</SelectItem>
                 </SelectContent>

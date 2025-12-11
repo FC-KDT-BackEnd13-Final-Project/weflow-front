@@ -81,7 +81,17 @@ interface DeleteUserResponse {
   data: null;
 }
 
-export interface Company {
+interface ResetPasswordRequest {
+  newPassword: string;
+}
+
+interface ResetPasswordResponse {
+  success: boolean;
+  message: string;
+  data: User;
+}
+
+interface Company {
   id: number;
   name: string;
   businessNumber: string | null;
@@ -167,6 +177,7 @@ export const adminApi = {
     size: number = 10,
     keyword?: string,
     role?: string,
+    status?: string,
     companyId?: number
   ): Promise<UsersResponse> => {
     const params: any = { page, size };
@@ -177,6 +188,10 @@ export const adminApi = {
 
     if (role && role !== "전체") {
       params.role = role;
+    }
+
+    if (status && status !== "전체") {
+      params.status = status;
     }
 
     if (companyId) {
