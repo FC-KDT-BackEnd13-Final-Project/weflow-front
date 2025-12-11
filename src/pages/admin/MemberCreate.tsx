@@ -36,7 +36,7 @@ const AdminMemberCreate = () => {
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const response = await adminApi.getCompanies();
+        const response = await adminApi.getCompanies(0, 9999, "", "ACTIVE");
         if (response.success) {
           setCompanies(response.data.content);
         }
@@ -55,6 +55,18 @@ const AdminMemberCreate = () => {
     fetchCompanies();
   }, [toast]);
 
+  // Auto-fill role based on selected company type
+  useEffect(() => {
+    if (formData.companyId && companies.length > 0) {
+      const selectedCompany = companies.find(
+        (c) => c.id.toString() === formData.companyId
+      );
+      if (selectedCompany && selectedCompany.companyType) {
+        setFormData((prev) => ({ ...prev, role: selectedCompany.companyType }));
+      }
+    }
+  }, [formData.companyId, companies]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -63,6 +75,30 @@ const AdminMemberCreate = () => {
         variant: "destructive",
         title: "입력 오류",
         description: "모든 필드를 입력해주세요.",
+      });
+      return;
+    }
+
+    // Validate company has type set
+    const selectedCompany = companies.find(
+      (c) => c.id.toString() === formData.companyId
+    );
+
+    if (!selectedCompany?.companyType) {
+      toast({
+        variant: "destructive",
+        title: "회사 유형 미설정",
+        description: "선택한 회사의 유형이 설정되지 않았습니다. 회사 정보를 먼저 수정해주세요.",
+      });
+      return;
+    }
+
+    // Validate role matches company type
+    if (formData.role !== selectedCompany.companyType) {
+      toast({
+        variant: "destructive",
+        title: "역할 불일치",
+        description: "사용자 역할이 회사 유형과 일치하지 않습니다.",
       });
       return;
     }
@@ -190,33 +226,29 @@ const AdminMemberCreate = () => {
                       {companies.map((company) => (
                         <SelectItem key={company.id} value={company.id.toString()}>
                           {company.name}
+                          {company.companyType && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({company.companyType === 'AGENCY' ? '에이전시' : '고객사'})
+                            </span>
+                          )}
+                          {!company.companyType && (
+                            <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
+                          )}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* 역할 선택 */}
+                {/* 역할 (자동 설정) */}
                 <div className="space-y-3">
                   <Label>역할 *</Label>
-                  <RadioGroup
-                    value={formData.role}
-                    onValueChange={(value) => setFormData({ ...formData, role: value })}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="AGENCY" id="agency" />
-                      <Label htmlFor="agency" className="cursor-pointer">
-                        에이전시 담당자
-                      </Label>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="CLIENT" id="client" />
-                      <Label htmlFor="client" className="cursor-pointer">
-                        고객사 담당자
-                      </Label>
-                    </div>
-                  </RadioGroup>
+                  <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                    {formData.role === "AGENCY" ? "에이전시 담당자" : "고객사 담당자"}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    ℹ️ 역할은 선택한 회사의 유형에 따라 자동으로 설정됩니다.
+                  </p>
                 </div>
 
                 {/* 초기 비밀번호 */}
