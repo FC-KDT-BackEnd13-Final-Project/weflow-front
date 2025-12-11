@@ -52,7 +52,10 @@ const AdminProjects = () => {
 
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "">("");
   const [phaseFilter, setPhaseFilter] = useState<ProjectPhase | "">("");
-  const [companyIdFilter, setCompanyIdFilter] = useState("");
+  const [companyNameFilter, setCompanyNameFilter] = useState("");
+  const [deletedFilter, setDeletedFilter] = useState<
+    "ALL" | "ACTIVE" | "DELETED"
+  >("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [projects, setProjects] = useState<AdminProjectSummary[]>([]);
@@ -71,14 +74,31 @@ const AdminProjects = () => {
       const data = await fetchAdminProjects({
         status: statusFilter || undefined,
         phase: phaseFilter || undefined,
-        companyId: companyIdFilter ? Number(companyIdFilter) : undefined,
         keyword: searchQuery || undefined,
         page: pageParam,
         size: sizeParam,
       });
 
-      setProjects(data.projects ?? []);
-      setTotalCount(data.totalCount ?? 0);
+      const filtered = (data.projects ?? [])
+        .filter((p) => {
+          if (deletedFilter === "ACTIVE" && p.deleted) return false;
+          if (deletedFilter === "DELETED" && !p.deleted) return false;
+          return true;
+        })
+        .filter((p) => {
+          if (!companyNameFilter.trim()) return true;
+          const name =
+            (p.customerCompanyName ?? "") +
+            (p.customerCompanyId ? String(p.customerCompanyId) : "");
+          return name.toLowerCase().includes(companyNameFilter.toLowerCase());
+        })
+        .sort((a, b) => {
+          if (a.deleted === b.deleted) return 0;
+          return a.deleted ? 1 : -1; // 미삭제 우선
+        });
+
+      setProjects(filtered);
+      setTotalCount(data.totalCount ?? filtered.length);
       setPage(data.page ?? pageParam);
       setSize(data.size ?? sizeParam);
     } catch {
@@ -90,11 +110,25 @@ const AdminProjects = () => {
 
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, phaseFilter, companyIdFilter, searchQuery]);
+  }, [
+    statusFilter,
+    phaseFilter,
+    companyNameFilter,
+    searchQuery,
+    deletedFilter,
+  ]);
 
   useEffect(() => {
     fetchList(page, size);
-  }, [page, size, statusFilter, phaseFilter, companyIdFilter, searchQuery]);
+  }, [
+    page,
+    size,
+    statusFilter,
+    phaseFilter,
+    companyNameFilter,
+    searchQuery,
+    deletedFilter,
+  ]);
 
   // Select 옵션
   const statusOptions = useMemo(
@@ -188,19 +222,39 @@ const AdminProjects = () => {
               </Select>
             </div>
 
-            {/* 회사 ID */}
+            {/* 회사명 */}
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">회사 ID</label>
+              <label className="text-sm font-medium">고객사명</label>
               <Input
-                type="number"
-                value={companyIdFilter}
+                value={companyNameFilter}
                 onChange={(e) => {
-                  setCompanyIdFilter(e.target.value);
+                  setCompanyNameFilter(e.target.value);
                   setPage(0);
                 }}
-                placeholder="예: 12"
-                className="w-[160px]"
+                placeholder="회사명 검색"
+                className="w-[200px]"
               />
+            </div>
+
+            {/* 삭제 여부 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">삭제 여부</label>
+              <Select
+                value={deletedFilter}
+                onValueChange={(v) => {
+                  setDeletedFilter(v as typeof deletedFilter);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">전체</SelectItem>
+                  <SelectItem value="ACTIVE">미삭제</SelectItem>
+                  <SelectItem value="DELETED">삭제됨</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 검색 */}
@@ -219,7 +273,6 @@ const AdminProjects = () => {
                 />
               </div>
             </div>
-
           </div>
 
           {/* 목록 테이블 */}
@@ -262,7 +315,8 @@ const AdminProjects = () => {
                       <Badge
                         className={cn(
                           "border pointer-events-none select-none",
-                          statusBadgeClass[project.status] ?? "bg-muted text-foreground border-muted"
+                          statusBadgeClass[project.status] ??
+                            "bg-muted text-foreground border-muted"
                         )}
                       >
                         {statusLabels[project.status] || project.status}
@@ -276,7 +330,8 @@ const AdminProjects = () => {
                         <Badge
                           className={cn(
                             "border pointer-events-none select-none",
-                            phaseBadgeClass[project.phase] ?? "bg-muted text-foreground border-muted"
+                            phaseBadgeClass[project.phase] ??
+                              "bg-muted text-foreground border-muted"
                           )}
                         >
                           {phaseLabels[project.phase] || project.phase}
@@ -346,7 +401,14 @@ const AdminProjects = () => {
                   variant="outline"
                   size="icon"
                   disabled={(page + 1) * size >= totalCount}
-                  onClick={() => setPage((prev) => Math.min(prev + 1, Math.max(0, Math.ceil(totalCount / size) - 1)))}
+                  onClick={() =>
+                    setPage((prev) =>
+                      Math.min(
+                        prev + 1,
+                        Math.max(0, Math.ceil(totalCount / size) - 1)
+                      )
+                    )
+                  }
                 >
                   ›
                 </Button>
