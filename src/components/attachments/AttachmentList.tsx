@@ -20,7 +20,7 @@ const normalizeAttachments = (items: AttachmentInputItem[]) => {
       const pathValue = typeof item === "string" ? undefined : item?.filePath || item?.path;
       const url = typeof item === "string" ? item : item?.url || pathValue;
       const baseName = typeof item === "string" ? url : item?.fileName || item?.name || item?.originalName || pathValue || item?.url;
-      const isLinkType = attachmentType === "LINK" || Boolean((item as AttachmentResponse).isLink);
+      const isLinkType = attachmentType === "LINK" || Boolean((item as AttachmentResponse).isLink) || Boolean((item as AttachmentResponse).link);
       const isLink =
         typeof item === "string" ||
         isLinkType;

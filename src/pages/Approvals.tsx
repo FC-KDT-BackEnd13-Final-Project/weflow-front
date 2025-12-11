@@ -36,7 +36,7 @@ const getDefaultPhaseByTab = (tab: string): StepPhase => {
   if (tab === "MAINTENANCE") return "MAINTENANCE";
   return "CONTRACT";
 };
-const isRequestableStep = (step?: StepResponse) => step?.status === "PENDING";
+const isRequestableStep = (step?: StepResponse) => Boolean(step && step.status !== "APPROVED" && step.status !== "CANCELED");
 
 export default function Approvals() {
   const { id } = useParams();
@@ -106,19 +106,11 @@ export default function Approvals() {
   const steps = useMemo(() => {
     const raw = stepsData?.data.steps ?? [];
     if (!raw.length) return raw;
-    const phasePriority: Record<string, number> = {
-      CONTRACT: 1,
-      IN_PROGRESS: 2,
-      DELIVERY: 3,
-      MAINTENANCE: 4,
-    };
     return [...raw].sort((a, b) => {
-      const phaseOrderA = phasePriority[a.phase] ?? 99;
-      const phaseOrderB = phasePriority[b.phase] ?? 99;
-      if (phaseOrderA !== phaseOrderB) return phaseOrderA - phaseOrderB;
-      const orderA = a.orderIndex ?? 0;
-      const orderB = b.orderIndex ?? 0;
-      return orderA - orderB;
+      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.id - b.id;
     });
   }, [stepsData]);
   const {
@@ -156,26 +148,10 @@ export default function Approvals() {
 
   const nextAvailableStepId = useMemo(() => {
     if (!steps.length) return null;
-    const ordered = [...steps].sort((a, b) => {
-      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
-      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
-      if (orderA !== orderB) return orderA - orderB;
-      const phasePriority: Record<string, number> = {
-        CONTRACT: 1,
-        IN_PROGRESS: 2,
-        DELIVERY: 3,
-        MAINTENANCE: 4,
-      };
-      const phaseOrderA = phasePriority[a.phase] ?? 99;
-      const phaseOrderB = phasePriority[b.phase] ?? 99;
-      if (phaseOrderA !== phaseOrderB) return phaseOrderA - phaseOrderB;
-      return a.id - b.id;
-    });
-
-    for (let i = 0; i < ordered.length; i += 1) {
-      const step = ordered[i];
+    for (let i = 0; i < steps.length; i += 1) {
+      const step = steps[i];
       if (step.status === "APPROVED") continue;
-      const allPrevApproved = ordered.slice(0, i).every((prev) => prev.status === "APPROVED");
+      const allPrevApproved = steps.slice(0, i).every((prev) => prev.status === "APPROVED");
       if (allPrevApproved) return step.id;
       break;
     }
@@ -215,9 +191,8 @@ export default function Approvals() {
 
   const openRequestDialog = (stepId: number) => {
     const targetStep = steps.find((s) => s.id === stepId);
-    const isFirstStep = (targetStep?.orderIndex ?? 0) === 1;
-    if (!isRequestableStep(targetStep) && !isFirstStep) {
-      toast({ title: "요청 생성 불가", description: "진행 중 단계에서만 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
+    if (!targetStep || targetStep.status === "APPROVED" || targetStep.status === "CANCELED") {
+      toast({ title: "요청 생성 불가", description: "생성할 수 없는 단계입니다.", variant: "destructive" });
       return;
     }
     const targetIsNext = nextAvailableStepId === stepId;
@@ -399,9 +374,8 @@ export default function Approvals() {
             const isApproved = step.status === "APPROVED";
             const isPending = step.status === "PENDING";
             const isFirstStep = (step.orderIndex ?? 0) === 1;
-            const isRequestable = isRequestableStep(step) || isFirstStep;
             const isNextAvailable = nextAvailableStepId === step.id;
-            const canShowCreateButton = isRequestable && isNextAvailable;
+            const canShowCreateButton = isRequestableStep(step) && isNextAvailable;
             const hasRequests = requests.length > 0;
             const canEditStep = canManageStep && isPending;
             const canDeleteStep = canManageStep && isPending && !hasRequests;
@@ -575,7 +549,7 @@ export default function Approvals() {
                     <SelectItem
                       key={step.id}
                       value={String(step.id)}
-                      disabled={(!isRequestableStep(step) && (step.orderIndex ?? 0) !== 1) || nextAvailableStepId !== step.id}
+                      disabled={!isRequestableStep(step) || nextAvailableStepId !== step.id}
                     >
                       {step.title} {step.status === "APPROVED" ? "(완료)" : ""}
                     </SelectItem>

@@ -215,7 +215,8 @@ export default function ApprovalDetail() {
     const isLink =
       typeof file === "string" ||
       attachmentType === "LINK" ||
-      Boolean((file as AttachmentResponse).isLink);
+      Boolean((file as AttachmentResponse).isLink) ||
+      Boolean((file as AttachmentResponse).link);
     const resolvedName =
       baseName ||
       (isLink
@@ -259,7 +260,7 @@ export default function ApprovalDetail() {
     if (showEditDialog && approval) {
       setEditTitle(approval.title);
       setEditDescription(approval.description || "");
-      const attachmentSources = [
+    const attachmentSources = [
         ...(approval.attachments ?? approval.files ?? []),
         ...(approval.links ?? []),
       ] as (AttachmentResponse | string)[];
