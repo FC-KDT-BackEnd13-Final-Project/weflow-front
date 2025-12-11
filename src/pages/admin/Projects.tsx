@@ -218,7 +218,13 @@ const AdminProjects = () => {
                       {project.createdBy ?? "-"}
                     </div>
 
-                    <div className="text-muted-foreground">
+                    <div
+                      className={
+                        project.deleted
+                          ? "text-destructive font-semibold"
+                          : "text-muted-foreground"
+                      }
+                    >
                       {project.deleted ? "삭제됨" : "-"}
                     </div>
                   </div>
