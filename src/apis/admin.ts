@@ -13,6 +13,7 @@ interface User {
   lastLoginAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  deletedAt: string | null;
 }
 
 interface PageableResponse<T> {
@@ -91,6 +92,7 @@ interface Company {
   status: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 interface CompaniesResponse {
@@ -160,9 +162,29 @@ interface DeleteCompanyResponse {
 }
 
 export const adminApi = {
-  getUsers: async (page: number = 0, size: number = 10): Promise<UsersResponse> => {
+  getUsers: async (
+    page: number = 0,
+    size: number = 10,
+    keyword?: string,
+    role?: string,
+    companyId?: number
+  ): Promise<UsersResponse> => {
+    const params: any = { page, size };
+
+    if (keyword && keyword.trim()) {
+      params.keyword = keyword.trim();
+    }
+
+    if (role && role !== "전체") {
+      params.role = role;
+    }
+
+    if (companyId) {
+      params.companyId = companyId;
+    }
+
     const response = await api.get<UsersResponse>("/api/admin/users", {
-      params: { page, size },
+      params,
     });
     return response.data;
   },
@@ -187,8 +209,30 @@ export const adminApi = {
     return response.data;
   },
 
-  getCompanies: async (): Promise<CompaniesResponse> => {
-    const response = await api.get<CompaniesResponse>("/api/admin/companies");
+  restoreUser: async (userId: number): Promise<UserDetailResponse> => {
+    const response = await api.patch<UserDetailResponse>(`/api/admin/users/${userId}/restore`);
+    return response.data;
+  },
+
+  getCompanies: async (
+    page: number = 0,
+    size: number = 10,
+    keyword?: string,
+    status?: string
+  ): Promise<CompaniesResponse> => {
+    const params: any = { page, size };
+
+    if (keyword && keyword.trim()) {
+      params.keyword = keyword.trim();
+    }
+
+    if (status && status !== "전체") {
+      params.status = status;
+    }
+
+    const response = await api.get<CompaniesResponse>("/api/admin/companies", {
+      params,
+    });
     return response.data;
   },
 
@@ -209,6 +253,11 @@ export const adminApi = {
 
   deleteCompany: async (companyId: number): Promise<DeleteCompanyResponse> => {
     const response = await api.delete<DeleteCompanyResponse>(`/api/admin/companies/${companyId}`);
+    return response.data;
+  },
+
+  restoreCompany: async (companyId: number): Promise<CompanyDetailResponse> => {
+    const response = await api.patch<CompanyDetailResponse>(`/api/admin/companies/${companyId}/restore`);
     return response.data;
   },
 };
