@@ -1,6 +1,7 @@
 import api from "./api";
 
-export type ProjectStatus = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE" | "CLOSED";
+export type ProjectStatus = "OPEN" | "CLOSED";
+export type ProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -12,6 +13,7 @@ export interface AdminProjectSummary {
   id: number;
   name: string;
   status: ProjectStatus;
+  phase?: ProjectPhase;
   customerCompanyId: number | null;
   customerCompanyName?: string | null;
   createdBy: number | null;
@@ -36,6 +38,7 @@ export interface AdminProjectDetailResponse {
   id: number;
   name: string;
   description: string;
+  phase?: ProjectPhase | string;
   status: ProjectStatus | string;
   startDate: string | null;
   endDateExpected: string | null;
@@ -78,6 +81,7 @@ export interface AdminProjectCreateRequest {
   name: string;
   description?: string;
   status?: ProjectStatus;
+  phase?: ProjectPhase;
   startDate?: string;
   endDateExpected?: string;
   contractAmount?: number | null;
@@ -97,6 +101,7 @@ const unwrap = async <T>(promise: Promise<{ data: ApiResponse<T> }>) => {
 
 export const fetchAdminProjects = (params: {
   status?: ProjectStatus;
+  phase?: ProjectPhase;
   companyId?: number;
   keyword?: string;
   page?: number;
@@ -106,6 +111,7 @@ export const fetchAdminProjects = (params: {
     api.get("/api/admin/projects", {
       params: {
         status: params.status,
+        phase: params.phase,
         companyId: params.companyId,
         keyword: params.keyword,
         page: params.page ?? 0,

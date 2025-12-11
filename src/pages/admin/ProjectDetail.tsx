@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   AdminProjectDetailResponse,
   AdminProjectMemberListItem,
+  ProjectPhase,
   ProjectStatus,
   deleteAdminProject,
   fetchAdminProjectDetail,
@@ -14,11 +15,15 @@ import {
 } from "@/apis/adminProjects";
 
 const statusLabels: Record<ProjectStatus, string> = {
+  OPEN: "진행",
+  CLOSED: "종료",
+};
+
+const phaseLabels: Record<ProjectPhase, string> = {
   CONTRACT: "계약",
   IN_PROGRESS: "진행중",
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
-  CLOSED: "종료",
 };
 
 const formatDateTime = (value: string | null | undefined) => {
@@ -64,6 +69,12 @@ const ProjectDetail = () => {
     if (!detail) return "-";
     const status = detail.status as ProjectStatus;
     return statusLabels[status] ?? detail.status;
+  }, [detail]);
+
+  const phaseText = useMemo(() => {
+    if (!detail || !detail.phase) return "-";
+    const phase = detail.phase as ProjectPhase;
+    return phaseLabels[phase] ?? detail.phase;
   }, [detail]);
 
   const handleDelete = async () => {
@@ -134,6 +145,13 @@ const ProjectDetail = () => {
                       상태
                     </Badge>
                     <span className="font-medium">{statusText}</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="text-sm font-medium">
+                      단계
+                    </Badge>
+                    <span className="font-medium">{phaseText}</span>
                   </div>
 
                   <div className="flex items-center gap-3">
