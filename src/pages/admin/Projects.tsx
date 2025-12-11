@@ -19,6 +19,7 @@ import {
   ProjectStatus,
   fetchAdminProjects,
 } from "@/apis/adminProjects";
+import { cn } from "@/lib/utils";
 
 // 프로젝트 상태 라벨
 const statusLabels: Record<ProjectStatus, string> = {
@@ -27,6 +28,14 @@ const statusLabels: Record<ProjectStatus, string> = {
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
   CLOSED: "종료",
+};
+
+const statusBadgeClass: Record<ProjectStatus, string> = {
+  CONTRACT: "bg-purple-100 text-purple-800 border-purple-200",
+  IN_PROGRESS: "bg-blue-100 text-blue-800 border-blue-200",
+  DELIVERY: "bg-amber-100 text-amber-900 border-amber-200",
+  MAINTENANCE: "bg-teal-100 text-teal-800 border-teal-200",
+  CLOSED: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
 const AdminProjects = () => {
@@ -176,7 +185,7 @@ const AdminProjects = () => {
             <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
               <div>프로젝트명</div>
               <div>상태</div>
-              <div>고객사 ID</div>
+              <div>고객사</div>
               <div>생성자</div>
               <div>삭제 여부</div>
             </div>
@@ -209,17 +218,22 @@ const AdminProjects = () => {
                     <div className="font-medium">{project.name}</div>
 
                     <div>
-                      <Badge variant="secondary">
+                      <Badge
+                        className={cn(
+                          "border",
+                          statusBadgeClass[project.status] ?? "bg-muted text-foreground border-muted"
+                        )}
+                      >
                         {statusLabels[project.status] || project.status}
                       </Badge>
                     </div>
 
-                    <div className="text-muted-foreground">
-                      {project.customerCompanyId ?? "-"}
+                    <div>
+                      {project.customerCompanyName ?? "-"}
                     </div>
 
-                    <div className="text-muted-foreground">
-                      {project.createdBy ?? "-"}
+                    <div>
+                      {project.createdByName ?? "-"}
                     </div>
 
                     <div className="text-muted-foreground">
