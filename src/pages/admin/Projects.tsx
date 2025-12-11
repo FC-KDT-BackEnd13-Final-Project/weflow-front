@@ -69,8 +69,12 @@ const AdminProjects = () => {
   };
 
   useEffect(() => {
-    fetchList(0, size);
-  }, []);
+    setPage(0);
+  }, [statusFilter, companyIdFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchList(page, size);
+  }, [page, size, statusFilter, companyIdFilter, searchQuery]);
 
   // Select 옵션
   const statusOptions = useMemo(
@@ -115,9 +119,10 @@ const AdminProjects = () => {
               <label className="text-sm font-medium">진행 상태</label>
               <Select
                 value={statusFilter || "ALL"}
-                onValueChange={(v) =>
-                  setStatusFilter(v === "ALL" ? "" : (v as ProjectStatus))
-                }
+                onValueChange={(v) => {
+                  setStatusFilter(v === "ALL" ? "" : (v as ProjectStatus));
+                  setPage(0);
+                }}
               >
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="전체" />
@@ -138,7 +143,10 @@ const AdminProjects = () => {
               <Input
                 type="number"
                 value={companyIdFilter}
-                onChange={(e) => setCompanyIdFilter(e.target.value)}
+                onChange={(e) => {
+                  setCompanyIdFilter(e.target.value);
+                  setPage(0);
+                }}
                 placeholder="예: 12"
                 className="w-[160px]"
               />
@@ -153,18 +161,14 @@ const AdminProjects = () => {
                   placeholder="프로젝트명 검색"
                   className="pl-10"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(0);
+                  }}
                 />
               </div>
             </div>
 
-            <Button
-              variant="outline"
-              onClick={() => fetchList(0, size)}
-              disabled={loading}
-            >
-              조회
-            </Button>
           </div>
 
           {/* 목록 테이블 */}
@@ -238,7 +242,6 @@ const AdminProjects = () => {
                   const newSize = Number(value);
                   setSize(newSize);
                   setPage(0);
-                  fetchList(0, newSize);
                 }}
               >
                 <SelectTrigger className="w-24">
@@ -257,7 +260,7 @@ const AdminProjects = () => {
                   variant="outline"
                   size="icon"
                   disabled={page === 0}
-                  onClick={() => fetchList(Math.max(0, page - 1), size)}
+                  onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                 >
                   ‹
                 </Button>
@@ -265,7 +268,7 @@ const AdminProjects = () => {
                   variant="outline"
                   size="icon"
                   disabled={(page + 1) * size >= totalCount}
-                  onClick={() => fetchList(page + 1, size)}
+                  onClick={() => setPage((prev) => Math.min(prev + 1, Math.max(0, Math.ceil(totalCount / size) - 1)))}
                 >
                   ›
                 </Button>
