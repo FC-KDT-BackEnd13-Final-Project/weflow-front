@@ -8,6 +8,7 @@ import {
   Route,
   Navigate,
   useParams,
+  useLocation,
 } from "react-router-dom";
 import { useEffect } from "react";
 import { authApi } from "./apis/auth";
@@ -88,6 +89,27 @@ function App() {
     }
   }, []);
 
+  const ProtectedRoute = ({
+    children,
+    requireAdmin = false,
+  }: {
+    children: React.ReactElement;
+    requireAdmin?: boolean;
+  }) => {
+    const token = localStorage.getItem("accessToken");
+    const location = useLocation();
+
+    if (!token) {
+      return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    }
+
+    if (requireAdmin && user && user.role !== "SYSTEM_ADMIN") {
+      return <Navigate to="/dashboard" replace />;
+    }
+
+    return children;
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -98,53 +120,186 @@ function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/first-password-change" element={<FirstPasswordChange />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/notifications/:id" element={<NotificationDetail />} />
-            <Route path="/approval-requests" element={<ApprovalRequests />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/password" element={<ChangePassword />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects"
+              element={
+                <ProtectedRoute>
+                  <Projects />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/projects/:id"
+              element={
+                <ProtectedRoute>
+                  <ProjectDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <Notifications />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/notifications/:id"
+              element={
+                <ProtectedRoute>
+                  <NotificationDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/approval-requests"
+              element={
+                <ProtectedRoute>
+                  <ApprovalRequests />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/password"
+              element={
+                <ProtectedRoute>
+                  <ChangePassword />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Project Member Routes */}
             <Route
               path="/project/:id/dashboard"
-              element={<ProjectDashboard />}
+              element={
+                <ProtectedRoute>
+                  <ProjectDashboard />
+                </ProtectedRoute>
+              }
             />
-            <Route path="/project/:id/board" element={<Board />} />
-            <Route path="/project/:id/board/new" element={<BoardNew />} />
-            <Route path="/project/:id/board/:postId/edit" element={<BoardNew />} />
+            <Route
+              path="/project/:id/board"
+              element={
+                <ProtectedRoute>
+                  <Board />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/project/:id/board/new"
+              element={
+                <ProtectedRoute>
+                  <BoardNew />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/project/:id/board/:postId/edit"
+              element={
+                <ProtectedRoute>
+                  <BoardNew />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/project/:id/board/:postId"
-              element={<BoardDetail />}
+              element={
+                <ProtectedRoute>
+                  <BoardDetail />
+                </ProtectedRoute>
+              }
             />
-            <Route path="/project/:id/checklist" element={<Checklist />} />
+            <Route
+              path="/project/:id/checklist"
+              element={
+                <ProtectedRoute>
+                  <Checklist />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/project/:id/checklist/create"
-              element={<ChecklistCreate />}
+              element={
+                <ProtectedRoute>
+                  <ChecklistCreate />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/project/:id/checklist/templates"
-              element={<ChecklistTemplates />}
+              element={
+                <ProtectedRoute>
+                  <ChecklistTemplates />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/project/:id/checklist/templates/:templateId"
-              element={<ChecklistTemplateDetail />}
+              element={
+                <ProtectedRoute>
+                  <ChecklistTemplateDetail />
+                </ProtectedRoute>
+              }
             />
             <Route
               path="/project/:id/checklist/:checklistId"
-              element={<ChecklistDetail />}
+              element={
+                <ProtectedRoute>
+                  <ChecklistDetail />
+                </ProtectedRoute>
+              }
             />
-            <Route path="/project/:id/approvals" element={<Approvals />} />
+            <Route
+              path="/project/:id/approvals"
+              element={
+                <ProtectedRoute>
+                  <Approvals />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/project/:id/approvals/:approvalId"
-              element={<ApprovalDetail />}
+              element={
+                <ProtectedRoute>
+                  <ApprovalDetail />
+                </ProtectedRoute>
+              }
             />
-            <Route path="/project/:id/members" element={<TeamMembers />} />
+            <Route
+              path="/project/:id/members"
+              element={
+                <ProtectedRoute>
+                  <TeamMembers />
+                </ProtectedRoute>
+              }
+            />
 
             {/* ---------- ADMIN ROUTES (/admin/**) ---------- */}
-            <Route path="/admin" element={<AdminLayout />}>
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="members" element={<AdminMembers />} />

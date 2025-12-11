@@ -10,9 +10,27 @@ export interface SystemAdmin {
 }
 
 // 전체 조회
-export const getSystemAdmins = async (): Promise<SystemAdmin[]> => {
-  const res = await api.get("/api/admin/admin-users");
-  return res.data.data;
+interface SystemAdminListResponse {
+  content: SystemAdmin[];
+  totalPages: number;
+  totalElements: number;
+}
+
+export const getSystemAdmins = async (params?: { page?: number; size?: number }) => {
+  const res = await api.get("/api/admin/admin-users", { params });
+  const data = res.data?.data;
+  if (Array.isArray(data)) {
+    return {
+      content: data,
+      totalPages: 1,
+      totalElements: data.length,
+    };
+  }
+  return {
+    content: data?.content ?? [],
+    totalPages: data?.totalPages ?? 1,
+    totalElements: data?.totalElements ?? (data?.content?.length ?? 0),
+  };
 };
 
 // 상세 조회
