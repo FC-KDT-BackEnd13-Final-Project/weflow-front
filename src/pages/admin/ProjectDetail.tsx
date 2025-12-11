@@ -22,7 +22,7 @@ const statusLabels: Record<ProjectStatus, string> = {
 
 const phaseLabels: Record<ProjectPhase, string> = {
   CONTRACT: "계약",
-  IN_PROGRESS: "진행중",
+  IN_PROGRESS: "진행",
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
 };
@@ -89,6 +89,7 @@ const ProjectDetail = () => {
 
   const statusText = useMemo(() => {
     if (!detail) return "-";
+    if (detail.deletedAt) return statusLabels.CLOSED;
     const status = detail.status as ProjectStatus;
     return statusLabels[status] ?? detail.status;
   }, [detail]);

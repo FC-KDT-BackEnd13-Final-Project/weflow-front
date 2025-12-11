@@ -23,6 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import {
   ProjectStatus,
+  ProjectPhase,
   fetchAdminProjectDetail,
   updateAdminProject,
   fetchAdminProjectMembers,
@@ -171,7 +172,8 @@ const AdminProjectEdit = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companySelectOpen, setCompanySelectOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [status, setStatus] = useState<ProjectStatus>("CONTRACT");
+  const [status, setStatus] = useState<ProjectStatus>("OPEN");
+  const [phase, setPhase] = useState<ProjectPhase>("CONTRACT");
 
   const [contractAmount, setContractAmount] = useState("");
   const [contractFileUrl, setContractFileUrl] = useState("");
@@ -259,7 +261,8 @@ const AdminProjectEdit = () => {
         // 프로젝트 정보
         setName(detail.name);
         setDescription(detail.description || "");
-        setStatus(detail.status as ProjectStatus);
+        setStatus((detail.status as ProjectStatus) ?? "OPEN");
+        setPhase((detail.phase as ProjectPhase) ?? "CONTRACT");
         setCustomerCompanyId(
           detail.customerCompanyId ? String(detail.customerCompanyId) : ""
         );
@@ -449,6 +452,7 @@ const AdminProjectEdit = () => {
         name,
         description,
         status,
+        phase,
         customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
         contractAmount: contractAmount ? Number(contractAmount) : null,
         contractFileUrl: contractFileUrl || null,
@@ -594,11 +598,23 @@ const AdminProjectEdit = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="OPEN">활성</SelectItem>
+                  <SelectItem value="CLOSED">종료</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>프로젝트 단계</Label>
+              <Select value={phase} onValueChange={(v) => setPhase(v as ProjectPhase)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   <SelectItem value="CONTRACT">계약</SelectItem>
-                  <SelectItem value="IN_PROGRESS">진행중</SelectItem>
+                  <SelectItem value="IN_PROGRESS">진행</SelectItem>
                   <SelectItem value="DELIVERY">납품</SelectItem>
                   <SelectItem value="MAINTENANCE">유지보수</SelectItem>
-                  <SelectItem value="CLOSED">종료</SelectItem>
                 </SelectContent>
               </Select>
             </div>
