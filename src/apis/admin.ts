@@ -81,7 +81,7 @@ interface DeleteUserResponse {
   data: null;
 }
 
-interface Company {
+export interface Company {
   id: number;
   name: string;
   businessNumber: string | null;
