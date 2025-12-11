@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getProjectSteps, createStep, updateStep, deleteStep } from "@/apis/step";
 import { createStepRequest, getProjectStepRequests } from "@/apis/stepRequest";
-import { deleteAttachment } from "@/apis/attachments";
 import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
 import { StepResponse, StepRequestSummaryResponse, StepPhase } from "@/lib/stepTypes";
 import { useToast } from "@/hooks/use-toast";
@@ -58,7 +57,6 @@ export default function Approvals() {
   const [requestTitle, setRequestTitle] = useState("");
   const [requestDescription, setRequestDescription] = useState("");
   const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
-  const attachmentIds = useMemo(() => uploadedAttachments.map((a) => a.id), [uploadedAttachments]);
   const [isCreateStepDialogOpen, setIsCreateStepDialogOpen] = useState(false);
   const [newStepPhase, setNewStepPhase] = useState<StepPhase>(() => getDefaultPhaseByTab(currentPhase));
   const [newStepTitle, setNewStepTitle] = useState("");
@@ -84,10 +82,12 @@ export default function Approvals() {
   const createRequestMutation = useMutation({
     mutationFn: () => {
       if (!selectedStepId) throw new Error("단계를 선택해주세요.");
+      const { files, links } = buildAttachmentPayload(uploadedAttachments);
       return createStepRequest(selectedStepId, {
         title: requestTitle,
         description: requestDescription,
-        attachmentIds: attachmentIds.length ? attachmentIds : undefined,
+        files,
+        links,
       });
     },
     onSuccess: () => {
@@ -153,10 +153,33 @@ export default function Approvals() {
     if (currentPhase === "ALL") return steps;
     return steps.filter(step => step.phase === currentPhase);
   }, [steps, currentPhase]);
-  const nextAvailableStep = useMemo(() => {
-    const candidates = steps.filter((step) => step.status !== "APPROVED");
-    if (!candidates.length) return null;
-    return [...candidates].sort((a, b) => (a.orderIndex ?? Number.MAX_SAFE_INTEGER) - (b.orderIndex ?? Number.MAX_SAFE_INTEGER))[0];
+
+  const nextAvailableStepId = useMemo(() => {
+    if (!steps.length) return null;
+    const ordered = [...steps].sort((a, b) => {
+      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      const phasePriority: Record<string, number> = {
+        CONTRACT: 1,
+        IN_PROGRESS: 2,
+        DELIVERY: 3,
+        MAINTENANCE: 4,
+      };
+      const phaseOrderA = phasePriority[a.phase] ?? 99;
+      const phaseOrderB = phasePriority[b.phase] ?? 99;
+      if (phaseOrderA !== phaseOrderB) return phaseOrderA - phaseOrderB;
+      return a.id - b.id;
+    });
+
+    for (let i = 0; i < ordered.length; i += 1) {
+      const step = ordered[i];
+      if (step.status === "APPROVED") continue;
+      const allPrevApproved = ordered.slice(0, i).every((prev) => prev.status === "APPROVED");
+      if (allPrevApproved) return step.id;
+      break;
+    }
+    return null;
   }, [steps]);
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
     const isComplete = status === "APPROVED";
@@ -197,7 +220,7 @@ export default function Approvals() {
       toast({ title: "요청 생성 불가", description: "진행 중 단계에서만 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
       return;
     }
-    const targetIsNext = nextAvailableStep?.id === stepId;
+    const targetIsNext = nextAvailableStepId === stepId;
     if (!targetIsNext) {
       toast({ title: "요청 생성 불가", description: "이전 단계를 완료한 뒤 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
       return;
@@ -230,15 +253,24 @@ export default function Approvals() {
     setEditingStepTitle("");
     setEditingStepDescription("");
   };
-  const handleRemoveAttachment = async (index: number) => {
-    const target = uploadedAttachments[index];
-    setUploadedAttachments(prev => prev.filter((_, i) => i !== index));
-    try {
-      await deleteAttachment(target.id);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast({ title: "첨부 삭제 실패", description: message, variant: "destructive" });
-    }
+  const buildAttachmentPayload = (items: UploadedAttachment[]) => {
+    const files = items
+      .filter((a) => !a.isLink)
+      .map((a) => ({
+        fileName: a.fileName || a.name,
+        fileSize: a.fileSize ?? 0,
+        filePath: a.filePath || "",
+        contentType: a.contentType || "application/octet-stream",
+      }))
+      .filter((f) => f.fileName && f.filePath);
+    const links = items
+      .filter((a) => a.isLink)
+      .map((a) => {
+        const url = (a.url || a.name || "").trim();
+        return { url };
+      })
+      .filter((l) => Boolean(l.url));
+    return { files, links };
   };
 
   const createStepMutation = useMutation({
@@ -368,7 +400,7 @@ export default function Approvals() {
             const isPending = step.status === "PENDING";
             const isFirstStep = (step.orderIndex ?? 0) === 1;
             const isRequestable = isRequestableStep(step) || isFirstStep;
-            const isNextAvailable = nextAvailableStep?.id === step.id;
+            const isNextAvailable = nextAvailableStepId === step.id;
             const canShowCreateButton = isRequestable && isNextAvailable;
             const hasRequests = requests.length > 0;
             const canEditStep = canManageStep && isPending;
@@ -543,7 +575,7 @@ export default function Approvals() {
                     <SelectItem
                       key={step.id}
                       value={String(step.id)}
-                      disabled={(!isRequestableStep(step) && (step.orderIndex ?? 0) !== 1) || nextAvailableStep?.id !== step.id}
+                      disabled={(!isRequestableStep(step) && (step.orderIndex ?? 0) !== 1) || nextAvailableStepId !== step.id}
                     >
                       {step.title} {step.status === "APPROVED" ? "(완료)" : ""}
                     </SelectItem>
@@ -563,7 +595,9 @@ export default function Approvals() {
               targetType="STEP_REQUEST"
               attachments={uploadedAttachments}
               onChange={setUploadedAttachments}
-              label="첨부파일 / 링크"
+              label="파일 첨부"
+              linkLabel="관련 링크"
+              linkButtonText="추가"
             />
           </div>
           <DialogFooter>

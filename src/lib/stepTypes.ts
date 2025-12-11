@@ -34,6 +34,19 @@ export interface AttachmentResponse {
   originalName?: string;
   path?: string;
   filePath?: string;
+  fileSize?: number;
+  contentType?: string;
+}
+
+export interface StepAttachmentFileInput {
+  fileName: string;
+  fileSize: number;
+  filePath: string;
+  contentType?: string;
+}
+
+export interface StepAttachmentLinkInput {
+  url: string;
 }
 
 export interface StepRequestResponse {

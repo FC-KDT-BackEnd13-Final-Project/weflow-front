@@ -5,12 +5,16 @@ import {
   StepRequestListResponse,
   StepRequestResponse,
   StepRequestSummaryResponse,
+  StepAttachmentFileInput,
+  StepAttachmentLinkInput,
 } from "@/lib/stepTypes";
 
-export async function createStepRequest(
-  stepId: number,
-  body: Partial<StepRequestResponse> & { attachmentIds?: number[]; links?: string[] }
-): Promise<StepApiResponse<StepRequestResponse>> {
+type StepRequestPayload = Partial<Omit<StepRequestResponse, "files" | "links">> & {
+  files?: StepAttachmentFileInput[] | null;
+  links?: StepAttachmentLinkInput[] | null;
+};
+
+export async function createStepRequest(stepId: number, body: StepRequestPayload): Promise<StepApiResponse<StepRequestResponse>> {
   try {
     const response = await api.post<StepApiResponse<StepRequestResponse>>(`/api/steps/${stepId}/requests`, body);
     return unwrapApiResponse(response.data);
@@ -54,10 +58,7 @@ export async function getStepRequest(id: number): Promise<StepApiResponse<StepRe
   }
 }
 
-export async function updateStepRequest(
-  id: number,
-  body: Partial<StepRequestResponse> & { attachmentIds?: number[] | null; links?: string[] }
-): Promise<StepApiResponse<StepRequestResponse>> {
+export async function updateStepRequest(id: number, body: StepRequestPayload): Promise<StepApiResponse<StepRequestResponse>> {
   try {
     const response = await api.patch<StepApiResponse<StepRequestResponse>>(`/api/requests/${id}`, body);
     return unwrapApiResponse(response.data);
