@@ -362,9 +362,7 @@ export default function Dashboard() {
     if (!notification.read) {
       void changeNotificationReadState(notification, true);
     }
-    if (notification.targetUrl) {
-      navigate(notification.targetUrl);
-    }
+    navigate(`/notifications/${notification.id}`);
   };
 
   return (
