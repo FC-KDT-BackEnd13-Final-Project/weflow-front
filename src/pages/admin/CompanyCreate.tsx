@@ -122,10 +122,12 @@ const CompanyCreate = () => {
               <Input
                 id="businessNumber"
                 value={formData.businessNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, businessNumber: e.target.value })
-                }
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^0-9-]/g, '');
+                  setFormData({ ...formData, businessNumber: value });
+                }}
                 placeholder="123-45-67890"
+                maxLength={12}
               />
             </div>
 

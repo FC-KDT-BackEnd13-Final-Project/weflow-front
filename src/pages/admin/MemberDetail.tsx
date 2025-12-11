@@ -42,6 +42,7 @@ const AdminMemberDetail = () => {
     role: "",
     status: "",
     companyId: "",
+    deletedAt: null as string | null,
   });
 
   useEffect(() => {
@@ -63,6 +64,7 @@ const AdminMemberDetail = () => {
             role: member.role || "",
             status: member.status || "",
             companyId: member.companyId?.toString() || "",
+            deletedAt: member.deletedAt || null,
           });
         } else if (id) {
           try {
@@ -75,6 +77,7 @@ const AdminMemberDetail = () => {
                 role: member.role || "",
                 status: member.status || "",
                 companyId: member.companyId?.toString() || "",
+                deletedAt: member.deletedAt || null,
               });
             }
           } catch (error) {
@@ -121,10 +124,32 @@ const AdminMemberDetail = () => {
     }
   };
 
+  const handleRestore = async () => {
+    if (!id) return;
+
+    try {
+      const response = await adminApi.restoreUser(parseInt(id));
+
+      if (response.success) {
+        toast({
+          title: "회원 복구 성공",
+          description: response.message,
+        });
+        navigate("/admin/members");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "회원 복구 실패",
+        description: error.response?.data?.message || "회원 복구에 실패했습니다.",
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.name || !formData.role || !formData.status || !formData.companyId) {
+    if (!formData.name || !formData.role || !formData.companyId) {
       toast({
         variant: "destructive",
         title: "입력 오류",
@@ -178,18 +203,23 @@ const AdminMemberDetail = () => {
     );
   }
 
+  const isDeleted = formData.deletedAt != null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">회원 상세</h1>
+          <h1 className="text-3xl font-bold">
+            회원 상세
+            {isDeleted && <span className="ml-3 text-red-500 text-xl">(삭제됨)</span>}
+          </h1>
           <p className="text-muted-foreground mt-1">
             회원 관리 {'>'} 회원 목록 {'>'} 회원 상세
           </p>
         </div>
       </div>
 
-      <Card>
+      <Card className={isDeleted ? "opacity-70" : ""}>
         <CardHeader>
           <CardTitle>회원 정보</CardTitle>
         </CardHeader>
@@ -202,6 +232,7 @@ const AdminMemberDetail = () => {
                 placeholder="이름 입력"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                disabled={isDeleted}
                 required
               />
             </div>
@@ -225,6 +256,7 @@ const AdminMemberDetail = () => {
               <Select
                 value={formData.companyId}
                 onValueChange={(value) => setFormData({ ...formData, companyId: value })}
+                disabled={isDeleted}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="회사 선택" />
@@ -244,74 +276,88 @@ const AdminMemberDetail = () => {
               <RadioGroup
                 value={formData.role}
                 onValueChange={(value) => setFormData({ ...formData, role: value })}
+                disabled={isDeleted}
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="AGENCY" id="agency" />
                   <Label htmlFor="agency" className="font-normal cursor-pointer">
-                    에이전시 담당자
+                    개발사
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="CLIENT" id="client" />
                   <Label htmlFor="client" className="font-normal cursor-pointer">
-                    고객사 담당자
+                    고객사
                   </Label>
                 </div>
               </RadioGroup>
             </div>
 
-            <div className="space-y-3">
-              <Label>상태 *</Label>
-              <RadioGroup
+            <div className="space-y-2">
+              <Label>상태</Label>
+              <Input
                 value={formData.status}
-                onValueChange={(value) => setFormData({ ...formData, status: value })}
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="ACTIVE" id="active" />
-                  <Label htmlFor="active" className="font-normal cursor-pointer">
-                    활성
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="INACTIVE" id="inactive" />
-                  <Label htmlFor="inactive" className="font-normal cursor-pointer">
-                    비활성
-                  </Label>
-                </div>
-              </RadioGroup>
+                disabled
+                className="bg-muted"
+              />
+              <p className="text-xs text-muted-foreground">
+                상태 수정은 하단의 [삭제] 혹은 [복구] 버튼을 이용하세요.
+              </p>
             </div>
 
             <div className="flex gap-3 justify-end pt-4">
-              <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-                <AlertDialogTrigger asChild>
-                  <Button type="button" variant="destructive" disabled={isSubmitting}>
-                    삭제
+              {isDeleted ? (
+                // 삭제된 회원: 복구 버튼만 표시
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/admin/members")}
+                  >
+                    목록
                   </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>회원 삭제</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      정말로 이 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>취소</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete}>삭제</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/admin/members")}
-                disabled={isSubmitting}
-              >
-                목록
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "수정 중..." : "수정"}
-              </Button>
+                  <Button
+                    type="button"
+                    onClick={handleRestore}
+                  >
+                    복구
+                  </Button>
+                </>
+              ) : (
+                // 활성 회원: 삭제, 수정 버튼 표시
+                <>
+                  <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button type="button" variant="destructive" disabled={isSubmitting}>
+                        삭제
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>회원 삭제</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          정말로 이 회원을 삭제하시겠습니까?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>취소</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete}>삭제</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/admin/members")}
+                    disabled={isSubmitting}
+                  >
+                    목록
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "수정 중..." : "수정"}
+                  </Button>
+                </>
+              )}
             </div>
           </form>
         </CardContent>
