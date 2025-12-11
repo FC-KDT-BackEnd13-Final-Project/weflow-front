@@ -46,6 +46,7 @@ export interface AdminProjectDetailResponse {
   contractAmount: number | null;
   contractFileUrl: string | null;
   customerCompanyId: number | null;
+  customerCompanyName?: string | null;
   createdBy: number | null;
   deleted: boolean;
   deletedAt: string | null;
@@ -75,6 +76,7 @@ export interface AdminProjectMemberListResponse {
 export interface ProjectStageRequest {
   title: string;
   orderIndex: number;
+  phase?: "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 }
 
 export interface AdminProjectCreateRequest {
