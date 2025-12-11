@@ -154,9 +154,10 @@ const Companies = () => {
 
           {/* 회사 목록 */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-4 gap-4 bg-muted p-4 font-medium text-sm">
+            <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
               <div>회사명</div>
               <div>대표자</div>
+              <div>회사 유형</div>
               <div>대표 이메일</div>
               <div>활성 상태</div>
             </div>
@@ -171,7 +172,7 @@ const Companies = () => {
                   return (
                     <div
                       key={company.id}
-                      className={`grid grid-cols-4 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${isDeleted ? 'opacity-60' : ''}`}
+                      className={`grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${isDeleted ? 'opacity-60' : ''}`}
                       onClick={() => navigate(`/admin/companies/${company.id}/edit`)}
                     >
                       <div className="font-medium">
@@ -179,6 +180,15 @@ const Companies = () => {
                         {isDeleted && <span className="ml-2 text-red-500 text-sm">(삭제됨)</span>}
                       </div>
                       <div className="text-muted-foreground">{company.representative || "-"}</div>
+                      <div>
+                        {company.companyType ? (
+                          <Badge variant="outline">
+                            {company.companyType === 'AGENCY' ? '에이전시' : '고객사'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">미설정</Badge>
+                        )}
+                      </div>
                       <div className="text-muted-foreground">{company.email || "-"}</div>
                       <div>{getStatusBadge(company.status)}</div>
                     </div>

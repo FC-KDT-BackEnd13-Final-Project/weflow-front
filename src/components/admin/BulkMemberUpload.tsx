@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Badge } from "@/components/ui/badge";
 import { Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { adminApi } from "@/apis/admin";
 
 interface ParsedUser {
   name: string;
@@ -28,6 +29,34 @@ const BulkMemberUpload = () => {
   // CSV 전체에 적용되는 공통 값
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
+
+  // 회사 목록
+  const [companies, setCompanies] = useState<any[]>([]);
+
+  // Fetch companies
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const response = await adminApi.getCompanies(0, 9999, "", "ACTIVE");
+        if (response.success) {
+          setCompanies(response.data.content);
+        }
+      } catch (error) {
+        console.error("회사 목록 로딩 실패:", error);
+      }
+    };
+    fetchCompanies();
+  }, []);
+
+  // Auto-fill role based on selected company type
+  useEffect(() => {
+    if (company && companies.length > 0) {
+      const selectedCompany = companies.find((c) => c.id.toString() === company);
+      if (selectedCompany && selectedCompany.companyType) {
+        setRole(selectedCompany.companyType);
+      }
+    }
+  }, [company, companies]);
 
   // CSV 업로드 핸들러
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,24 +116,31 @@ const BulkMemberUpload = () => {
                 <SelectValue placeholder="회사 선택" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="DevCorp">DevCorp</SelectItem>
-                <SelectItem value="ClientA">ClientA</SelectItem>
-                <SelectItem value="weflow">weflow</SelectItem>
+                {companies.map((comp) => (
+                  <SelectItem key={comp.id} value={comp.id.toString()}>
+                    {comp.name}
+                    {comp.companyType && (
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({comp.companyType === 'AGENCY' ? '에이전시' : '고객사'})
+                      </span>
+                    )}
+                    {!comp.companyType && (
+                      <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
+                    )}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
             <Label>회원 종류</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
-                <SelectValue placeholder="회원 종류 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="agency">개발사 담당자</SelectItem>
-                <SelectItem value="client">고객사 담당자</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+              {role === "AGENCY" ? "에이전시 담당자" : role === "CLIENT" ? "고객사 담당자" : "회사를 먼저 선택하세요"}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              ℹ️ 역할은 선택한 회사의 유형에 따라 자동으로 설정됩니다.
+            </p>
           </div>
 
         </CardContent>

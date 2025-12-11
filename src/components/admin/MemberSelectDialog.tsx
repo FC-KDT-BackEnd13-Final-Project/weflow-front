@@ -22,6 +22,7 @@ export interface MemberData {
   company: string;
   companyType: "agency" | "client";
   position: string;
+  companyId?: number;
 }
 
 export interface SelectedMember {

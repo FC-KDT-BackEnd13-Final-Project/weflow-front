@@ -17,32 +17,45 @@ import { Badge } from "@/components/ui/badge";
 import {
   AdminProjectSummary,
   ProjectStatus,
+  ProjectPhase,
   fetchAdminProjects,
 } from "@/apis/adminProjects";
 import { cn } from "@/lib/utils";
 
 // 프로젝트 상태 라벨
 const statusLabels: Record<ProjectStatus, string> = {
-  CONTRACT: "계약",
-  IN_PROGRESS: "진행중",
-  DELIVERY: "납품",
-  MAINTENANCE: "유지보수",
+  OPEN: "진행",
   CLOSED: "종료",
 };
 
+const phaseLabels: Record<ProjectPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
+
 const statusBadgeClass: Record<ProjectStatus, string> = {
+  OPEN: "bg-green-100 text-green-800 border-green-200",
+  CLOSED: "bg-slate-200 text-slate-700 border-slate-300",
+};
+
+const phaseBadgeClass: Record<ProjectPhase, string> = {
   CONTRACT: "bg-purple-100 text-purple-800 border-purple-200",
   IN_PROGRESS: "bg-blue-100 text-blue-800 border-blue-200",
   DELIVERY: "bg-amber-100 text-amber-900 border-amber-200",
   MAINTENANCE: "bg-teal-100 text-teal-800 border-teal-200",
-  CLOSED: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
 const AdminProjects = () => {
   const navigate = useNavigate();
 
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "">("");
-  const [companyIdFilter, setCompanyIdFilter] = useState("");
+  const [phaseFilter, setPhaseFilter] = useState<ProjectPhase | "">("");
+  const [companyNameFilter, setCompanyNameFilter] = useState("");
+  const [deletedFilter, setDeletedFilter] = useState<
+    "ALL" | "ACTIVE" | "DELETED"
+  >("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [projects, setProjects] = useState<AdminProjectSummary[]>([]);
@@ -60,14 +73,32 @@ const AdminProjects = () => {
 
       const data = await fetchAdminProjects({
         status: statusFilter || undefined,
-        companyId: companyIdFilter ? Number(companyIdFilter) : undefined,
+        phase: phaseFilter || undefined,
         keyword: searchQuery || undefined,
         page: pageParam,
         size: sizeParam,
       });
 
-      setProjects(data.projects ?? []);
-      setTotalCount(data.totalCount ?? 0);
+      const filtered = (data.projects ?? [])
+        .filter((p) => {
+          if (deletedFilter === "ACTIVE" && p.deleted) return false;
+          if (deletedFilter === "DELETED" && !p.deleted) return false;
+          return true;
+        })
+        .filter((p) => {
+          if (!companyNameFilter.trim()) return true;
+          const name =
+            (p.customerCompanyName ?? "") +
+            (p.customerCompanyId ? String(p.customerCompanyId) : "");
+          return name.toLowerCase().includes(companyNameFilter.toLowerCase());
+        })
+        .sort((a, b) => {
+          if (a.deleted === b.deleted) return 0;
+          return a.deleted ? 1 : -1; // 미삭제 우선
+        });
+
+      setProjects(filtered);
+      setTotalCount(data.totalCount ?? filtered.length);
       setPage(data.page ?? pageParam);
       setSize(data.size ?? sizeParam);
     } catch {
@@ -79,21 +110,43 @@ const AdminProjects = () => {
 
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, companyIdFilter, searchQuery]);
+  }, [
+    statusFilter,
+    phaseFilter,
+    companyNameFilter,
+    searchQuery,
+    deletedFilter,
+  ]);
 
   useEffect(() => {
     fetchList(page, size);
-  }, [page, size, statusFilter, companyIdFilter, searchQuery]);
+  }, [
+    page,
+    size,
+    statusFilter,
+    phaseFilter,
+    companyNameFilter,
+    searchQuery,
+    deletedFilter,
+  ]);
 
   // Select 옵션
   const statusOptions = useMemo(
     () => [
       { value: "ALL", label: "전체" },
-      { value: "CONTRACT", label: statusLabels.CONTRACT },
-      { value: "IN_PROGRESS", label: statusLabels.IN_PROGRESS },
-      { value: "DELIVERY", label: statusLabels.DELIVERY },
-      { value: "MAINTENANCE", label: statusLabels.MAINTENANCE },
+      { value: "OPEN", label: statusLabels.OPEN },
       { value: "CLOSED", label: statusLabels.CLOSED },
+    ],
+    []
+  );
+
+  const phaseOptions = useMemo(
+    () => [
+      { value: "ALL", label: "전체" },
+      { value: "CONTRACT", label: phaseLabels.CONTRACT },
+      { value: "IN_PROGRESS", label: phaseLabels.IN_PROGRESS },
+      { value: "DELIVERY", label: phaseLabels.DELIVERY },
+      { value: "MAINTENANCE", label: phaseLabels.MAINTENANCE },
     ],
     []
   );
@@ -146,19 +199,62 @@ const AdminProjects = () => {
               </Select>
             </div>
 
-            {/* 회사 ID */}
+            {/* 단계 필터 */}
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">회사 ID</label>
-              <Input
-                type="number"
-                value={companyIdFilter}
-                onChange={(e) => {
-                  setCompanyIdFilter(e.target.value);
+              <label className="text-sm font-medium">단계</label>
+              <Select
+                value={phaseFilter || "ALL"}
+                onValueChange={(v) => {
+                  setPhaseFilter(v === "ALL" ? "" : (v as ProjectPhase));
                   setPage(0);
                 }}
-                placeholder="예: 12"
-                className="w-[160px]"
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="전체" />
+                </SelectTrigger>
+                <SelectContent>
+                  {phaseOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 회사명 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">고객사명</label>
+              <Input
+                value={companyNameFilter}
+                onChange={(e) => {
+                  setCompanyNameFilter(e.target.value);
+                  setPage(0);
+                }}
+                placeholder="회사명 검색"
+                className="w-[200px]"
               />
+            </div>
+
+            {/* 삭제 여부 */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">삭제 여부</label>
+              <Select
+                value={deletedFilter}
+                onValueChange={(v) => {
+                  setDeletedFilter(v as typeof deletedFilter);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">전체</SelectItem>
+                  <SelectItem value="ACTIVE">미삭제</SelectItem>
+                  <SelectItem value="DELETED">삭제됨</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 검색 */}
@@ -177,14 +273,14 @@ const AdminProjects = () => {
                 />
               </div>
             </div>
-
           </div>
 
           {/* 목록 테이블 */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
+            <div className="grid grid-cols-[120px_1fr_1fr_1fr_1fr_100px] gap-4 bg-muted p-4 font-medium text-sm">
+              <div className="w-[100px]">상태</div>
               <div>프로젝트명</div>
-              <div>상태</div>
+              <div>단계</div>
               <div>고객사</div>
               <div>생성자</div>
               <div>삭제 여부</div>
@@ -212,31 +308,54 @@ const AdminProjects = () => {
                 projects.map((project) => (
                   <div
                     key={project.id}
-                    className="grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 cursor-pointer transition"
+                    className="grid grid-cols-[120px_1fr_1fr_1fr_1fr_100px] gap-4 p-4 hover:bg-muted/50 cursor-pointer transition"
                     onClick={() => navigate(`/admin/projects/${project.id}`)}
                   >
-                    <div className="font-medium">{project.name}</div>
-
                     <div>
                       <Badge
                         className={cn(
-                          "border",
-                          statusBadgeClass[project.status] ?? "bg-muted text-foreground border-muted"
+                          "border pointer-events-none select-none",
+                          statusBadgeClass[project.status] ??
+                            "bg-muted text-foreground border-muted"
                         )}
                       >
                         {statusLabels[project.status] || project.status}
                       </Badge>
                     </div>
 
-                    <div>
-                      {project.customerCompanyName ?? "-"}
-                    </div>
+                    <div className="font-medium">{project.name}</div>
 
                     <div>
-                      {project.createdByName ?? "-"}
+                      {project.phase ? (
+                        <Badge
+                          className={cn(
+                            "border pointer-events-none select-none",
+                            phaseBadgeClass[project.phase] ??
+                              "bg-muted text-foreground border-muted"
+                          )}
+                        >
+                          {phaseLabels[project.phase] || project.phase}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </div>
 
                     <div className="text-muted-foreground">
+                      {project.customerCompanyName ?? "-"}
+                    </div>
+
+                    <div className="text-muted-foreground">
+                      {project.createdByName ?? "-"}
+                    </div>
+
+                    <div
+                      className={
+                        project.deleted
+                          ? "text-destructive font-semibold"
+                          : "text-muted-foreground"
+                      }
+                    >
                       {project.deleted ? "삭제됨" : "-"}
                     </div>
                   </div>
@@ -282,7 +401,14 @@ const AdminProjects = () => {
                   variant="outline"
                   size="icon"
                   disabled={(page + 1) * size >= totalCount}
-                  onClick={() => setPage((prev) => Math.min(prev + 1, Math.max(0, Math.ceil(totalCount / size) - 1)))}
+                  onClick={() =>
+                    setPage((prev) =>
+                      Math.min(
+                        prev + 1,
+                        Math.max(0, Math.ceil(totalCount / size) - 1)
+                      )
+                    )
+                  }
                 >
                   ›
                 </Button>

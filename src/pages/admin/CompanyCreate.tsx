@@ -26,6 +26,7 @@ const CompanyCreate = () => {
     businessNumber: "",
     memo: "",
     status: "ACTIVE",
+    companyType: "CLIENT",  // default to CLIENT
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -142,6 +143,22 @@ const CompanyCreate = () => {
                 placeholder="회사 주소 이전 예정(12월 초 계획). 프로젝트 문서에도 반영해야 함."
                 rows={4}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="companyType">회사 유형 *</Label>
+              <Select
+                value={formData.companyType}
+                onValueChange={(value) => setFormData({ ...formData, companyType: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="회사 유형 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AGENCY">에이전시 (개발사)</SelectItem>
+                  <SelectItem value="CLIENT">고객사</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex gap-3 justify-end">

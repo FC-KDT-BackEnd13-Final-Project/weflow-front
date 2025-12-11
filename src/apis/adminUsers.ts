@@ -20,11 +20,14 @@ export const fetchAllUsers = async (): Promise<MemberData[]> => {
   const res = await api.get("/api/admin/users", { params: { size: 9999 } });
   const users: AdminUserItem[] = res.data.data.content;
 
-  return users.map((u) => ({
+  const filtered = users.filter((u) => u.role !== "SYSTEM_ADMIN");
+
+  return filtered.map((u) => ({
     id: String(u.id),
     name: u.name,
     company: u.companyName,
     companyType: mapCompanyType(u.role),
     position: u.role, // 간단 표기
+    companyId: u.companyId,
   }));
 };
