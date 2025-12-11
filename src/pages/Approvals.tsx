@@ -31,6 +31,14 @@ import { Plus, MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+const getDefaultPhaseByTab = (tab: string): StepPhase => {
+  if (tab === "IN_PROGRESS") return "IN_PROGRESS";
+  if (tab === "DELIVERY") return "DELIVERY";
+  if (tab === "MAINTENANCE") return "MAINTENANCE";
+  return "CONTRACT";
+};
+const isRequestableStep = (step?: StepResponse) => step?.status === "PENDING";
+
 export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -52,13 +60,14 @@ export default function Approvals() {
   const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
   const attachmentIds = useMemo(() => uploadedAttachments.map((a) => a.id), [uploadedAttachments]);
   const [isCreateStepDialogOpen, setIsCreateStepDialogOpen] = useState(false);
-  const [newStepPhase, setNewStepPhase] = useState<StepPhase>("CONTRACT");
+  const [newStepPhase, setNewStepPhase] = useState<StepPhase>(() => getDefaultPhaseByTab(currentPhase));
   const [newStepTitle, setNewStepTitle] = useState("");
   const [newStepDescription, setNewStepDescription] = useState("");
   const [isEditStepDialogOpen, setIsEditStepDialogOpen] = useState(false);
   const [editingStepId, setEditingStepId] = useState<number | null>(null);
   const [editingStepTitle, setEditingStepTitle] = useState("");
   const [editingStepDescription, setEditingStepDescription] = useState("");
+  const [openMenuStepId, setOpenMenuStepId] = useState<number | null>(null);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
     queryKey: ["project-steps", projectId],
@@ -144,6 +153,11 @@ export default function Approvals() {
     if (currentPhase === "ALL") return steps;
     return steps.filter(step => step.phase === currentPhase);
   }, [steps, currentPhase]);
+  const nextAvailableStep = useMemo(() => {
+    const candidates = steps.filter((step) => step.status !== "APPROVED");
+    if (!candidates.length) return null;
+    return [...candidates].sort((a, b) => (a.orderIndex ?? Number.MAX_SAFE_INTEGER) - (b.orderIndex ?? Number.MAX_SAFE_INTEGER))[0];
+  }, [steps]);
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
     const isComplete = status === "APPROVED";
     const labelKey = isComplete ? "complete" : "progress";
@@ -177,6 +191,17 @@ export default function Approvals() {
   };
 
   const openRequestDialog = (stepId: number) => {
+    const targetStep = steps.find((s) => s.id === stepId);
+    const isFirstStep = (targetStep?.orderIndex ?? 0) === 1;
+    if (!isRequestableStep(targetStep) && !isFirstStep) {
+      toast({ title: "요청 생성 불가", description: "진행 중 단계에서만 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
+      return;
+    }
+    const targetIsNext = nextAvailableStep?.id === stepId;
+    if (!targetIsNext) {
+      toast({ title: "요청 생성 불가", description: "이전 단계를 완료한 뒤 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
+      return;
+    }
     setSelectedStepId(stepId);
     setRequestTitle("");
     setRequestDescription("");
@@ -195,7 +220,7 @@ export default function Approvals() {
   };
   const resetCreateStepDialog = () => {
     setIsCreateStepDialogOpen(false);
-    setNewStepPhase("CONTRACT");
+    setNewStepPhase(getDefaultPhaseByTab(currentPhase));
     setNewStepTitle("");
     setNewStepDescription("");
   };
@@ -295,7 +320,13 @@ export default function Approvals() {
             <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인 상태를 확인하세요</p>
           </div>
           {canCreateStep && (
-            <Button onClick={() => setIsCreateStepDialogOpen(true)} className="gap-2">
+            <Button
+              onClick={() => {
+                setNewStepPhase(getDefaultPhaseByTab(currentPhase));
+                setIsCreateStepDialogOpen(true);
+              }}
+              className="gap-2"
+            >
               <Plus className="h-4 w-4" />
               단계 생성
             </Button>
@@ -335,6 +366,10 @@ export default function Approvals() {
             const phaseLabel = phaseLabelMap[step.phase] || step.phase || "단계";
             const isApproved = step.status === "APPROVED";
             const isPending = step.status === "PENDING";
+            const isFirstStep = (step.orderIndex ?? 0) === 1;
+            const isRequestable = isRequestableStep(step) || isFirstStep;
+            const isNextAvailable = nextAvailableStep?.id === step.id;
+            const canShowCreateButton = isRequestable && isNextAvailable;
             const hasRequests = requests.length > 0;
             const canEditStep = canManageStep && isPending;
             const canDeleteStep = canManageStep && isPending && !hasRequests;
@@ -358,9 +393,12 @@ export default function Approvals() {
                       )}
                     </div>
                     {canManageStep && (
-                      <DropdownMenu>
+                      <DropdownMenu
+                        open={openMenuStepId === step.id}
+                        onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
+                      >
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-transparent">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -375,6 +413,7 @@ export default function Approvals() {
                                     setEditingStepId(step.id);
                                     setEditingStepTitle(step.title);
                                     setEditingStepDescription(step.description || "");
+                                    setOpenMenuStepId(null);
                                     setIsEditStepDialogOpen(true);
                                   }}
                                   className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
@@ -391,6 +430,7 @@ export default function Approvals() {
                                     e.preventDefault();
                                     if (!canDeleteStep) return;
                                     if (window.confirm("단계를 삭제하시겠습니까?")) {
+                                      setOpenMenuStepId(null);
                                       deleteStepMutation.mutate(step.id);
                                     }
                                   }}
@@ -448,17 +488,19 @@ export default function Approvals() {
                         );
                       })
                     ) : (
-                      !isApproved && (
-                        <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3">
-                          <div>승인 요청이 없습니다.</div>
+                      <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
+                        <div>승인 요청이 없습니다.</div>
+                        {canShowCreateButton ? (
                           <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
                             승인 요청 생성
                           </Button>
-                        </div>
-                      )
+                        ) : (
+                          <div className="text-muted-foreground">이전 단계 완료 후 승인 요청이 가능합니다.</div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {!isApproved && requests.length > 0 && (
+                  {canShowCreateButton && requests.length > 0 && (
                     <Button
                       type="button"
                       variant="secondary"
@@ -468,9 +510,9 @@ export default function Approvals() {
                       승인 요청 생성
                     </Button>
                   )}
-                  {isApproved && requests.length === 0 && (
-                    <div className="w-full rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground text-center">
-                      완료된 단계에서는 추가 승인 요청을 생성할 수 없습니다.
+                  {!canShowCreateButton && !isApproved && requests.length > 0 && (
+                    <div className="w-full rounded-lg border border-dashed p-4 text-sm text-muted-foreground text-center flex items-center justify-center min-h-[140px]">
+                      이전 단계 완료 후 승인 요청이 가능합니다.
                     </div>
                   )}
                 </CardContent>
@@ -501,7 +543,7 @@ export default function Approvals() {
                     <SelectItem
                       key={step.id}
                       value={String(step.id)}
-                      disabled={step.status === "APPROVED"}
+                      disabled={(!isRequestableStep(step) && (step.orderIndex ?? 0) !== 1) || nextAvailableStep?.id !== step.id}
                     >
                       {step.title} {step.status === "APPROVED" ? "(완료)" : ""}
                     </SelectItem>
@@ -579,7 +621,7 @@ export default function Approvals() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Phase</Label>
+              <Label>상위 단계</Label>
               <Select value={newStepPhase} onValueChange={(value) => setNewStepPhase(value as StepPhase)}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Phase를 선택하세요" />
