@@ -16,19 +16,24 @@ const AdminUsers = () => {
   const navigate = useNavigate();
   const [admins, setAdmins] = useState<SystemAdmin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [size] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
 
   const loadAdmins = async () => {
     try {
-      const data = await getSystemAdmins();
-
-      // 🔥 삭제 안된 → 삭제된 순서로 정렬
-      const sorted = data.sort((a, b) => {
+      setLoading(true);
+      const data = await getSystemAdmins({ page, size });
+      const sorted = [...data.content].sort((a, b) => {
         const aDeleted = a.deletedAt ? 1 : 0;
         const bDeleted = b.deletedAt ? 1 : 0;
         return aDeleted - bDeleted;
       });
 
       setAdmins(sorted);
+      setTotalPages(data.totalPages);
+      setTotalElements(data.totalElements);
     } catch (err) {
       console.error("관리자 목록 불러오기 실패:", err);
     } finally {
@@ -38,7 +43,7 @@ const AdminUsers = () => {
 
   useEffect(() => {
     loadAdmins();
-  }, []);
+  }, [page, size]);
 
   const handleDelete = async (id: number) => {
     if (!confirm("정말 삭제하시겠습니까?")) return;
@@ -122,6 +127,31 @@ const AdminUsers = () => {
           })}
         </CardContent>
       </Card>
+      {totalElements > 0 && (
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted-foreground">
+            총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+            >
+              이전
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+            >
+              다음
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
