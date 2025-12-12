@@ -44,15 +44,21 @@ export default function Notifications() {
   const { toast } = useToast();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [readFilter, setReadFilter] = useState<"ALL" | "READ" | "UNREAD">("ALL");
   const [isDeleting, setIsDeleting] = useState<Record<number, boolean>>({});
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const pageSize = 20;
 
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const response = await notificationsApi.getNotifications();
+        const response = await notificationsApi.getNotifications(0, pageSize);
         if (response.success) {
           setNotifications(response.data.content);
+          setHasMore(!response.data.last);
+          setPage(0);
         }
       } catch (error: any) {
         const status = error.response?.status;
@@ -78,6 +84,29 @@ export default function Notifications() {
 
     fetchNotifications();
   }, [toast]);
+
+  const loadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const response = await notificationsApi.getNotifications(nextPage, pageSize);
+      if (response.success) {
+        setNotifications((prev) => [...prev, ...response.data.content]);
+        setHasMore(!response.data.last);
+        setPage(nextPage);
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "알림 로드 실패",
+        description: error.response?.data?.message || "추가 알림을 불러올 수 없습니다.",
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notification) => {
@@ -298,6 +327,17 @@ export default function Notifications() {
                   </div>
                 </div>
               ))
+            )}
+            {hasMore && filteredNotifications.length > 0 && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  variant="outline"
+                  onClick={loadMore}
+                  disabled={isLoadingMore}
+                >
+                  {isLoadingMore ? "로딩 중..." : "더 보기"}
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>

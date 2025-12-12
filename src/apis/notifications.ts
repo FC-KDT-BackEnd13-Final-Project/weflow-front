@@ -52,8 +52,10 @@ interface NotificationDetailResponse {
 }
 
 export const notificationsApi = {
-  getNotifications: async (): Promise<NotificationsResponse> => {
-    const response = await api.get<NotificationsResponse>("/api/notifications");
+  getNotifications: async (page: number = 0, size: number = 10): Promise<NotificationsResponse> => {
+    const response = await api.get<NotificationsResponse>("/api/notifications", {
+      params: { page, size }
+    });
     return response.data;
   },
 
