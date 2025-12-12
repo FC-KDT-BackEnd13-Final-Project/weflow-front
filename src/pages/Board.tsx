@@ -4,9 +4,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Paperclip, MessageSquare } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { mockProjectSteps, projectStepMap } from "@/mocks/projectSteps";
 import {
   boardStatusLabels,
   boardStatusStyles,
@@ -15,6 +14,8 @@ import {
 } from "@/constants/boardStatus";
 import { getPosts } from "@/apis/postApi";
 import type { PostItem } from "@/types/post";
+import { getStepsByProject } from "@/apis/stepApi";
+import type { StepResponse } from "@/types/step";
 
 interface BoardPost {
   id: number;
@@ -29,83 +30,89 @@ interface BoardPost {
   questionStatus: BoardApprovalStatus;
 }
 
-const mockPosts: BoardPost[] = [
-  {
-    id: 42,
-    title: "요구사항 문서",
-    author: "박민수",
-    date: "2024-01-11",
-    attachments: 5,
-    comments: 10,
-    projectStatus: "진행",
-    stepId: 21,
-    status: "progress",
-    questionStatus: "request",
-  },
-  {
-    id: 43,
-    title: "화면 설계 검토 요청",
-    author: "김지현",
-    date: "2024-01-10",
-    attachments: 3,
-    comments: 7,
-    projectStatus: "진행",
-    stepId: 22,
-    status: "progress",
-    questionStatus: "request",
-  },
-  {
-    id: 44,
-    title: "디자인 시안 1차",
-    author: "이서연",
-    date: "2024-01-09",
-    attachments: 8,
-    comments: 12,
-    projectStatus: "진행",
-    stepId: 23,
-    status: "complete",
-    questionStatus: "approved",
-  },
-  {
-    id: 45,
-    title: "요구사항 수정 요청 드립니다",
-    author: "김개발",
-    date: "2024-01-08",
-    attachments: 2,
-    comments: 3,
-    projectStatus: "계약",
-    stepId: 21,
-    status: "complete",
-    questionStatus: "rejected",
-  },
-];
+const projectPhases = ["전체", "계약", "진행", "납품", "유지보수"];
 
-const projectStatuses = ["전체", "계약", "진행", "납품", "유지보수"];
-const statusStepMap: Record<string, number[]> = {
-  전체: mockProjectSteps.map((step) => step.id),
-  계약: [21],
-  진행: [21, 22, 23, 24],
-  납품: [24, 25],
-  유지보수: [25],
+// ProjectPhase enum 값으로 매핑
+const projectPhaseEnumMap: Record<string, string> = {
+  "전체": "",
+  "계약": "CONTRACT",
+  "진행": "IN_PROGRESS",
+  "납품": "DELIVERY",
+  "유지보수": "MAINTENANCE",
+};
+
+// Enum 값을 한글 라벨로 역매핑
+const projectPhaseReverseMap: Record<string, string> = {
+  "CONTRACT": "계약",
+  "IN_PROGRESS": "진행",
+  "DELIVERY": "납품",
+  "MAINTENANCE": "유지보수",
 };
 
 export default function Board() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [activeProjectStatus, setActiveProjectStatus] = useState("전체");
+  const location = useLocation();
+  const [activeProjectPhase, setActiveProjectPhase] = useState("전체");
   const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [posts, setPosts] = useState<BoardPost[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
+  const [steps, setSteps] = useState<StepResponse[]>([]);
   const pageSize = 5;
 
-  const stepsForActiveStatus = statusStepMap[activeProjectStatus] || statusStepMap["전체"];
-  const stepOptions = stepsForActiveStatus
-    .map((stepId) => projectStepMap[stepId])
-    .filter((step): step is NonNullable<typeof step> => Boolean(step))
-    .map((step) => ({ id: step.id, name: step.name }));
-  const availableSteps = [{ id: null, name: "전체" }, ...stepOptions];
+  // 선택된 phase에 해당하는 step만 필터링
+  const activePhaseEnum = projectPhaseEnumMap[activeProjectPhase];
+  const filteredSteps = activePhaseEnum
+    ? steps.filter(step => step.phase === activePhaseEnum)
+    : steps;
+  const availableSteps = [
+    { id: null, name: "전체" },
+    ...filteredSteps.map(step => ({ id: step.id, name: step.title }))
+  ];
+
+  // 백엔드에서 step 목록 가져오기
+  useEffect(() => {
+    const fetchSteps = async () => {
+      if (!id) return;
+
+      try {
+        const response = await getStepsByProject(Number(id));
+        setSteps(response.steps);
+      } catch (error) {
+        console.error("Step 목록 조회 실패:", error);
+      }
+    };
+
+    fetchSteps();
+  }, [id]);
+
+  // 뒤로가기 시 필터 상태 복원 (steps 로드 완료 후 실행)
+  useEffect(() => {
+    if (steps.length === 0) return; // steps가 로드될 때까지 대기
+
+    const locationState = location.state as {
+      restorePhase?: string;
+      restoreStepId?: number;
+    } | null;
+
+    if (locationState?.restorePhase) {
+      const phaseLabel = projectPhaseReverseMap[locationState.restorePhase];
+      if (phaseLabel) {
+        setActiveProjectPhase(phaseLabel);
+      }
+    }
+
+    if (locationState?.restoreStepId !== undefined) {
+      setSelectedStepId(locationState.restoreStepId);
+    }
+
+    // 상태 복원 후 location.state 초기화 (한 번만 실행)
+    if (locationState) {
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, steps]);
 
   // 백엔드에서 게시글 목록 가져오기
   useEffect(() => {
@@ -116,6 +123,14 @@ export default function Board() {
       try {
         const response = await getPosts(Number(id));
 
+        // projectPhase 매핑
+        const projectPhaseMap: Record<string, string> = {
+          "CONTRACT": "계약",
+          "IN_PROGRESS": "진행",
+          "DELIVERY": "납품",
+          "MAINTENANCE": "유지보수",
+        };
+
         // 백엔드 데이터를 프론트 형식으로 변환
         const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => ({
           id: post.postId,
@@ -124,7 +139,7 @@ export default function Board() {
           date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
           attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
           comments: post.commentCount,
-          projectStatus: post.projectStatus, // 백엔드와 프론트 형식 맞춰야 함
+          projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
           stepId: post.stepId,
           status: post.status === "CONFIRMED" ? "complete" : "progress",
           questionStatus: post.hasQuestions
@@ -135,7 +150,7 @@ export default function Board() {
         setPosts(convertedPosts);
       } catch (error) {
         console.error("게시글 목록 조회 실패:", error);
-        setPosts(mockPosts); // 에러 시 목 데이터 사용
+        setPosts([]);
       } finally {
         setIsLoading(false);
       }
@@ -144,12 +159,15 @@ export default function Board() {
     fetchPosts();
   }, [id]);
 
+  // phase 변경 시 선택된 step이 해당 phase에 속하지 않으면 초기화
   useEffect(() => {
-    const stepsForStatus = statusStepMap[activeProjectStatus] || statusStepMap["전체"];
-    if (selectedStepId !== null && !stepsForStatus.includes(selectedStepId)) {
-      setSelectedStepId(null);
+    if (selectedStepId !== null) {
+      const isStepInActivePhase = filteredSteps.some(step => step.id === selectedStepId);
+      if (!isStepInActivePhase) {
+        setSelectedStepId(null);
+      }
     }
-  }, [activeProjectStatus, selectedStepId]);
+  }, [activeProjectPhase, selectedStepId, filteredSteps]);
 
   const toggleStep = (stepId: number | null) => {
     if (stepId === null) {
@@ -165,10 +183,20 @@ export default function Board() {
   };
 
   const filteredPosts = posts.filter(post => {
-    if (activeProjectStatus !== "전체" && post.projectStatus !== activeProjectStatus) return false;
-    if (selectedStepId !== null && post.stepId !== selectedStepId) return false;
+    // Phase 필터링
+    if (activeProjectPhase !== "전체" && post.projectStatus !== activeProjectPhase) {
+      return false;
+    }
+
+    // Step 필터링
+    if (selectedStepId !== null && post.stepId !== selectedStepId) {
+      return false;
+    }
+
+    // 게시글 상태 필터링
     if (postStatusFilter === "진행중" && post.status !== "progress") return false;
     if (postStatusFilter === "완료" && post.status !== "complete") return false;
+
     return true;
   });
 
@@ -180,13 +208,16 @@ export default function Board() {
     setCurrentPage(page);
   };
 
-  const handleProjectStatusChange = (status: string) => {
-    setActiveProjectStatus(status);
+  const handleProjectPhaseChange = (phase: string) => {
+    setActiveProjectPhase(phase);
     setSelectedStepId(null);
     setCurrentPage(1);
   };
 
-  const getStepName = (stepId: number) => projectStepMap[stepId]?.name ?? "미정 단계";
+  const getStepName = (stepId: number) => {
+    const step = steps.find(s => s.id === stepId);
+    return step?.title ?? "미정 단계";
+  };
 
   const handlePostClick = (postId: number) => {
     navigate(`/project/${id}/board/${postId}`);
@@ -197,7 +228,12 @@ export default function Board() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">게시판</h1>
-          <Button className="gap-2" onClick={() => navigate(`/project/${id}/board/new`)}>
+          <Button className="gap-2" onClick={() => navigate(`/project/${id}/board/new`, {
+            state: {
+              preSelectedPhase: activeProjectPhase !== "전체" ? projectPhaseEnumMap[activeProjectPhase] : undefined,
+              preSelectedStepId: selectedStepId ?? undefined,
+            }
+          })}>
             <Plus className="h-4 w-4" />
             게시글 작성
           </Button>
@@ -206,18 +242,18 @@ export default function Board() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-wrap gap-2 mt-1">
-              {projectStatuses.map((status) => (
+              {projectPhases.map((phase) => (
                 <button
-                  key={status}
-                  onClick={() => handleProjectStatusChange(status)}
+                  key={phase}
+                  onClick={() => handleProjectPhaseChange(phase)}
                   className={cn(
                     "cursor-pointer px-4 py-2 text-sm rounded-full border transition-colors",
-                    activeProjectStatus === status
+                    activeProjectPhase === phase
                       ? "bg-primary text-white border-primary"
                       : "text-muted-foreground border-input hover:text-foreground"
                   )}
                 >
-                  {status}
+                  {phase}
                 </button>
               ))}
             </div>

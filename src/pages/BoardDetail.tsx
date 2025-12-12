@@ -29,7 +29,9 @@ import { getComments, createComment, createReply, deleteComment as deleteComment
 import { useUserStore } from "@/stores/user";
 import type { CommentResponse, ReplyDto } from "@/types/comment";
 
-type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
+type ApiPostApprovalStatus = "PENDING" | "CONFIRMED" | "REJECTED";
+type ApiPostOpenStatus = "OPEN" | "CLOSED";
+type ApiProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 
 interface AuthorInfo {
   memberId: number;
@@ -82,9 +84,10 @@ interface BoardPostDetail {
   id: number;
   title: string;
   content: string;
-  status: ApiPostStatus;
+  status: ApiPostApprovalStatus;
+  openStatus: ApiPostOpenStatus;
   author: AuthorInfo;
-  projectStatus: ApiPostStatus;
+  projectPhase: ApiProjectPhase;
   step: StepInfo;
   files: Attachment[];
   links: LinkItem[];
@@ -96,138 +99,22 @@ interface BoardPostDetail {
   comments: CommentResponse[];
 }
 
-const mockPostDetails: BoardPostDetail[] = [
-  {
-    id: 42,
-    title: "디자인 시안 검토 요청",
-    content: "메인 페이지 디자인 시안입니다. 검토 부탁드립니다.",
-    status: "IN_PROGRESS",
-    projectStatus: "IN_PROGRESS",
-    author: {
-      memberId: 3,
-      name: "이개발",
-      role: "DEVELOPER",
-      companyName: "비엔시스템",
-    },
-    step: {
-      stepId: 3,
-      stepName: "디자인",
-    },
-    files: [
-      {
-        fileId: 10,
-        fileName: "메인페이지_시안_v1.png",
-        fileSize: 2048000,
-        downloadUrl: "/api/files/10/download",
-      },
-    ],
-    links: [
-      {
-        linkId: 5,
-        url: "https://figma.com/file/xxx",
-        title: "Figma 디자인 링크",
-      },
-    ],
-    questions: [
-      {
-        questionId: 1,
-        content: "메인 배너 색상 이대로 진행할까요?",
-        buttonLabels: {
-          yes: "승인",
-          no: "수정요청",
-        },
-        answer: {
-          response: "YES",
-          respondent: {
-            memberId: 5,
-            name: "김고객",
-          },
-          respondedAt: "2025-01-16T14:00:00",
-        },
-        answerAction: "confirm",
-      },
-      {
-        questionId: 2,
-        content: "서브 페이지도 같은 스타일로 진행할까요?",
-        buttonLabels: {
-          yes: "네",
-          no: "아니오",
-        },
-        answer: null,
-      },
-    ],
-    parentPost: null,
-    isEdited: false,
-    createdAt: "2025-01-16T10:30:00",
-    updatedAt: "2025-01-16T10:30:00",
-    comments: [],
-  },
-  {
-    id: 43,
-    title: "요구사항 정리본 공유",
-    content: "최신 요구사항 정리본입니다. 변경 사항 참고 부탁드립니다.",
-    status: "COMPLETED",
-    projectStatus: "COMPLETED",
-    author: {
-      memberId: 4,
-      name: "박PM",
-      role: "PM",
-      companyName: "위플로우",
-    },
-    step: {
-      stepId: 1,
-      stepName: "요구사항 정의",
-    },
-    files: [
-      {
-        fileId: 11,
-        fileName: "요구사항정리_v4.xlsx",
-        fileSize: 512000,
-        downloadUrl: "/api/files/11/download",
-      },
-    ],
-    links: [
-      {
-        linkId: 6,
-        url: "https://docs.google.com/document/d/req",
-        title: "회의록 링크",
-      },
-    ],
-    questions: [
-      {
-        questionId: 3,
-        content: "관리자 메뉴에서 통계 항목 5개로 확정할까요?",
-        buttonLabels: {
-          yes: "가능",
-          no: "재논의",
-        },
-        answer: {
-          response: "NO",
-          respondent: {
-            memberId: 6,
-            name: "최고객",
-          },
-          respondedAt: "2025-01-15T09:30:00",
-        },
-        answerAction: "reject",
-      },
-    ],
-    parentPost: null,
-    isEdited: true,
-    createdAt: "2025-01-15T08:00:00",
-    updatedAt: "2025-01-15T10:10:00",
-    comments: [],
-  },
-];
-
-const apiStatusToBoardStatus: Record<ApiPostStatus, BoardPostStatus> = {
-  IN_PROGRESS: "progress",
-  COMPLETED: "complete",
+const apiApprovalStatusToBoardStatus: Record<ApiPostApprovalStatus, BoardApprovalStatus> = {
+  PENDING: "request",
+  CONFIRMED: "approved",
+  REJECTED: "rejected",
 };
 
-const projectStatusLabels: Record<ApiPostStatus, string> = {
-  IN_PROGRESS: "진행중",
-  COMPLETED: "완료",
+const projectPhaseLabels: Record<ApiProjectPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
+
+const postOpenStatusLabels: Record<ApiPostOpenStatus, string> = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
 };
 
 const formatDateTime = (value: string) => {
@@ -280,14 +167,15 @@ export default function BoardDetail() {
           id: postResponse.postId,
           title: postResponse.title,
           content: postResponse.content,
-          status: postResponse.projectStatus as ApiPostStatus,
+          status: postResponse.status as ApiPostApprovalStatus,
+          openStatus: postResponse.openStatus as ApiPostOpenStatus,
           author: {
             memberId: postResponse.author.memberId,
             name: postResponse.author.name,
             role: postResponse.author.role,
             companyName: postResponse.author.companyName,
           },
-          projectStatus: postResponse.projectStatus as ApiPostStatus,
+          projectPhase: postResponse.projectPhase as ApiProjectPhase,
           step: {
             stepId: postResponse.step.stepId,
             stepName: postResponse.step.stepName,
@@ -365,9 +253,11 @@ export default function BoardDetail() {
         }
       } catch (error) {
         console.error("게시글 또는 댓글 조회 실패:", error);
-        // 에러 시 목 데이터 사용 (임시)
-        const mockPost = mockPostDetails.find((item) => item.id.toString() === postId);
-        setPost(mockPost);
+        toast({
+          title: "게시글 조회 실패",
+          description: "게시글을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
       } finally {
         setIsLoading(false);
       }
@@ -413,8 +303,9 @@ export default function BoardDetail() {
     );
   }
 
-  const postStatusVariant = apiStatusToBoardStatus[post.status] ?? "progress";
-  const projectStatusLabelText = projectStatusLabels[post.projectStatus] ?? post.projectStatus;
+  const approvalStatusVariant = apiApprovalStatusToBoardStatus[post.status] ?? "request";
+  const projectPhaseLabelText = projectPhaseLabels[post.projectPhase];
+  const postOpenStatusLabelText = postOpenStatusLabels[post.openStatus];
   const overallQuestionStatus: BoardApprovalStatus = post.questions.some((q) => q.answer?.response === "NO")
     ? "rejected"
     : post.questions.every((q) => q.answer)
@@ -935,20 +826,21 @@ export default function BoardDetail() {
 
         <Card>
           <CardHeader className="space-y-2 border-b">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className={cn("border", boardStatusStyles[postStatusVariant])}>
-                {boardStatusLabels[postStatusVariant]}
-              </Badge>
-              <Badge variant="outline">{projectStatusLabelText}</Badge>
-              <Badge variant="outline">{post.step.stepName}</Badge>
-              <div
-                className={cn(
-                  "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                  boardStatusStyles[overallQuestionStatus]
-                )}
-              >
-                {boardStatusLabels[overallQuestionStatus]}
+            <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="bg-blue-50">
+                  {projectPhaseLabelText}
+                </Badge>
+                <Badge variant="outline" className="bg-purple-50">
+                  {post.step.stepName}
+                </Badge>
+                <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
+                  {boardStatusLabels[overallQuestionStatus]}
+                </Badge>
               </div>
+              <Badge variant="outline" className="bg-slate-50">
+                {postOpenStatusLabelText}
+              </Badge>
             </div>
             <CardTitle className="text-2xl">{post.title}</CardTitle>
             <div className="text-sm text-muted-foreground flex flex-wrap gap-3">
@@ -960,14 +852,18 @@ export default function BoardDetail() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground mb-1">단계</p>
+                <p className="text-xs text-muted-foreground mb-1">프로젝트 단계 (Phase)</p>
+                <p className="font-medium">{projectPhaseLabelText}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground mb-1">세부 단계 (Step)</p>
                 <p className="font-medium">{post.step.stepName}</p>
               </div>
               <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground mb-1">상태</p>
-                <p className="font-medium">{projectStatusLabelText}</p>
+                <p className="text-xs text-muted-foreground mb-1">게시글 상태</p>
+                <p className="font-medium">{postOpenStatusLabelText}</p>
               </div>
             </div>
 

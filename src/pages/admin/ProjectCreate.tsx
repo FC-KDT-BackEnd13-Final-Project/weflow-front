@@ -22,6 +22,7 @@ import {
   createAdminProject,
   addAdminProjectMember,
   ProjectStatus,
+  ProjectPhase,
 } from "@/apis/adminProjects";
 
 import { fetchAllUsers } from "@/apis/adminUsers";
@@ -141,7 +142,8 @@ const ProjectCreate = () => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [customerCompanyId, setCustomerCompanyId] = useState("");
-  const [status, setStatus] = useState<ProjectStatus>("CONTRACT");
+  const [status, setStatus] = useState<ProjectStatus>("OPEN");
+  const [phase, setPhase] = useState<ProjectPhase>("CONTRACT");
 
   const [contractAmount, setContractAmount] = useState("");
   const [contractFileName, setContractFileName] = useState("");
@@ -354,6 +356,7 @@ const ProjectCreate = () => {
         name,
         description,
         status,
+        phase,
         customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
         startDate: toLocalDateTime(startDate),
         endDateExpected: toLocalDateTime(endDate),
@@ -480,11 +483,23 @@ const ProjectCreate = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="OPEN">활성</SelectItem>
+                  <SelectItem value="CLOSED">종료</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>프로젝트 단계</Label>
+              <Select value={phase} onValueChange={(v) => setPhase(v as ProjectPhase)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   <SelectItem value="CONTRACT">계약</SelectItem>
-                  <SelectItem value="IN_PROGRESS">진행중</SelectItem>
+                  <SelectItem value="IN_PROGRESS">진행</SelectItem>
                   <SelectItem value="DELIVERY">납품</SelectItem>
                   <SelectItem value="MAINTENANCE">유지보수</SelectItem>
-                  <SelectItem value="CLOSED">종료</SelectItem>
                 </SelectContent>
               </Select>
             </div>
