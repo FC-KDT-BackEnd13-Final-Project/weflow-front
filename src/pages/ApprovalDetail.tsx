@@ -199,10 +199,39 @@ export default function ApprovalDetail() {
     if (Array.isArray(feedbackPayload)) return feedbackPayload[0];
     return feedbackPayload as StepRequestAnswerResponse | undefined;
   }, [feedbackData]);
-  const requestAttachmentItems = useMemo(
-    () => ([...(approval?.attachments ?? approval?.files ?? []), ...(approval?.links ?? [])] as (AttachmentResponse | string)[]),
-    [approval]
-  );
+  const requestAttachmentItems = useMemo(() => {
+    const rawAttachments = (approval?.attachments ?? approval?.files ?? []) as AttachmentResponse[];
+    const rawLinks = (approval?.links ?? []) as (AttachmentResponse | string)[];
+
+    const fileAttachments = rawAttachments.filter((att) => {
+      const type = ((att as { attachmentType?: string }).attachmentType || "").toUpperCase();
+      return !att.isLink && type !== "LINK" && !(att as { link?: boolean }).link;
+    });
+
+    const linkAttachments = [
+      ...rawAttachments.filter((att) => {
+        const type = ((att as { attachmentType?: string }).attachmentType || "").toUpperCase();
+        return att.isLink || type === "LINK" || Boolean((att as { link?: boolean }).link);
+      }),
+      ...rawLinks.map((link, idx) =>
+        typeof link === "string"
+          ? ({
+              id: -1 * (idx + 1),
+              url: link,
+              name: link,
+              isLink: true,
+              attachmentType: "LINK",
+            } as AttachmentResponse)
+          : {
+              ...(link as AttachmentResponse),
+              isLink: true,
+              attachmentType: (link as { attachmentType?: string }).attachmentType ?? "LINK",
+            }
+      ),
+    ];
+
+    return [...fileAttachments, ...linkAttachments] as (AttachmentResponse | string)[];
+  }, [approval]);
   const decisionAttachmentItems = useMemo(
     () => ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]),
     [feedback]
@@ -502,7 +531,7 @@ export default function ApprovalDetail() {
                 items={requestAttachmentItems}
                 emptyText="첨부파일 / 링크가 없습니다."
                 fileLabel="첨부파일"
-                linkLabel="관련 링크"
+                linkLabel="링크"
               />
             </div>
           </CardContent>
@@ -548,7 +577,7 @@ export default function ApprovalDetail() {
                     items={decisionAttachmentItems}
                     emptyText="첨부가 없습니다."
                     fileLabel="파일 첨부"
-                    linkLabel="관련 링크"
+                    linkLabel="링크"
                   />
                 </div>
               )}
