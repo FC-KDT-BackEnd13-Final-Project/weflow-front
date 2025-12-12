@@ -98,6 +98,12 @@ export default function ApprovalRequests() {
     return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
+  // 상태 필터가 바뀔 때(미처리 OFF 상태에서만) 저장값 갱신
+  useEffect(() => {
+    if (pendingOnly) return;
+    setSavedStatus(statusFilter);
+  }, [statusFilter, pendingOnly]);
+
   useEffect(() => {
     if (projectParam) return;
     const defaultProject = "ALL";
@@ -178,6 +184,7 @@ export default function ApprovalRequests() {
                   value={statusFilter}
                   onValueChange={(value) => {
                     const nextStatus = value as MyApprovalStatus;
+                    setSavedStatus(nextStatus);
                     setSearchParams({
                       status: nextStatus,
                       projectId: projectFilter,
@@ -185,6 +192,7 @@ export default function ApprovalRequests() {
                       pending: pendingOnly ? "true" : "false",
                     });
                   }}
+                  disabled={pendingOnly}
                 >
                   <SelectTrigger className="w-full md:w-[180px]">
                     <SelectValue placeholder="상태 선택" />
@@ -204,13 +212,25 @@ export default function ApprovalRequests() {
                     checked={pendingOnly}
                     onCheckedChange={(checked) => {
                       const next = Boolean(checked);
-                      setPendingOnly(next);
-                      setSearchParams({
-                        status: statusFilter,
-                        projectId: projectFilter,
-                        page: "0",
-                        pending: next ? "true" : "false",
-                      });
+                      if (next) {
+                        setSavedStatus(statusFilter);
+                        setPendingOnly(true);
+                        setSearchParams({
+                          status: "ALL",
+                          projectId: projectFilter,
+                          page: "0",
+                          pending: "true",
+                        });
+                      } else {
+                        setPendingOnly(false);
+                        const restoreStatus = savedStatus || "ALL";
+                        setSearchParams({
+                          status: restoreStatus,
+                          projectId: projectFilter,
+                          page: "0",
+                          pending: "false",
+                        });
+                      }
                     }}
                   />
                   미처리만
