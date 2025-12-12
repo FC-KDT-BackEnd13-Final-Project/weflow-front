@@ -307,8 +307,7 @@ export default function Approvals() {
   const userRole = (user?.role || "").toUpperCase();
   const userType = (user as { userRole?: string } | undefined)?.userRole?.toUpperCase?.() || "";
   const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
-  const canCreateStep = userRole === "SYSTEM_ADMIN" || (projectRole === "ADMIN" && (userType === "AGENCY" || userRole === "AGENCY"));
-  const canManageStep = canCreateStep;
+  const canManageStep = userRole === "SYSTEM_ADMIN" || (projectRole === "ADMIN" && userType === "AGENCY");
 
   const stepTooltipMessage = {
     cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
@@ -326,7 +325,7 @@ export default function Approvals() {
             <h1 className="text-2xl font-bold text-foreground">단계별 승인 요청</h1>
             <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인 상태를 확인하세요</p>
           </div>
-          {canCreateStep && (
+          {canManageStep && (
             <Button
               onClick={() => {
                 setNewStepPhase(getDefaultPhaseByTab(currentPhase));
@@ -389,7 +388,7 @@ export default function Approvals() {
                 key={step.id}
                 className={cn("flex flex-col", isApproved && "bg-gray-50 border-gray-200 hover:bg-gray-50")}
               >
-                  <CardHeader className="border-b space-y-2 py-2">
+                  <CardHeader className={cn("border-b space-y-2 py-2", !canManageStep && "pt-4")}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       {currentPhase === "ALL" && (
@@ -398,7 +397,7 @@ export default function Approvals() {
                         </span>
                       )}
                     </div>
-                    {canManageStep && (
+                    {canManageStep ? (
                       <DropdownMenu
                         open={openMenuStepId === step.id}
                         onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
@@ -450,7 +449,7 @@ export default function Approvals() {
                           </TooltipProvider>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-lg">{step.title}</CardTitle>
