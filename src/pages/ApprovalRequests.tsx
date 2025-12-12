@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +24,6 @@ export default function ApprovalRequests() {
   const { data, isLoading, isError, isFetching } = useQuery({
     queryKey: ["myApprovalRequests", statusFilter, page],
     queryFn: () => getMyApprovalRequests({ status: statusFilter as MyApprovalStatus, page, size: pageSize }),
-    keepPreviousData: true,
   });
 
   const requests = useMemo(() => data?.data.stepRequestSummaryResponses ?? [], [data]);
@@ -36,14 +36,27 @@ export default function ApprovalRequests() {
     return requests.filter((request) => statusFilter === "ALL" || request.status === statusFilter);
   }, [requests, statusFilter]);
 
-  const formatDateTime = (value: string) =>
-    new Date(value).toLocaleString("ko-KR", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+  const phaseLabelMap: Record<string, string> = {
+    PLANNING: "기획",
+    DESIGN: "디자인",
+    DEVELOPMENT: "개발",
+    TESTING: "테스트",
+    DEPLOYMENT: "배포",
+    MAINTENANCE: "운영",
+    CONTRACT: "계약",
+    IN_PROGRESS: "진행",
+    DELIVERY: "납품",
+    PENDING: "대기",
+    COMPLETED: "완료",
+    APPROVED: "승인",
+  };
+
+  const formatDateTime = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
 
   return (
     <AppLayout>
@@ -87,47 +100,76 @@ export default function ApprovalRequests() {
                 선택한 상태의 승인 요청이 없습니다.
               </div>
             ) : (
-              filteredRequests.map((request: StepRequestSummaryResponse) => (
-                <div
-                  key={request.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    navigate(
-                      `/project/${request.projectId}/approvals/${request.id}?from=approval-requests&status=${statusFilter}&page=${currentPage}`
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
+              filteredRequests.map((request: StepRequestSummaryResponse) => {
+                const projectLabel =
+                  (request as { projectName?: string; project?: { name?: string } }).projectName ||
+                  (request as { project?: { name?: string } }).project?.name ||
+                  "프로젝트";
+                const phaseCode =
+                  (request as { phase?: string }).phase ||
+                  (request as { phaseName?: string; stepPhase?: string }).phaseName ||
+                  (request as { stepPhase?: string }).stepPhase ||
+                  "";
+                const phaseLabel = phaseLabelMap[phaseCode] || phaseCode || "-";
+                const requesterLabel = request.requestedByName || "요청자";
+                const stepLabel = request.stepTitle || "단계";
+                const requestedDate = formatDateTime(request.createdAt);
+                const statusBadge = stepRequestStatusMap[request.status];
+                const projectId = (request as { projectId?: number }).projectId;
+
+                return (
+                  <div
+                    key={request.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
                       navigate(
-                        `/project/${request.projectId}/approvals/${request.id}?from=approval-requests&status=${statusFilter}&page=${currentPage}`
-                      );
+                        `/project/${projectId}/approvals/${request.id}?from=approval-requests&status=${statusFilter}&page=${currentPage}`
+                      )
                     }
-                  }}
-                  className="rounded border p-4 cursor-pointer hover:border-primary/40 hover:bg-muted/50 transition space-y-2"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-semibold">{request.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {request.projectName || "프로젝트"} · {request.requestedByName || "요청자"}
-                      </p>
-                      {request.stepTitle && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          단계: {request.stepTitle}
-                        </p>
-                      )}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(
+                          `/project/${projectId}/approvals/${request.id}?from=approval-requests&status=${statusFilter}&page=${currentPage}`
+                        );
+                      }
+                    }}
+                    className="rounded-xl border p-4 sm:p-5 cursor-pointer hover:border-primary/40 hover:bg-muted/50 transition space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                      <div className="inline-flex items-center gap-2">
+                        <Badge variant="outline" className="bg-muted text-foreground border-slate-200">
+                          {projectLabel}
+                        </Badge>
+                        <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-100">
+                          {phaseLabel}
+                        </Badge>
+                      </div>
                     </div>
-                    <Badge className={stepRequestStatusMap[request.status]?.className ?? "bg-slate-100 text-slate-700"}>
-                      {stepRequestStatusMap[request.status]?.label ?? request.status}
-                    </Badge>
+
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-base font-semibold leading-6 text-foreground line-clamp-2 break-words">{request.title}</p>
+                      <Badge
+                        className={cn(
+                          statusBadge?.className ?? "bg-slate-100 text-slate-700",
+                          "hover:bg-[inherit] hover:text-[inherit] hover:border-current/0"
+                        )}
+                      >
+                        {statusBadge?.label ?? request.status}
+                      </Badge>
+                    </div>
+
+                    <div className="text-sm text-muted-foreground flex flex-wrap gap-x-2 gap-y-1 whitespace-normal break-keep">
+                      <span className="font-medium text-foreground/80">{requesterLabel}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{stepLabel}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span>{requestedDate}</span>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    요청일 {formatDateTime(request.createdAt)}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
 
             <div className="flex items-center justify-between pt-2">

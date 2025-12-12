@@ -215,8 +215,7 @@ export default function ApprovalDetail() {
     const isLink =
       typeof file === "string" ||
       attachmentType === "LINK" ||
-      Boolean((file as AttachmentResponse).isLink) ||
-      Boolean((file as AttachmentResponse).link);
+      Boolean((file as AttachmentResponse).isLink);
     const resolvedName =
       baseName ||
       (isLink

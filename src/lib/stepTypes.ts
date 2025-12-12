@@ -79,6 +79,7 @@ export interface StepRequestSummaryResponse {
   requestedBy?: number;
   requestedByName?: string;
   hasAttachment?: boolean;
+  phase?: string;
 }
 
 export interface StepRequestListResponse {
