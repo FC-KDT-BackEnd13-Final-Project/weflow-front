@@ -9,12 +9,12 @@ import type {
   PostStatusUpdateRequest,
   PostAnswerRequest,
   PostAnswerResponse,
-  ProjectStatus,
+  ProjectPhase,
 } from "@/types/post";
 
 // ===== Query Parameters Interface =====
 export interface GetPostsParams {
-  projectStatus?: ProjectStatus;
+  projectPhase?: ProjectPhase;
   stepId?: number;
   page?: number;
   size?: number;

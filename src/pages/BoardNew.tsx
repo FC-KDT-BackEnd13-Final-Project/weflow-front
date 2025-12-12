@@ -18,13 +18,18 @@ import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus } from "lucide-reac
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { createPost, updatePost, getPost } from "@/apis/postApi";
-import { ProjectStatus } from "@/types/post";
+import { ProjectPhase } from "@/types/post";
 import type { FileRequest, QuestionRequest } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
 import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
 
-const status = ["계약", "진행", "납품", "유지보수"];
+const phaseOptions = [
+  { value: ProjectPhase.CONTRACT, label: "계약" },
+  { value: ProjectPhase.IN_PROGRESS, label: "진행" },
+  { value: ProjectPhase.DELIVERY, label: "납품" },
+  { value: ProjectPhase.MAINTENANCE, label: "유지보수" },
+];
 
 const postSchema = z.object({
   title: z.string()
@@ -47,16 +52,27 @@ export default function BoardNew() {
   const navigate = useNavigate();
   const { id, postId } = useParams<{ id: string; postId?: string }>();
   const location = useLocation();
-  const replyInfo = (location.state as { parentPostId?: number; parentTitle?: string } | null) ?? null;
+  const locationState = location.state as {
+    parentPostId?: number;
+    parentTitle?: string;
+    preSelectedPhase?: string;
+    preSelectedStepId?: number;
+  } | null;
+  const replyInfo = locationState ? {
+    parentPostId: locationState.parentPostId,
+    parentTitle: locationState.parentTitle
+  } : null;
   const isReply = Boolean(replyInfo?.parentPostId);
   const isEditMode = Boolean(postId); // postId가 있으면 수정 모드
   const { toast } = useToast();
+  const [parentPostPhase, setParentPostPhase] = useState<string>("");
+  const [parentPostStepId, setParentPostStepId] = useState<string>("");
 
   const [formData, setFormData] = useState<PostFormData>({
     title: replyInfo?.parentTitle ? `Re: ${replyInfo.parentTitle}` : "",
     content: "",
-    status: "",
-    step: "",
+    status: locationState?.preSelectedPhase || "",
+    step: locationState?.preSelectedStepId?.toString() || "",
   });
 
   const [files, setFiles] = useState<File[]>([]);
@@ -68,6 +84,50 @@ export default function BoardNew() {
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 선택된 phase에 해당하는 step만 필터링
+  const filteredSteps = steps.filter(step => {
+    if (!formData.status) return true; // phase 미선택 시 전체 표시
+    return step.phase === formData.status;
+  });
+
+  // 답글 작성 시 부모 게시글 정보 가져오기
+  useEffect(() => {
+    const fetchParentPost = async () => {
+      if (!isReply || !id || !replyInfo?.parentPostId) return;
+
+      try {
+        const parentPost = await getPost(Number(id), replyInfo.parentPostId);
+        const phaseValue = parentPost.projectPhase;
+        const stepValue = parentPost.step.stepId.toString();
+
+        setParentPostPhase(phaseValue);
+        setParentPostStepId(stepValue);
+
+        // 답글의 경우 부모 게시글의 phase와 step 자동 설정
+        setFormData(prev => ({
+          ...prev,
+          status: phaseValue,
+          step: stepValue,
+        }));
+
+        console.log('부모 게시글 정보:', {
+          phase: phaseValue,
+          stepId: stepValue,
+          stepName: parentPost.step.stepName
+        });
+      } catch (error) {
+        console.error("부모 게시글 조회 실패:", error);
+        toast({
+          title: "부모 게시글 로딩 실패",
+          description: "부모 게시글 정보를 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    fetchParentPost();
+  }, [isReply, id, replyInfo, toast]);
 
   // 프로젝트의 실제 step 목록 가져오기
   useEffect(() => {
@@ -101,17 +161,10 @@ export default function BoardNew() {
       try {
         const post = await getPost(Number(id), Number(postId));
 
-        // status 역매핑 (임시)
-        const statusReverseMap: Record<string, string> = {
-          "IN_PROGRESS": "진행",
-          "COMPLETED": "납품",
-          "ON_HOLD": "유지보수",
-        };
-
         setFormData({
           title: post.title,
           content: post.content,
-          status: statusReverseMap[post.projectStatus] || "진행",
+          status: post.projectPhase, // ProjectPhase enum 값 사용
           step: post.step.stepId.toString(),
         });
 
@@ -211,13 +264,8 @@ export default function BoardNew() {
     // 백엔드 API 호출
     setIsSubmitting(true);
     try {
-      // status 매핑
-      const statusMap: Record<string, ProjectStatus> = {
-        "계약": ProjectStatus.CONTRACT,
-        "진행": ProjectStatus.IN_PROGRESS,
-        "납품": ProjectStatus.DELIVERY,
-        "유지보수": ProjectStatus.MAINTENANCE,
-      };
+      // formData.status는 이제 ProjectPhase enum 값 (CONTRACT, IN_PROGRESS, DELIVERY, MAINTENANCE)
+      const projectPhase = formData.status as ProjectPhase;
 
       // formData.step은 이제 실제 stepId(문자열)
       const stepId = Number(formData.step);
@@ -264,7 +312,7 @@ export default function BoardNew() {
           title: formData.title,
           content: formData.content,
           stepId: stepId,
-          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          projectPhase: projectPhase,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
           questions: questions.length > 0 ? questions : undefined,
@@ -283,7 +331,7 @@ export default function BoardNew() {
           title: formData.title,
           content: formData.content,
           stepId: stepId,
-          projectStatus: statusMap[formData.status] || ProjectStatus.IN_PROGRESS,
+          projectPhase: projectPhase,
           parentPostId: replyInfo?.parentPostId,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
@@ -311,12 +359,21 @@ export default function BoardNew() {
   };
 
   const handleCancel = () => {
+    const navigateWithState = () => {
+      navigate(`/project/${id}/board`, {
+        state: {
+          restorePhase: locationState?.preSelectedPhase,
+          restoreStepId: locationState?.preSelectedStepId,
+        }
+      });
+    };
+
     if (formData.title || formData.content) {
       if (window.confirm("작성 중인 내용이 있습니다. 정말 취소하시겠습니까?")) {
-        navigate(`/project/${id}/board`);
+        navigateWithState();
       }
     } else {
-      navigate(`/project/${id}/board`);
+      navigateWithState();
     }
   };
 
@@ -351,24 +408,36 @@ export default function BoardNew() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Status */}
+              {/* Phase */}
               <div className="space-y-2">
-                <Label htmlFor="status">상태 *</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
-                >
-                  <SelectTrigger id="status">
-                    <SelectValue placeholder="프로젝트 상태를 선택하세요" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {status.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="status">프로젝트 단계 (Phase) *</Label>
+                {isReply && formData.status ? (
+                  <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                    {phaseOptions.find(p => p.value === formData.status)?.label || "로딩 중..."}
+                  </div>
+                ) : (
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value) => {
+                      setFormData(prev => ({ ...prev, status: value, step: "" })); // phase 변경 시 step 초기화
+                      setErrors(prev => ({ ...prev, status: undefined })); // 에러 제거
+                    }}
+                  >
+                    <SelectTrigger id="status">
+                      <SelectValue placeholder="프로젝트 단계를 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {phaseOptions.map((phase) => (
+                        <SelectItem key={phase.value} value={phase.value}>
+                          {phase.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {isReply && (
+                  <p className="text-xs text-muted-foreground">답글은 부모 게시글의 단계를 따릅니다</p>
+                )}
                 {errors.status && (
                   <p className="text-sm text-destructive">{errors.status}</p>
                 )}
@@ -376,23 +445,43 @@ export default function BoardNew() {
 
               {/* Step */}
               <div className="space-y-2">
-                <Label htmlFor="step">단계 *</Label>
-                <Select
-                  value={formData.step}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, step: value }))}
-                  disabled={isLoadingSteps}
-                >
-                  <SelectTrigger id="step">
-                    <SelectValue placeholder={isLoadingSteps ? "단계 로딩 중..." : "단계를 선택하세요"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {steps.map((step) => (
-                      <SelectItem key={step.id} value={step.id.toString()}>
-                        {step.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="step">세부 단계 (Step) *</Label>
+                {isReply && formData.step ? (
+                  <div className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                    {steps.find(s => s.id.toString() === formData.step)?.title || "로딩 중..."}
+                  </div>
+                ) : (
+                  <Select
+                    value={formData.step}
+                    onValueChange={(value) => {
+                      setFormData(prev => ({ ...prev, step: value }));
+                      setErrors(prev => ({ ...prev, step: undefined })); // 에러 제거
+                    }}
+                    disabled={isLoadingSteps || !formData.status}
+                  >
+                    <SelectTrigger id="step">
+                      <SelectValue placeholder={
+                        isLoadingSteps
+                          ? "단계 로딩 중..."
+                          : !formData.status
+                            ? "먼저 프로젝트 단계를 선택하세요"
+                            : filteredSteps.length === 0
+                              ? "해당 단계에 등록된 세부 단계가 없습니다"
+                              : "세부 단계를 선택하세요"
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredSteps.map((step) => (
+                        <SelectItem key={step.id} value={step.id.toString()}>
+                          {step.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {isReply && (
+                  <p className="text-xs text-muted-foreground">답글은 부모 게시글의 단계를 따릅니다</p>
+                )}
                 {errors.step && (
                   <p className="text-sm text-destructive">{errors.step}</p>
                 )}
@@ -405,7 +494,10 @@ export default function BoardNew() {
                   id="title"
                   placeholder="제목을 입력하세요"
                   value={formData.title}
-                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                  onChange={(e) => {
+                    setFormData(prev => ({ ...prev, title: e.target.value }));
+                    if (errors.title) setErrors(prev => ({ ...prev, title: undefined })); // 에러 제거
+                  }}
                   maxLength={100}
                 />
                 <div className="flex justify-between items-center">
@@ -425,7 +517,10 @@ export default function BoardNew() {
                   id="content"
                   placeholder="내용을 입력하세요"
                   value={formData.content}
-                  onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                  onChange={(e) => {
+                    setFormData(prev => ({ ...prev, content: e.target.value }));
+                    if (errors.content) setErrors(prev => ({ ...prev, content: undefined })); // 에러 제거
+                  }}
                   className="min-h-[300px] resize-none"
                   maxLength={5000}
                 />

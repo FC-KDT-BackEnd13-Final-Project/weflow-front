@@ -7,7 +7,12 @@ export enum PostApprovalStatus {
   REJECTED = "REJECTED",
 }
 
-export enum ProjectStatus {
+export enum PostOpenStatus {
+  OPEN = "OPEN",
+  CLOSED = "CLOSED",
+}
+
+export enum ProjectPhase {
   CONTRACT = "CONTRACT",
   IN_PROGRESS = "IN_PROGRESS",
   DELIVERY = "DELIVERY",
@@ -22,8 +27,9 @@ export interface PostDetailResponse {
   title: string;
   content: string;
   status: PostApprovalStatus;
+  openStatus: PostOpenStatus;
   author: AuthorDto;
-  projectStatus: ProjectStatus;
+  projectPhase: ProjectPhase;
   step: StepDto;
   files: FileDto[];
   links: LinkDto[];
@@ -98,7 +104,7 @@ export interface PostItem {
   postId: number;
   title: string;
   status: PostApprovalStatus;
-  projectStatus: ProjectStatus;
+  projectPhase: ProjectPhase;
   stepId: number;
   author: AuthorDto;
   hasFiles: boolean;
@@ -143,7 +149,7 @@ export interface PostCreateRequest {
   content: string;
   stepId: number;
   parentPostId?: number; // 답글인 경우 (optional)
-  projectStatus: ProjectStatus;
+  projectPhase: ProjectPhase;
   files?: FileRequest[];
   links?: LinkRequest[];
   questions?: QuestionRequest[];
@@ -171,7 +177,7 @@ export interface PostUpdateRequest {
   title?: string;
   content?: string;
   stepId?: number;
-  projectStatus?: ProjectStatus;
+  projectPhase?: ProjectPhase;
   files?: FileRequest[];
   links?: LinkRequest[];
   questions?: QuestionRequest[];
