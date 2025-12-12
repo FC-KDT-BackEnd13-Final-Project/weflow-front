@@ -2,11 +2,21 @@ import { useRef, useState, useMemo, useCallback, type ChangeEvent } from "react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FileText, Link as LinkIcon, X } from "lucide-react";
-import { uploadAttachmentFile, createAttachmentLink, deleteAttachment } from "@/apis/attachments";
+import { Badge } from "@/components/ui/badge";
+import { FileText, Link as LinkIcon, X, Paperclip } from "lucide-react";
+import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
 import { useToast } from "@/hooks/use-toast";
 
-export type UploadedAttachment = { id: number; name: string; url?: string; isLink?: boolean };
+export type UploadedAttachment = {
+  id: number | string;
+  name: string;
+  url?: string;
+  isLink?: boolean;
+  fileName?: string;
+  fileSize?: number;
+  filePath?: string;
+  contentType?: string;
+};
 
 type TargetType = "STEP_REQUEST" | "STEP_REQUEST_ANSWER";
 
@@ -15,6 +25,8 @@ interface AttachmentInputProps {
   attachments: UploadedAttachment[];
   onChange: (items: UploadedAttachment[]) => void;
   label?: string;
+  linkLabel?: string;
+  linkButtonText?: string;
   disabled?: boolean;
   maxFiles?: number;
   maxFileSizeMB?: number;
@@ -28,7 +40,9 @@ export function AttachmentInput({
   targetType,
   attachments,
   onChange,
-  label = "첨부",
+  label = "파일 첨부",
+  linkLabel = "관련 링크",
+  linkButtonText = "추가",
   disabled = false,
   maxFiles = 10,
   maxFileSizeMB = 10,
@@ -75,8 +89,19 @@ export function AttachmentInput({
     try {
       const uploaded = await Promise.all(
         files.map(async (file) => {
-          const res = await uploadAttachmentFile(file, targetType);
-          return { id: res.data.id, name: res.data.fileName || file.name, url: res.data.url, isLink: false };
+          const key = `step/${targetType.toLowerCase()}/${Date.now()}_${file.name}`;
+          const presigned = await getPresignedUrl({ key, contentType: file.type || "application/octet-stream" });
+          await uploadFileToS3(presigned.url, file);
+          return {
+            id: presigned.key,
+            name: file.name,
+            url: presigned.url?.split("?")[0],
+            isLink: false,
+            fileName: file.name,
+            fileSize: file.size,
+            filePath: presigned.key,
+            contentType: file.type || "application/octet-stream",
+          };
         })
       );
       onChange([...attachments, ...uploaded]);
@@ -91,27 +116,21 @@ export function AttachmentInput({
   const handleAddLink = async () => {
     if (!controlsVisible || !linkInputRef.current || !linkInputRef.current.value.trim() || disabled) return;
     const urlValue = linkInputRef.current.value.trim();
-    setIsUploading(true);
-    try {
-      const res = await createAttachmentLink({ url: urlValue, targetType });
-      onChange([...attachments, { id: res.data.id, name: res.data.fileName || urlValue, url: res.data.url, isLink: true }]);
-      linkInputRef.current.value = "";
-    } catch (error: unknown) {
-      toast({ title: "링크 추가 실패", description: getErrorMessage(error), variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-    }
+    onChange([
+      ...attachments,
+      {
+        id: `link-${Date.now()}`,
+        name: urlValue,
+        url: urlValue,
+        isLink: true,
+      },
+    ]);
+    linkInputRef.current.value = "";
   };
 
   const handleRemove = async (index: number) => {
     if (!controlsVisible) return;
-    const target = attachments[index];
     onChange(attachments.filter((_, i) => i !== index));
-    try {
-      await deleteAttachment(target.id);
-    } catch (error: unknown) {
-      toast({ title: "첨부 삭제 실패", description: getErrorMessage(error), variant: "destructive" });
-    }
   };
 
   return (
@@ -129,7 +148,7 @@ export function AttachmentInput({
             disabled={disabled}
           />
           <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2" disabled={isUploading || disabled}>
-            <FileText className="h-4 w-4" />
+            <Paperclip className="h-4 w-4" />
             파일 선택
           </Button>
           <span className="text-sm text-muted-foreground">{fileCountText}</span>
@@ -138,11 +157,13 @@ export function AttachmentInput({
       )}
 
       {attachments.filter((a) => !a.isLink).length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2 mt-3">
           {attachments
             .filter((a) => !a.isLink)
             .map((file) => {
               const originalIndex = attachments.findIndex((item) => item.id === file.id);
+              const sizeLabel =
+                typeof file.fileSize === "number" ? `${(file.fileSize / 1024).toFixed(1)} KB` : undefined;
               return (
                 <div
                   key={`${file.id}-${file.name}`}
@@ -151,6 +172,11 @@ export function AttachmentInput({
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <FileText className="h-4 w-4 flex-shrink-0 text-blue-500" />
                     <span className="text-sm truncate">{file.name}</span>
+                    {sizeLabel && (
+                      <Badge variant="secondary" className="text-xs flex-shrink-0">
+                        {sizeLabel}
+                      </Badge>
+                    )}
                   </div>
                   {controlsVisible && (
                     <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => originalIndex >= 0 && handleRemove(originalIndex)}>
@@ -165,19 +191,23 @@ export function AttachmentInput({
 
       <div className="space-y-2">
         {controlsVisible && (
-          <div className="flex gap-2">
-            <Input ref={linkInputRef} placeholder="https:// 링크를 입력하세요" className="w-64" disabled={disabled} />
-            <Button type="button" variant="outline" onClick={handleAddLink} disabled={isUploading || disabled}>
-              링크 추가
-            </Button>
+          <div className="flex flex-col gap-2">
+            <Label className="text-sm text-foreground">{linkLabel}</Label>
+            <div className="flex gap-2">
+              <Input ref={linkInputRef} placeholder="https://example.com" className="w-64" disabled={disabled} />
+              <Button type="button" variant="outline" onClick={handleAddLink} disabled={isUploading || disabled}>
+                {linkButtonText}
+              </Button>
+            </div>
           </div>
         )}
         {attachments.filter((a) => a.isLink).length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 mt-3">
             {attachments
               .filter((a) => a.isLink)
               .map((link) => {
                 const originalIndex = attachments.findIndex((item) => item.id === link.id);
+                const href = link.url || link.name;
                 return (
                   <div
                     key={`${link.id}-${link.name}`}
@@ -185,7 +215,18 @@ export function AttachmentInput({
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <LinkIcon className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm truncate">{link.name}</span>
+                      {href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm underline-offset-2 hover:underline flex-1 min-w-0 truncate"
+                        >
+                          {link.name}
+                        </a>
+                      ) : (
+                        <span className="text-sm truncate">{link.name}</span>
+                      )}
                     </div>
                     {controlsVisible && (
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => originalIndex >= 0 && handleRemove(originalIndex)}>

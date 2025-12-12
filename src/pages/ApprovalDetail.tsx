@@ -9,14 +9,24 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, FileText, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { cancelStepRequest, getStepRequest, updateStepRequest } from "@/apis/stepRequest";
 import { getProjectSteps } from "@/apis/step";
 import { getFeedback, sendFeedback } from "@/apis/feedback";
 import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
-import { AttachmentResponse, FeedbackResponseType, StepRequestAnswerResponse, StepRequestResponse, StepResponse } from "@/lib/stepTypes";
+import { AttachmentList } from "@/components/attachments/AttachmentList";
+import {
+  AttachmentResponse,
+  FeedbackResponseType,
+  StepAttachmentFileInput,
+  StepAttachmentLinkInput,
+  StepRequestAnswerResponse,
+  StepApiResponse,
+  StepRequestResponse,
+  StepResponse,
+} from "@/lib/stepTypes";
 import { useToast } from "@/hooks/use-toast";
 import { getMyInfo, MeResponse } from "@/apis/user";
 import { stepRequestStatusMap } from "@/constants/stepRequestStatus";
@@ -34,6 +44,8 @@ export default function ApprovalDetail() {
   const [editDescription, setEditDescription] = useState("");
   const [editAttachments, setEditAttachments] = useState<UploadedAttachment[]>([]);
   const [decisionAttachments, setDecisionAttachments] = useState<UploadedAttachment[]>([]);
+  const [localStatus, setLocalStatus] = useState<StepRequestResponse["status"] | null>(null);
+  const [hasEditedAfterChangeRequest, setHasEditedAfterChangeRequest] = useState(false);
 
   const buildQueryString = (params: Record<string, string | null | undefined>) => {
     const searchParams = new URLSearchParams();
@@ -58,7 +70,11 @@ export default function ApprovalDetail() {
       ? `/approval-requests${buildQueryString({ status: statusQuery, page: pageQuery })}`
       : `/project/${projectId}/approvals${tab ? `?tab=${tab}` : ""}`;
   const requestId = Number(approvalId);
-  const { data: requestData, isLoading } = useQuery({
+  const {
+    data: requestData,
+    isLoading,
+    refetch: refetchRequestDetail,
+  } = useQuery({
     queryKey: ["step-request-detail", requestId],
     queryFn: () => getStepRequest(requestId),
     enabled: !!requestId,
@@ -76,7 +92,7 @@ export default function ApprovalDetail() {
   });
 
   const feedbackMutation = useMutation({
-    mutationFn: (payload: { response: FeedbackResponseType; reasonText?: string; attachmentIds?: number[] }) =>
+    mutationFn: (payload: { response: FeedbackResponseType; reasonText?: string; files?: StepAttachmentFileInput[]; links?: StepAttachmentLinkInput[] }) =>
       sendFeedback(requestId, payload),
     onSuccess: () => {
       toast({ title: "처리되었습니다." });
@@ -96,14 +112,21 @@ export default function ApprovalDetail() {
   });
 
   const updateRequestMutation = useMutation({
-    mutationFn: (payload: { title: string; description: string; attachmentIds?: number[]; links?: string[] }) =>
-      updateStepRequest(requestId, payload),
+    mutationFn: (
+      payload: Partial<Omit<StepRequestResponse, "files" | "links">> & {
+        files?: StepAttachmentFileInput[] | null;
+        links?: StepAttachmentLinkInput[] | null;
+      }
+    ) => updateStepRequest(requestId, payload),
     onSuccess: () => {
       toast({ title: "요청이 수정되었습니다." });
       queryClient.invalidateQueries({ queryKey: ["step-request-detail", requestId] });
       queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
       setShowEditDialog(false);
+      if (currentStatus === "CHANGE_REQUESTED") {
+        setHasEditedAfterChangeRequest(true);
+      }
     },
     onError: (error: unknown) =>
       toast({
@@ -117,6 +140,15 @@ export default function ApprovalDetail() {
     mutationFn: () => updateStepRequest(requestId, { status: "REQUESTED" }),
     onSuccess: () => {
       toast({ title: "다시 승인 요청을 보냈습니다." });
+      setLocalStatus("REQUESTED");
+      setHasEditedAfterChangeRequest(false);
+      queryClient.setQueryData(["step-request-detail", requestId], (prev) => {
+        if (!prev || typeof prev !== "object") return prev;
+        const casted = prev as StepApiResponse<StepRequestResponse>;
+        if (!casted?.data) return prev;
+        return { ...casted, data: { ...casted.data, status: "REQUESTED" } };
+      });
+      refetchRequestDetail();
       queryClient.invalidateQueries({ queryKey: ["step-request-detail", requestId] });
       queryClient.invalidateQueries({ queryKey: ["step-request-feedback", requestId] });
       queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId] });
@@ -148,6 +180,11 @@ export default function ApprovalDetail() {
   });
 
   const approval = requestData?.data;
+  const currentStatus = (localStatus ?? approval?.status ?? "REQUESTED") as StepRequestResponse["status"];
+  useEffect(() => {
+    setLocalStatus(null);
+    setHasEditedAfterChangeRequest(false);
+  }, [approval?.id]);
   const { data: feedbackData } = useQuery({
     queryKey: ["step-request-feedback", requestId],
     queryFn: () => getFeedback(requestId),
@@ -162,40 +199,90 @@ export default function ApprovalDetail() {
     if (Array.isArray(feedbackPayload)) return feedbackPayload[0];
     return feedbackPayload as StepRequestAnswerResponse | undefined;
   }, [feedbackData]);
+  const requestAttachmentItems = useMemo(
+    () => ([...(approval?.attachments ?? approval?.files ?? []), ...(approval?.links ?? [])] as (AttachmentResponse | string)[]),
+    [approval]
+  );
+  const decisionAttachmentItems = useMemo(
+    () => ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]),
+    [feedback]
+  );
+  const mapAttachmentToUploaded = (file: AttachmentResponse | string, index: number): UploadedAttachment => {
+    const attachmentType = typeof file === "string" ? "LINK" : (file as { attachmentType?: string }).attachmentType;
+    const pathValue = typeof file === "string" ? undefined : file?.filePath || file?.path;
+    const url = typeof file === "string" ? file : file?.url || pathValue;
+    const baseName = typeof file === "string" ? url : file?.fileName || file?.name || file?.originalName || pathValue || file?.url;
+    const isLink =
+      typeof file === "string" ||
+      attachmentType === "LINK" ||
+      Boolean((file as AttachmentResponse).isLink);
+    const resolvedName =
+      baseName ||
+      (isLink
+        ? (typeof file === "string" ? file : file?.url || file?.path || `링크 ${index + 1}`)
+        : (file as AttachmentResponse)?.fileName || `첨부 ${index + 1}`);
+    return {
+      id: typeof file === "string" ? `link-${index}` : file?.id ?? index,
+      name: resolvedName,
+      url: url ?? undefined,
+      isLink,
+      fileName: resolvedName || undefined,
+      fileSize: typeof file === "string" ? undefined : file?.fileSize,
+      filePath: isLink ? undefined : pathValue || url || undefined,
+      contentType: typeof file === "string" ? undefined : file?.contentType,
+    };
+  };
+  const buildAttachmentPayload = (
+    items: UploadedAttachment[]
+  ): { files?: StepAttachmentFileInput[]; links?: StepAttachmentLinkInput[] } => {
+    const files = items
+      .filter((a) => !a.isLink)
+      .map((a) => ({
+        fileName: a.fileName || a.name,
+        fileSize: a.fileSize ?? 0,
+        filePath: a.filePath || "",
+        contentType: a.contentType || "application/octet-stream",
+      }))
+      .filter((f) => f.fileName && f.filePath);
+    const links = items
+      .filter((a) => a.isLink)
+      .map((a) => {
+        const url = (a.url || a.name || "").trim();
+        return { url };
+      })
+      .filter((l) => Boolean(l.url));
+    return { files, links };
+  };
   const me = meData?.data as MeResponse | undefined;
 
   useEffect(() => {
     if (showEditDialog && approval) {
       setEditTitle(approval.title);
       setEditDescription(approval.description || "");
-      const requestAttachments = approval.attachments ?? approval.files ?? [];
-      const linkValues = approval.links ?? [];
-      const mapped: UploadedAttachment[] = [
-        ...requestAttachments.map((file, index) => {
-          const label = renderAttachmentLabel(file);
-          const href = typeof file === "string" ? file : file?.url || file?.path;
-          return {
-            id: typeof file === "string" ? -(index + 1) : file?.id ?? index,
-            name: label,
-            url: href,
-            isLink: Boolean(href),
-          };
-        }),
-        ...linkValues.map((link, index) => {
-          if (typeof link === "string") {
-            return { id: -(requestAttachments.length + index + 1), name: link, url: link, isLink: true };
-          }
-          return {
-            id: link?.id ?? -(requestAttachments.length + index + 1),
-            name: link?.fileName || link?.url || link?.path || `링크 ${index + 1}`,
-            url: link?.url || link?.path,
-            isLink: true,
-          };
-        }),
-      ];
+    const attachmentSources = [
+        ...(approval.attachments ?? approval.files ?? []),
+        ...(approval.links ?? []),
+      ] as (AttachmentResponse | string)[];
+      const seen = new Set<string>();
+      const mapped: UploadedAttachment[] = [];
+      attachmentSources.forEach((item, idx) => {
+        const mappedItem = mapAttachmentToUploaded(item, idx);
+        const key = mappedItem.isLink
+          ? `link-${mappedItem.url || mappedItem.name}`
+          : `file-${mappedItem.filePath || mappedItem.url || mappedItem.name}`;
+        if (!mappedItem.name || seen.has(key)) return;
+        seen.add(key);
+        mapped.push(mappedItem);
+      });
       setEditAttachments(mapped);
     }
   }, [showEditDialog, approval]);
+
+  useEffect(() => {
+    if (currentStatus !== "CHANGE_REQUESTED") {
+      setHasEditedAfterChangeRequest(false);
+    }
+  }, [currentStatus, approval?.id]);
 
   if (!approval) {
     return (
@@ -235,7 +322,7 @@ export default function ApprovalDetail() {
       toast({ title: "승인할 수 없는 상태입니다.", variant: "destructive" });
       return;
     }
-    feedbackMutation.mutate({ response: "APPROVE" });
+    openDecisionDialog("APPROVE");
   };
 
   const openDecisionDialog = (type: FeedbackResponseType) => {
@@ -245,17 +332,22 @@ export default function ApprovalDetail() {
     setShowRejectDialog(true);
   };
 
-  const handleDecision = () => {
+  const handleDecision = async () => {
     if (!isRequested) {
-      toast({ title: "처리할 수 없는 상태입니다.", variant: "destructive" });
-      return;
+      const refreshed = await refetchRequestDetail();
+      const refreshedStatus = refreshed.data?.data.status;
+      if (refreshedStatus !== "REQUESTED") {
+        toast({ title: "처리할 수 없는 상태입니다.", description: "요청 상태를 확인 후 다시 시도하세요.", variant: "destructive" });
+        return;
+      }
+      setLocalStatus("REQUESTED");
     }
     if ((decisionType === "REJECT" || decisionType === "CHANGE_REQUEST") && !rejectReason.trim()) {
       toast({ title: "사유를 입력해주세요.", variant: "destructive" });
       return;
     }
-    const attachmentIds = decisionAttachments.map((a) => a.id);
-    feedbackMutation.mutate({ response: decisionType, reasonText: rejectReason, attachmentIds: attachmentIds.length ? attachmentIds : undefined });
+    const { files, links } = buildAttachmentPayload(decisionAttachments);
+    feedbackMutation.mutate({ response: decisionType, reasonText: rejectReason, files, links });
   };
 
   const handleResubmit = () => {
@@ -266,17 +358,10 @@ export default function ApprovalDetail() {
     resubmitMutation.mutate();
   };
 
-  const renderAttachmentLabel = (file?: AttachmentResponse | string) => {
-    if (typeof file === "string") return file;
-    return file?.fileName || file?.name || file?.originalName || file?.url || (file?.id ? `파일 #${file.id}` : "첨부");
-  };
-
-  const isRequested = approval.status === "REQUESTED";
-  const isChangeRequested = approval.status === "CHANGE_REQUESTED";
+  const isRequested = currentStatus === "REQUESTED";
+  const isChangeRequested = currentStatus === "CHANGE_REQUESTED";
   const isRequestCancelable = isRequested;
   const isDecisionable = isRequested;
-  const attachments = approval?.files ?? approval?.attachments ?? [];
-  const links = approval?.links ?? (approval?.attachments ?? []);
   const statusLabelMap: Record<string, string> = {
     REQUESTED: stepRequestStatusMap.REQUESTED.label,
     APPROVED: stepRequestStatusMap.APPROVED.label,
@@ -307,32 +392,34 @@ export default function ApprovalDetail() {
   const isSystemAdmin = role === "SYSTEM_ADMIN";
   const isClient = role === "CLIENT";
   const isAgency = role === "AGENCY";
+  const isRequesterEditFlow = isChangeRequested && isRequester && !isSystemAdmin;
   const canDecide = isRequested && (isClient || isSystemAdmin);
   const canChangeRequest = isRequested && (isClient || isSystemAdmin);
-  const canEditRequested = isRequested && (isSystemAdmin || (isRequester && isAgency));
   const canResubmit = isChangeRequested && (isSystemAdmin || isRequester);
   const canCancel = isRequested && (isSystemAdmin || isRequester);
-  const showActions = canDecide || canChangeRequest || canEditRequested || canResubmit || canCancel;
+  const canRequesterEditChangeRequested = isRequesterEditFlow && !hasEditedAfterChangeRequest;
+  const canRequesterResubmit = isRequesterEditFlow && hasEditedAfterChangeRequest;
+  const showRequesterActions = canRequesterEditChangeRequested || canRequesterResubmit;
+  const showStandardActions = !isRequesterEditFlow && (canDecide || canChangeRequest || canResubmit || canCancel);
 
   const handleSubmitEdit = () => {
     if (!editTitle.trim()) {
       toast({ title: "제목을 입력하세요.", variant: "destructive" });
       return;
     }
+    const { files, links } = buildAttachmentPayload(editAttachments);
     updateRequestMutation.mutate({
       title: editTitle,
       description: editDescription,
-      attachmentIds: editAttachments.map((a) => a.id).filter((id) => typeof id === "number" && id > 0),
+      files,
+      links,
     });
   };
 
-  const isDecidedStatus = approval.status === "APPROVED" || approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED";
+  const isDecidedStatus = currentStatus === "APPROVED" || currentStatus === "REJECTED" || currentStatus === "CHANGE_REQUESTED";
   const decisionReason = approval.decisionReason || feedback?.reasonText || "";
-  const hasDecisionReason = (approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED") && Boolean(decisionReason?.trim());
-  const decisionDisplayAttachments = ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]);
-  const decisionFiles = decisionDisplayAttachments.filter((item) => !(item as AttachmentResponse).isLink);
-  const decisionLinks = decisionDisplayAttachments.filter((item) => (item as AttachmentResponse).isLink);
-  const hasDecisionAttachments = Array.isArray(decisionDisplayAttachments) && decisionDisplayAttachments.length > 0;
+  const hasDecisionReason = (currentStatus === "REJECTED" || currentStatus === "CHANGE_REQUESTED") && Boolean(decisionReason?.trim());
+  const hasDecisionAttachments = decisionAttachmentItems.length > 0;
   const decisionSectionTitle: Record<StepRequestResponse["status"], string> = {
     APPROVED: "승인 정보",
     REJECTED: "반려 정보",
@@ -383,7 +470,7 @@ export default function ApprovalDetail() {
           <CardHeader className="space-y-3 border-b">
             <div className="flex flex-wrap items-center gap-3">
               <CardTitle className="text-2xl">{approval.title}</CardTitle>
-              {getStatusBadge(approval.status)}
+              {getStatusBadge(currentStatus)}
             </div>
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               {phaseLabel ? (
@@ -410,41 +497,12 @@ export default function ApprovalDetail() {
             <Separator />
 
             <div className="space-y-3">
-              <Label className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                첨부파일
-              </Label>
-              <div className="space-y-2">
-                {attachments.length ? (
-                  attachments.map((file, index) => (
-                    <div key={index} className="flex items-center gap-2 p-3 border rounded-lg bg-background">
-                      <FileText className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm flex-1">{renderAttachmentLabel(file)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">첨부파일이 없습니다.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2">
-                <LinkIcon className="h-4 w-4" />
-                링크
-              </Label>
-              <div className="space-y-2">
-                {links.length ? (
-                  links.map((link, index) => (
-                    <div key={index} className="flex items-center gap-2 p-3 border rounded-lg bg-background">
-                      <LinkIcon className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm flex-1">{renderAttachmentLabel(link)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">링크가 없습니다.</p>
-                )}
-              </div>
+              <AttachmentList
+                items={requestAttachmentItems}
+                emptyText="첨부파일 / 링크가 없습니다."
+                fileLabel="첨부파일"
+                linkLabel="관련 링크"
+              />
             </div>
           </CardContent>
         </Card>
@@ -485,54 +543,12 @@ export default function ApprovalDetail() {
 
               {hasDecisionAttachments && (
                 <div className="space-y-2 pt-1">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">첨부파일 / 링크</p>
-                    <div className="space-y-2">
-                      {decisionFiles.map((file, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-blue-500" />
-                          {(() => {
-                            const label = renderAttachmentLabel(file);
-                            const href = typeof file === "string" ? file : file?.url || file?.path;
-                            if (href) {
-                              return (
-                                <a
-                                  className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                                  href={href}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {label}
-                                </a>
-                              );
-                            }
-                              return <span className="text-sm font-semibold break-words">{label}</span>;
-                          })()}
-                        </div>
-                      ))}
-                      {decisionLinks.map((link, index) => {
-                        const label = renderAttachmentLabel(link);
-                        const href = typeof link === "string" ? link : link?.url || link?.path;
-                        return (
-                          <div key={`link-${index}`} className="flex items-center gap-2">
-                            <LinkIcon className="h-4 w-4 text-blue-500" />
-                            {href ? (
-                              <a
-                                className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                                href={href}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {label}
-                              </a>
-                            ) : (
-                              <span className="text-sm font-semibold break-words">{label}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <AttachmentList
+                    items={decisionAttachmentItems}
+                    emptyText="첨부가 없습니다."
+                    fileLabel="파일 첨부"
+                    linkLabel="관련 링크"
+                  />
                 </div>
               )}
             </CardContent>
@@ -559,8 +575,30 @@ export default function ApprovalDetail() {
           </Card>
         )}
 
-        {/* 액션 버튼 (TODO: 권한 및 상태에 따라 표시) */}
-        {showActions && (
+        {/* 액션 버튼 (요청자 전용 규칙 반영) */}
+        {showRequesterActions ? (
+          <div className="flex gap-2 flex-wrap">
+            {canRequesterEditChangeRequested && (
+              <Button
+                onClick={() => setShowEditDialog(true)}
+                variant="secondary"
+                className="flex-1"
+                disabled={updateRequestMutation.isPending}
+              >
+                요청 내용 수정
+              </Button>
+            )}
+            {canRequesterResubmit && (
+              <Button
+                onClick={handleResubmit}
+                className="flex-1"
+                disabled={resubmitMutation.isPending}
+              >
+                {resubmitMutation.isPending ? "요청 중..." : "다시 승인 요청"}
+              </Button>
+            )}
+          </div>
+        ) : showStandardActions ? (
           <div className="flex gap-2 flex-wrap">
             {isRequested && (
               <>
@@ -569,8 +607,8 @@ export default function ApprovalDetail() {
                     <Button onClick={handleApprove} className="flex-1 bg-blue-500 hover:bg-blue-600" disabled={feedbackMutation.isPending}>
                       승인
                     </Button>
-                    <Button 
-                      onClick={() => openDecisionDialog("REJECT")} 
+                    <Button
+                      onClick={() => openDecisionDialog("REJECT")}
                       variant="destructive"
                       className="flex-1"
                       disabled={feedbackMutation.isPending}
@@ -587,16 +625,6 @@ export default function ApprovalDetail() {
                     disabled={feedbackMutation.isPending}
                   >
                     수정 요청
-                  </Button>
-                )}
-                {canEditRequested && (
-                  <Button
-                    onClick={() => setShowEditDialog(true)}
-                    variant="secondary"
-                    className="flex-1"
-                    disabled={updateRequestMutation.isPending}
-                  >
-                    요청 내용 수정
                   </Button>
                 )}
                 {canCancel && (
@@ -626,17 +654,19 @@ export default function ApprovalDetail() {
                 >
                   요청 내용 수정
                 </Button>
-                <Button
-                  onClick={handleResubmit}
-                  className="flex-1"
-                  disabled={resubmitMutation.isPending}
-                >
-                  {resubmitMutation.isPending ? "요청 중..." : "다시 승인 요청"}
-                </Button>
+                {!isChangeRequested || isSystemAdmin || hasEditedAfterChangeRequest ? (
+                  <Button
+                    onClick={handleResubmit}
+                    className="flex-1"
+                    disabled={resubmitMutation.isPending}
+                  >
+                    {resubmitMutation.isPending ? "요청 중..." : "다시 승인 요청"}
+                  </Button>
+                ) : null}
               </>
             )}
           </div>
-        )}
+        ) : null}
 
         {!isDecisionable && approval.status === "CANCELED" && (
           <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -649,14 +679,32 @@ export default function ApprovalDetail() {
       <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{decisionType === "CHANGE_REQUEST" ? "변경 요청" : "승인 반려"}</DialogTitle>
+            <DialogTitle>
+              {decisionType === "CHANGE_REQUEST"
+                ? "수정 요청"
+                : decisionType === "APPROVE"
+                  ? "승인"
+                  : "반려"}
+            </DialogTitle>
             <DialogDescription className="sr-only">결정 사유와 첨부를 입력하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{decisionType === "CHANGE_REQUEST" ? "변경 요청 사유" : "반려 사유"}</Label>
+              <Label>
+                {decisionType === "CHANGE_REQUEST"
+                  ? "수정 요청 사유"
+                  : decisionType === "APPROVE"
+                    ? "승인 메모 (선택)"
+                    : "반려 사유"}
+              </Label>
               <Textarea
-                placeholder={decisionType === "CHANGE_REQUEST" ? "무엇을 수정해야 하는지 구체적으로 작성해주세요." : "반려 사유를 입력해주세요."}
+                placeholder={
+                  decisionType === "CHANGE_REQUEST"
+                    ? "무엇을 수정해야 하는지 구체적으로 작성해주세요."
+                    : decisionType === "APPROVE"
+                      ? "승인 시 메모를 남길 수 있습니다. (선택)"
+                      : "반려 사유를 입력해주세요."
+                }
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 className="min-h-[120px]"
@@ -667,7 +715,9 @@ export default function ApprovalDetail() {
               targetType="STEP_REQUEST_ANSWER"
               attachments={decisionAttachments}
               onChange={setDecisionAttachments}
-              label="첨부파일 / 링크"
+              label="파일 첨부"
+              linkLabel="관련 링크"
+              linkButtonText="추가"
               disabled={feedbackMutation.isPending}
             />
           </div>
@@ -681,8 +731,24 @@ export default function ApprovalDetail() {
             >
               취소
             </Button>
-            <Button variant={decisionType === "CHANGE_REQUEST" ? "secondary" : "destructive"} onClick={handleDecision} disabled={feedbackMutation.isPending}>
-              {feedbackMutation.isPending ? "처리 중..." : decisionType === "CHANGE_REQUEST" ? "변경 요청" : "반려"}
+            <Button
+              variant={
+                decisionType === "CHANGE_REQUEST"
+                  ? "secondary"
+                  : decisionType === "APPROVE"
+                    ? "default"
+                    : "destructive"
+              }
+              onClick={handleDecision}
+              disabled={feedbackMutation.isPending}
+            >
+              {feedbackMutation.isPending
+                ? "처리 중..."
+                : decisionType === "CHANGE_REQUEST"
+                  ? "변경 요청"
+                  : decisionType === "APPROVE"
+                    ? "승인"
+                    : "반려"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -712,7 +778,9 @@ export default function ApprovalDetail() {
               targetType="STEP_REQUEST"
               attachments={editAttachments}
               onChange={setEditAttachments}
-              label="첨부파일 / 링크"
+              label="파일 첨부"
+              linkLabel="관련 링크"
+              linkButtonText="추가"
             />
           </div>
           <DialogFooter>

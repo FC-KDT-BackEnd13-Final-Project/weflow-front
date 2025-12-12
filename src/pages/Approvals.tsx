@@ -11,11 +11,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProjectSteps } from "@/apis/step";
+import { getProjectSteps, createStep, updateStep, deleteStep } from "@/apis/step";
 import { createStepRequest, getProjectStepRequests } from "@/apis/stepRequest";
-import { deleteAttachment } from "@/apis/attachments";
 import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
-import { StepResponse, StepRequestSummaryResponse } from "@/lib/stepTypes";
+import { StepResponse, StepRequestSummaryResponse, StepPhase } from "@/lib/stepTypes";
 import { useToast } from "@/hooks/use-toast";
 import { boardStatusLabels, boardStatusStyles } from "@/constants/boardStatus";
 import { stepRequestStatusMap } from "@/constants/stepRequestStatus";
@@ -26,10 +25,23 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { useUserStore } from "@/stores/user";
+import { Plus, MoreHorizontal } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+const getDefaultPhaseByTab = (tab: string): StepPhase => {
+  if (tab === "IN_PROGRESS") return "IN_PROGRESS";
+  if (tab === "DELIVERY") return "DELIVERY";
+  if (tab === "MAINTENANCE") return "MAINTENANCE";
+  return "CONTRACT";
+};
+const isRequestableStep = (step?: StepResponse) => Boolean(step && step.status !== "APPROVED" && step.status !== "CANCELED");
 
 export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const user = useUserStore((s) => s.user);
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -45,7 +57,15 @@ export default function Approvals() {
   const [requestTitle, setRequestTitle] = useState("");
   const [requestDescription, setRequestDescription] = useState("");
   const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
-  const attachmentIds = useMemo(() => uploadedAttachments.map((a) => a.id), [uploadedAttachments]);
+  const [isCreateStepDialogOpen, setIsCreateStepDialogOpen] = useState(false);
+  const [newStepPhase, setNewStepPhase] = useState<StepPhase>(() => getDefaultPhaseByTab(currentPhase));
+  const [newStepTitle, setNewStepTitle] = useState("");
+  const [newStepDescription, setNewStepDescription] = useState("");
+  const [isEditStepDialogOpen, setIsEditStepDialogOpen] = useState(false);
+  const [editingStepId, setEditingStepId] = useState<number | null>(null);
+  const [editingStepTitle, setEditingStepTitle] = useState("");
+  const [editingStepDescription, setEditingStepDescription] = useState("");
+  const [openMenuStepId, setOpenMenuStepId] = useState<number | null>(null);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
     queryKey: ["project-steps", projectId],
@@ -62,10 +82,12 @@ export default function Approvals() {
   const createRequestMutation = useMutation({
     mutationFn: () => {
       if (!selectedStepId) throw new Error("단계를 선택해주세요.");
+      const { files, links } = buildAttachmentPayload(uploadedAttachments);
       return createStepRequest(selectedStepId, {
         title: requestTitle,
         description: requestDescription,
-        attachmentIds: attachmentIds.length ? attachmentIds : undefined,
+        files,
+        links,
       });
     },
     onSuccess: () => {
@@ -81,7 +103,16 @@ export default function Approvals() {
       }),
   });
 
-  const steps = stepsData?.data.steps ?? [];
+  const steps = useMemo(() => {
+    const raw = stepsData?.data.steps ?? [];
+    if (!raw.length) return raw;
+    return [...raw].sort((a, b) => {
+      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.id - b.id;
+    });
+  }, [stepsData]);
   const {
     stepRequestSummaryResponses: stepRequestSummaries = [],
     totalCount = 0,
@@ -115,6 +146,17 @@ export default function Approvals() {
     return steps.filter(step => step.phase === currentPhase);
   }, [steps, currentPhase]);
 
+  const nextAvailableStepId = useMemo(() => {
+    if (!steps.length) return null;
+    for (let i = 0; i < steps.length; i += 1) {
+      const step = steps[i];
+      if (step.status === "APPROVED") continue;
+      const allPrevApproved = steps.slice(0, i).every((prev) => prev.status === "APPROVED");
+      if (allPrevApproved) return step.id;
+      break;
+    }
+    return null;
+  }, [steps]);
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
     const isComplete = status === "APPROVED";
     const labelKey = isComplete ? "complete" : "progress";
@@ -148,6 +190,16 @@ export default function Approvals() {
   };
 
   const openRequestDialog = (stepId: number) => {
+    const targetStep = steps.find((s) => s.id === stepId);
+    if (!targetStep || targetStep.status === "APPROVED" || targetStep.status === "CANCELED") {
+      toast({ title: "요청 생성 불가", description: "생성할 수 없는 단계입니다.", variant: "destructive" });
+      return;
+    }
+    const targetIsNext = nextAvailableStepId === stepId;
+    if (!targetIsNext) {
+      toast({ title: "요청 생성 불가", description: "이전 단계를 완료한 뒤 승인 요청을 생성할 수 있습니다.", variant: "destructive" });
+      return;
+    }
     setSelectedStepId(stepId);
     setRequestTitle("");
     setRequestDescription("");
@@ -164,15 +216,105 @@ export default function Approvals() {
       setUploadedAttachments([]);
     }
   };
-  const handleRemoveAttachment = async (index: number) => {
-    const target = uploadedAttachments[index];
-    setUploadedAttachments(prev => prev.filter((_, i) => i !== index));
-    try {
-      await deleteAttachment(target.id);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast({ title: "첨부 삭제 실패", description: message, variant: "destructive" });
-    }
+  const resetCreateStepDialog = () => {
+    setIsCreateStepDialogOpen(false);
+    setNewStepPhase(getDefaultPhaseByTab(currentPhase));
+    setNewStepTitle("");
+    setNewStepDescription("");
+  };
+  const resetEditStepDialog = () => {
+    setIsEditStepDialogOpen(false);
+    setEditingStepId(null);
+    setEditingStepTitle("");
+    setEditingStepDescription("");
+  };
+  const buildAttachmentPayload = (items: UploadedAttachment[]) => {
+    const files = items
+      .filter((a) => !a.isLink)
+      .map((a) => ({
+        fileName: a.fileName || a.name,
+        fileSize: a.fileSize ?? 0,
+        filePath: a.filePath || "",
+        contentType: a.contentType || "application/octet-stream",
+      }))
+      .filter((f) => f.fileName && f.filePath);
+    const links = items
+      .filter((a) => a.isLink)
+      .map((a) => {
+        const url = (a.url || a.name || "").trim();
+        return { url };
+      })
+      .filter((l) => Boolean(l.url));
+    return { files, links };
+  };
+
+  const createStepMutation = useMutation({
+    mutationFn: () =>
+      createStep(projectId, {
+        phase: newStepPhase,
+        title: newStepTitle,
+        description: newStepDescription || undefined,
+        orderIndex: null, // 백엔드가 phase 내 마지막에 배치
+      }),
+    onSuccess: () => {
+      toast({ title: "단계가 생성되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
+      resetCreateStepDialog();
+    },
+    onError: (error: unknown) =>
+      toast({
+        title: "단계 생성 실패",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
+  const updateStepMutation = useMutation({
+    mutationFn: () => {
+      if (!editingStepId) throw new Error("단계가 선택되지 않았습니다.");
+      return updateStep(editingStepId, {
+        title: editingStepTitle,
+        description: editingStepDescription || undefined,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "단계가 수정되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
+      resetEditStepDialog();
+    },
+    onError: (error: unknown) =>
+      toast({
+        title: "단계 수정 실패",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
+  const deleteStepMutation = useMutation({
+    mutationFn: (stepId: number) => deleteStep(stepId),
+    onSuccess: () => {
+      toast({ title: "단계가 삭제되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
+    },
+    onError: (error: unknown) =>
+      toast({
+        title: "단계 삭제 실패",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+
+  const userRole = (user?.role || "").toUpperCase();
+  const userType = (user as { userRole?: string } | undefined)?.userRole?.toUpperCase?.() || "";
+  const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
+  const canManageStep = userRole === "SYSTEM_ADMIN" || (projectRole === "ADMIN" && userType === "AGENCY");
+
+  const stepTooltipMessage = {
+    cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
+    cannotDeleteStatus: "진행 중인 단계는 삭제할 수 없습니다.",
+    cannotDeleteRequests: "승인요청이 있어 삭제할 수 없습니다.",
+    cannotDeleteChecklist: "체크리스트가 연결된 단계는 삭제할 수 없습니다.",
+    cannotDeletePosts: "관련 게시글이 있어 삭제할 수 없습니다.",
   };
 
   return (
@@ -183,6 +325,18 @@ export default function Approvals() {
             <h1 className="text-2xl font-bold text-foreground">단계별 승인 요청</h1>
             <p className="text-sm text-muted-foreground mt-1">프로젝트 단계별 승인 상태를 확인하세요</p>
           </div>
+          {canManageStep && (
+            <Button
+              onClick={() => {
+                setNewStepPhase(getDefaultPhaseByTab(currentPhase));
+                setIsCreateStepDialogOpen(true);
+              }}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              단계 생성
+            </Button>
+          )}
         </div>
 
         <div className="w-full flex flex-wrap gap-2 items-center">
@@ -217,22 +371,86 @@ export default function Approvals() {
             const status = stepStatusBadge(step.status, requests.length > 0);
             const phaseLabel = phaseLabelMap[step.phase] || step.phase || "단계";
             const isApproved = step.status === "APPROVED";
+            const isPending = step.status === "PENDING";
+            const isFirstStep = (step.orderIndex ?? 0) === 1;
+            const isNextAvailable = nextAvailableStepId === step.id;
+            const canShowCreateButton = isRequestableStep(step) && isNextAvailable;
+            const hasRequests = requests.length > 0;
+            const canEditStep = canManageStep && isPending;
+            const canDeleteStep = canManageStep && isPending && !hasRequests;
+            const deleteTooltip = !isPending
+              ? stepTooltipMessage.cannotDeleteStatus
+              : hasRequests
+                ? stepTooltipMessage.cannotDeleteRequests
+                : undefined;
             return (
               <Card
                 key={step.id}
-                className={cn(
-                  "flex flex-col",
-                  isApproved && "bg-gray-50 border-gray-200 hover:bg-gray-50"
-                )}
+                className={cn("flex flex-col", isApproved && "bg-gray-50 border-gray-200 hover:bg-gray-50")}
               >
-                <CardHeader className="border-b space-y-2">
-                  {currentPhase === "ALL" && (
-                    <div className="flex">
-                      <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground bg-muted/40">
-                        {phaseLabel}
-                      </span>
+                  <CardHeader className={cn("border-b space-y-2 py-2", !canManageStep && "pt-4")}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {currentPhase === "ALL" && (
+                        <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground bg-muted/40">
+                          {phaseLabel}
+                        </span>
+                      )}
                     </div>
-                  )}
+                    {canManageStep ? (
+                      <DropdownMenu
+                        open={openMenuStepId === step.id}
+                        onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-transparent">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    if (!canEditStep) return;
+                                    setEditingStepId(step.id);
+                                    setEditingStepTitle(step.title);
+                                    setEditingStepDescription(step.description || "");
+                                    setOpenMenuStepId(null);
+                                    setIsEditStepDialogOpen(true);
+                                  }}
+                                  className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
+                                >
+                                  단계 수정
+                                </DropdownMenuItem>
+                              </TooltipTrigger>
+                              {!canEditStep && <TooltipContent>{stepTooltipMessage.cannotEdit}</TooltipContent>}
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <DropdownMenuItem
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    if (!canDeleteStep) return;
+                                    if (window.confirm("단계를 삭제하시겠습니까?")) {
+                                      setOpenMenuStepId(null);
+                                      deleteStepMutation.mutate(step.id);
+                                    }
+                                  }}
+                                  className={cn(!canDeleteStep && "opacity-50 cursor-not-allowed")}
+                                >
+                                  단계 삭제
+                                </DropdownMenuItem>
+                              </TooltipTrigger>
+                              {!canDeleteStep && deleteTooltip && <TooltipContent>{deleteTooltip}</TooltipContent>}
+                            </Tooltip>
+                          </TooltipProvider>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </div>
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-lg">{step.title}</CardTitle>
                     <Badge className={cn(status.className, "pointer-events-none cursor-default")}>
@@ -275,17 +493,19 @@ export default function Approvals() {
                         );
                       })
                     ) : (
-                      !isApproved && (
-                        <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3">
-                          <div>승인 요청이 없습니다.</div>
+                      <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
+                        {/* <div>승인 요청이 없습니다.</div> */}
+                        {canShowCreateButton ? (
                           <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
                             승인 요청 생성
                           </Button>
-                        </div>
-                      )
+                        ) : (
+                          <div className="text-muted-foreground">이전 단계 완료 후 <br></br> 승인 요청이 가능합니다.</div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {!isApproved && requests.length > 0 && (
+                  {canShowCreateButton && requests.length > 0 && (
                     <Button
                       type="button"
                       variant="secondary"
@@ -295,9 +515,9 @@ export default function Approvals() {
                       승인 요청 생성
                     </Button>
                   )}
-                  {isApproved && requests.length === 0 && (
-                    <div className="w-full rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground text-center">
-                      완료된 단계에서는 추가 승인 요청을 생성할 수 없습니다.
+                  {!canShowCreateButton && !isApproved && requests.length > 0 && (
+                    <div className="w-full rounded-lg border border-dashed p-4 text-sm text-muted-foreground text-center flex items-center justify-center min-h-[140px]">
+                      이전 단계 완료 후 승인 요청이 가능합니다.
                     </div>
                   )}
                 </CardContent>
@@ -328,7 +548,7 @@ export default function Approvals() {
                     <SelectItem
                       key={step.id}
                       value={String(step.id)}
-                      disabled={step.status === "APPROVED"}
+                      disabled={!isRequestableStep(step) || nextAvailableStepId !== step.id}
                     >
                       {step.title} {step.status === "APPROVED" ? "(완료)" : ""}
                     </SelectItem>
@@ -348,7 +568,9 @@ export default function Approvals() {
               targetType="STEP_REQUEST"
               attachments={uploadedAttachments}
               onChange={setUploadedAttachments}
-              label="첨부파일 / 링크"
+              label="파일 첨부"
+              linkLabel="관련 링크"
+              linkButtonText="추가"
             />
           </div>
           <DialogFooter>
@@ -360,6 +582,88 @@ export default function Approvals() {
               disabled={!selectedStepId || !requestTitle || !requestDescription || createRequestMutation.isPending}
             >
               {createRequestMutation.isPending ? "작성 중..." : "작성 완료"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isEditStepDialogOpen} onOpenChange={setIsEditStepDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>단계 수정</DialogTitle>
+            <DialogDescription className="sr-only">단계 제목과 설명을 수정합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>단계명</Label>
+              <Input value={editingStepTitle} onChange={(e) => setEditingStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
+            </div>
+            <div className="space-y-2">
+              <Label>설명 (선택)</Label>
+              <Textarea
+                value={editingStepDescription}
+                onChange={(e) => setEditingStepDescription(e.target.value)}
+                className="min-h-[120px]"
+                placeholder="단계 설명을 입력하세요"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetEditStepDialog}>
+              취소
+            </Button>
+            <Button
+              onClick={() => updateStepMutation.mutate()}
+              disabled={!editingStepTitle.trim() || updateStepMutation.isPending}
+            >
+              {updateStepMutation.isPending ? "수정 중..." : "수정"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isCreateStepDialogOpen} onOpenChange={setIsCreateStepDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>단계 생성</DialogTitle>
+            <DialogDescription className="sr-only">새 단계를 생성합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>상위 단계</Label>
+              <Select value={newStepPhase} onValueChange={(value) => setNewStepPhase(value as StepPhase)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Phase를 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CONTRACT">계약</SelectItem>
+                  <SelectItem value="IN_PROGRESS">진행</SelectItem>
+                  <SelectItem value="DELIVERY">납품</SelectItem>
+                  <SelectItem value="MAINTENANCE">유지보수</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>단계명</Label>
+              <Input value={newStepTitle} onChange={(e) => setNewStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
+            </div>
+            <div className="space-y-2">
+              <Label>설명 (선택)</Label>
+              <Textarea
+                value={newStepDescription}
+                onChange={(e) => setNewStepDescription(e.target.value)}
+                className="min-h-[120px]"
+                placeholder="단계 설명을 입력하세요"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={resetCreateStepDialog}>
+              취소
+            </Button>
+            <Button
+              onClick={() => createStepMutation.mutate()}
+              disabled={!newStepTitle.trim() || createStepMutation.isPending}
+            >
+              {createStepMutation.isPending ? "생성 중..." : "생성"}
             </Button>
           </DialogFooter>
         </DialogContent>

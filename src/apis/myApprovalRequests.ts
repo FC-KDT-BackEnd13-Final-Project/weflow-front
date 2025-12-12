@@ -8,12 +8,20 @@ export async function getMyApprovalRequests(params: {
   status?: MyApprovalStatus;
   page?: number;
   size?: number;
+  projectId?: number;
+  pendingOnly?: boolean;
 }): Promise<StepApiResponse<StepRequestListResponse>> {
   try {
-    const { status = "ALL", page = 0, size = 20 } = params;
-    const requestParams: Record<string, number | StepRequestStatus> = { page, size };
+    const { status = "ALL", page = 0, size = 20, projectId, pendingOnly } = params;
+    const requestParams: Record<string, number | StepRequestStatus | boolean> = { page, size };
     if (status && status !== "ALL") {
       requestParams.status = status;
+    }
+    if (projectId) {
+      requestParams.projectId = projectId;
+    }
+    if (pendingOnly) {
+      requestParams.pendingOnly = true;
     }
 
     const response = await api.get<StepApiResponse<StepRequestListResponse>>("/api/requests/my", {

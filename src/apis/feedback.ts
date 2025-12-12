@@ -1,10 +1,10 @@
 import api from "@/apis/api";
 import { unwrapApiResponse, buildApiErrorMessage } from "@/lib/apiUtils";
-import { FeedbackResponseType, StepApiResponse, StepRequestAnswerResponse } from "@/lib/stepTypes";
+import { FeedbackResponseType, StepApiResponse, StepRequestAnswerResponse, StepAttachmentFileInput, StepAttachmentLinkInput } from "@/lib/stepTypes";
 
 export async function sendFeedback(
   requestId: number,
-  body: { response: FeedbackResponseType; reasonText?: string; attachmentIds?: number[] }
+  body: { response: FeedbackResponseType; reasonText?: string; files?: StepAttachmentFileInput[]; links?: StepAttachmentLinkInput[] }
 ): Promise<StepApiResponse<StepRequestAnswerResponse>> {
   try {
     const response = await api.post<StepApiResponse<StepRequestAnswerResponse>>(`/api/requests/${requestId}/feedback`, body);

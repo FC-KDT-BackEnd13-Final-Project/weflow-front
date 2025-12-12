@@ -1,0 +1,132 @@
+import { cn } from "@/lib/utils";
+import { AttachmentResponse } from "@/lib/stepTypes";
+import { Button } from "@/components/ui/button";
+import { Download, Link2, Paperclip } from "lucide-react";
+
+type AttachmentInputItem = AttachmentResponse | string;
+
+interface AttachmentListProps {
+  items: AttachmentInputItem[];
+  emptyText?: string;
+  fileLabel?: string;
+  linkLabel?: string;
+  className?: string;
+}
+
+const formatFileSize = (size?: number) => {
+  if (!size || Number.isNaN(size)) return null;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${size} B`;
+};
+
+const normalizeAttachments = (items: AttachmentInputItem[]) => {
+  const seen = new Set<string>();
+  const mapped = items
+    .map((item, idx) => {
+      const attachmentType = typeof item === "string" ? "LINK" : (item as { attachmentType?: string }).attachmentType;
+      const pathValue = typeof item === "string" ? undefined : item?.filePath || item?.path;
+      const url = typeof item === "string" ? item : item?.url || pathValue;
+      const baseName = typeof item === "string" ? url : item?.fileName || item?.name || item?.originalName || pathValue || item?.url;
+      const isLinkType = attachmentType === "LINK" || Boolean((item as AttachmentResponse).isLink) || Boolean((item as AttachmentResponse).link);
+      const isLink =
+        typeof item === "string" ||
+        isLinkType;
+      const id = typeof item === "string" ? `link-${idx}` : item?.id ?? `${attachmentType ?? "att"}-${idx}`;
+      const key = isLink ? `link-${url || baseName}` : `file-${pathValue || url || baseName}`;
+      const size = typeof item === "string" ? undefined : (item as AttachmentResponse)?.fileSize ?? (item as { size?: number }).size;
+      if (!baseName || seen.has(key)) return null;
+      seen.add(key);
+      return {
+        id,
+        name: baseName,
+        url: url ?? undefined,
+        isLink,
+        size,
+      };
+    })
+    .filter(Boolean) as { id: string | number; name: string; url?: string; isLink: boolean; size?: number }[];
+
+  return {
+    files: mapped.filter((m) => !m.isLink),
+    links: mapped.filter((m) => m.isLink),
+    hasAny: mapped.length > 0,
+  };
+};
+
+export function AttachmentList({
+  items,
+  emptyText = "첨부가 없습니다.",
+  fileLabel = "첨부파일",
+  linkLabel = "관련 링크",
+  className,
+}: AttachmentListProps) {
+  const { files, links, hasAny } = normalizeAttachments(items);
+
+  if (!hasAny) {
+    return <p className={cn("text-sm text-muted-foreground", className)}>{emptyText}</p>;
+  }
+
+  return (
+    <div className={cn("space-y-4", className)}>
+      {!!files.length && (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+            <Paperclip className="h-4 w-4" />
+            {fileLabel}
+          </p>
+          <div className="space-y-2">
+            {files.map((file) => {
+              const sizeText = formatFileSize(file.size);
+              const href = file.url;
+              return (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between rounded-lg border bg-background px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium break-all">{file.name}</p>
+                      {sizeText && <p className="text-xs text-muted-foreground">{sizeText}</p>}
+                    </div>
+                  </div>
+                  {href ? (
+                    <Button variant="ghost" size="icon" asChild>
+                      <a href={href} target="_blank" rel="noreferrer" download>
+                        <Download className="h-4 w-4" />
+                        <span className="sr-only">다운로드</span>
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {!!links.length && (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+            <Link2 className="h-4 w-4" />
+            {linkLabel}
+          </p>
+          <div className="space-y-2">
+            {links.map((link) => (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+              >
+                <div className="font-medium break-all line-clamp-2">{link.name}</div>
+                {link.url && <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
