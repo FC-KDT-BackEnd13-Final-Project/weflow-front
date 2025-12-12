@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,21 +9,44 @@ import { useQuery } from "@tanstack/react-query";
 import { getMyApprovalRequests, type MyApprovalStatus } from "@/apis/myApprovalRequests";
 import { StepRequestSummaryResponse } from "@/lib/stepTypes";
 import { stepRequestStatusMap } from "@/constants/stepRequestStatus";
+import { Checkbox } from "@/components/ui/checkbox";
+import { getMyInfo, MeResponse } from "@/apis/user";
+import { fetchMyProjects, type ProjectSummaryResponse } from "@/apis/projects";
+import { fetchAdminProjects } from "@/apis/adminProjects";
 
 export default function ApprovalRequests() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status") ?? "ALL";
+  const projectParam = searchParams.get("projectId") ?? "ALL";
+  const pendingParam = searchParams.get("pending") === "true";
   const statusFilter = (["ALL", "REQUESTED", "APPROVED", "REJECTED", "CHANGE_REQUESTED", "CANCELED"].includes(statusParam)
     ? statusParam
     : "ALL") as MyApprovalStatus;
   const pageParam = Number(searchParams.get("page") ?? 0);
   const page = Number.isFinite(pageParam) && pageParam >= 0 ? pageParam : 0;
   const pageSize = 20;
+  const [projectFilter, setProjectFilter] = useState<string>(projectParam);
+  const [pendingOnly, setPendingOnly] = useState<boolean>(pendingParam);
+  const [savedStatus, setSavedStatus] = useState<MyApprovalStatus>(statusFilter);
+  const [projectOptions, setProjectOptions] = useState<{ value: string; label: string }[]>([]);
+
+  const { data: meData } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMyInfo,
+  });
+  const role = ((meData?.data as MeResponse | undefined)?.role || "").toUpperCase();
 
   const { data, isLoading, isError, isFetching } = useQuery({
-    queryKey: ["myApprovalRequests", statusFilter, page],
-    queryFn: () => getMyApprovalRequests({ status: statusFilter as MyApprovalStatus, page, size: pageSize }),
+    queryKey: ["myApprovalRequests", statusFilter, page, projectFilter, pendingOnly],
+    queryFn: () =>
+      getMyApprovalRequests({
+        status: pendingOnly ? undefined : (statusFilter as MyApprovalStatus),
+        page,
+        size: pageSize,
+        projectId: projectFilter !== "ALL" ? Number(projectFilter) : undefined,
+        pendingOnly,
+      }),
   });
 
   const requests = useMemo(() => data?.data.stepRequestSummaryResponses ?? [], [data]);
@@ -33,8 +56,25 @@ export default function ApprovalRequests() {
   const totalPages = Math.max(1, Math.ceil(totalCount / (size || pageSize)));
 
   const filteredRequests = useMemo(() => {
-    return requests.filter((request) => statusFilter === "ALL" || request.status === statusFilter);
-  }, [requests, statusFilter]);
+    let next = requests;
+
+    // 프로젝트 필터 (클라이언트 단에도 적용)
+    if (projectFilter !== "ALL") {
+      next = next.filter((request) => {
+        const pid = (request as { projectId?: number }).projectId;
+        return pid && String(pid) === projectFilter;
+      });
+    }
+
+    // 상태/미처리 필터
+    if (pendingOnly) {
+      next = next.filter((request) => request.status === "REQUESTED" || request.status === "CHANGE_REQUESTED");
+    } else if (statusFilter !== "ALL") {
+      next = next.filter((request) => request.status === statusFilter);
+    }
+
+    return next;
+  }, [requests, statusFilter, pendingOnly, projectFilter]);
 
   const phaseLabelMap: Record<string, string> = {
     PLANNING: "기획",
@@ -58,6 +98,46 @@ export default function ApprovalRequests() {
     return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
+  useEffect(() => {
+    if (projectParam) return;
+    const defaultProject = "ALL";
+    setProjectFilter(defaultProject);
+    setSearchParams({
+      status: statusFilter,
+      page: "0",
+      projectId: defaultProject,
+      pending: pendingOnly ? "true" : "false",
+    });
+  }, [projectParam, statusFilter, setSearchParams, pendingOnly]);
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const isAdmin = role === "SYSTEM_ADMIN";
+        if (isAdmin) {
+          const res = await fetchAdminProjects({ size: 500 });
+          const opts = (res.projects ?? []).map((p) => ({
+            value: String(p.id),
+            label: p.name,
+          }));
+          setProjectOptions(opts);
+        } else {
+          const res = await fetchMyProjects();
+          const opts = (res.projects ?? []).map((p: ProjectSummaryResponse) => ({
+            value: String(p.projectId),
+            label: p.name,
+          }));
+          setProjectOptions(opts);
+        }
+      } catch (error) {
+        console.error("프로젝트 목록 조회 실패", error);
+      }
+    };
+    fetchProjects();
+  }, [role]);
+
+  const primaryProjectLabel = role === "SYSTEM_ADMIN" ? "전체 프로젝트" : "내 프로젝트 전체";
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -68,24 +148,75 @@ export default function ApprovalRequests() {
         <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <CardTitle>최근 요청</CardTitle>
-              <Select
-                value={statusFilter}
-                onValueChange={(value) => {
-                  const nextStatus = value as MyApprovalStatus;
-                  setSearchParams({ status: nextStatus, page: "0" });
-                }}
-              >
-              <SelectTrigger className="w-full md:w-[220px]">
-                <SelectValue placeholder="상태 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">전체</SelectItem>
-                <SelectItem value="REQUESTED">승인 대기</SelectItem>
-                <SelectItem value="APPROVED">승인 완료</SelectItem>
-                <SelectItem value="REJECTED">반려</SelectItem>
-              </SelectContent>
-            </Select>
-          </CardHeader>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3 w-full md:w-auto">
+                <Select
+                  value={projectFilter}
+                  onValueChange={(value) => {
+                    setProjectFilter(value);
+                    setSearchParams({
+                      status: statusFilter,
+                      projectId: value,
+                      page: "0",
+                      pending: pendingOnly ? "true" : "false",
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full md:w-[220px]">
+                    <SelectValue placeholder="프로젝트 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{primaryProjectLabel}</SelectItem>
+                    {projectOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    const nextStatus = value as MyApprovalStatus;
+                    setSearchParams({
+                      status: nextStatus,
+                      projectId: projectFilter,
+                      page: "0",
+                      pending: pendingOnly ? "true" : "false",
+                    });
+                  }}
+                >
+                  <SelectTrigger className="w-full md:w-[180px]">
+                    <SelectValue placeholder="상태 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">전체</SelectItem>
+                    <SelectItem value="REQUESTED">승인 요청</SelectItem>
+                    <SelectItem value="CHANGE_REQUESTED">수정 요청</SelectItem>
+                    <SelectItem value="APPROVED">승인 완료</SelectItem>
+                    <SelectItem value="REJECTED">반려</SelectItem>
+                    <SelectItem value="CANCELED">요청 취소</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={pendingOnly}
+                    onCheckedChange={(checked) => {
+                      const next = Boolean(checked);
+                      setPendingOnly(next);
+                      setSearchParams({
+                        status: statusFilter,
+                        projectId: projectFilter,
+                        page: "0",
+                        pending: next ? "true" : "false",
+                      });
+                    }}
+                  />
+                  미처리만
+                </label>
+              </div>
+            </CardHeader>
           <CardContent className="space-y-4">
             {isLoading || isFetching ? (
               <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">

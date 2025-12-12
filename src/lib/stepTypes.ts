@@ -76,6 +76,8 @@ export interface StepRequestSummaryResponse {
   decidedAt?: string;
   stepId: number;
   stepTitle?: string;
+  projectId?: number;
+  projectName?: string;
   requestedBy?: number;
   requestedByName?: string;
   hasAttachment?: boolean;
