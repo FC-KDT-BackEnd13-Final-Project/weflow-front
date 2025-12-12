@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { AttachmentResponse } from "@/lib/stepTypes";
-import { FileText, Link as LinkIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Download, Link2, Paperclip } from "lucide-react";
 
 type AttachmentInputItem = AttachmentResponse | string;
 
@@ -11,6 +12,13 @@ interface AttachmentListProps {
   linkLabel?: string;
   className?: string;
 }
+
+const formatFileSize = (size?: number) => {
+  if (!size || Number.isNaN(size)) return null;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${size} B`;
+};
 
 const normalizeAttachments = (items: AttachmentInputItem[]) => {
   const seen = new Set<string>();
@@ -26,6 +34,7 @@ const normalizeAttachments = (items: AttachmentInputItem[]) => {
         isLinkType;
       const id = typeof item === "string" ? `link-${idx}` : item?.id ?? `${attachmentType ?? "att"}-${idx}`;
       const key = isLink ? `link-${url || baseName}` : `file-${pathValue || url || baseName}`;
+      const size = typeof item === "string" ? undefined : (item as AttachmentResponse)?.fileSize ?? (item as { size?: number }).size;
       if (!baseName || seen.has(key)) return null;
       seen.add(key);
       return {
@@ -33,9 +42,10 @@ const normalizeAttachments = (items: AttachmentInputItem[]) => {
         name: baseName,
         url: url ?? undefined,
         isLink,
+        size,
       };
     })
-    .filter(Boolean) as { id: string | number; name: string; url?: string; isLink: boolean }[];
+    .filter(Boolean) as { id: string | number; name: string; url?: string; isLink: boolean; size?: number }[];
 
   return {
     files: mapped.filter((m) => !m.isLink),
@@ -58,51 +68,61 @@ export function AttachmentList({
   }
 
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-4", className)}>
       {!!files.length && (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">{fileLabel}</p>
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+            <Paperclip className="h-4 w-4" />
+            {fileLabel}
+          </p>
           <div className="space-y-2">
-            {files.map((file) => (
-              <div key={file.id} className="flex items-center gap-2 p-3 border rounded-lg bg-background">
-                <FileText className="h-4 w-4 text-blue-500" />
-                {file.url ? (
-                  <a
-                    className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                    href={file.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {file.name}
-                  </a>
-                ) : (
-                  <span className="text-sm flex-1">{file.name}</span>
-                )}
-              </div>
-            ))}
+            {files.map((file) => {
+              const sizeText = formatFileSize(file.size);
+              const href = file.url;
+              return (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between rounded-lg border bg-background px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium break-all">{file.name}</p>
+                      {sizeText && <p className="text-xs text-muted-foreground">{sizeText}</p>}
+                    </div>
+                  </div>
+                  {href ? (
+                    <Button variant="ghost" size="icon" asChild>
+                      <a href={href} target="_blank" rel="noreferrer" download>
+                        <Download className="h-4 w-4" />
+                        <span className="sr-only">다운로드</span>
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
       {!!links.length && (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">{linkLabel}</p>
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+            <Link2 className="h-4 w-4" />
+            {linkLabel}
+          </p>
           <div className="space-y-2">
             {links.map((link) => (
-              <div key={link.id} className="flex items-center gap-2 p-3 border rounded-lg bg-background">
-                <LinkIcon className="h-4 w-4 text-blue-500" />
-                {link.url ? (
-                  <a
-                    className="text-sm font-semibold text-blue-600 hover:underline break-all"
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {link.name}
-                  </a>
-                ) : (
-                  <span className="text-sm flex-1">{link.name}</span>
-                )}
-              </div>
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+              >
+                <div className="font-medium break-all line-clamp-2">{link.name}</div>
+                {link.url && <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>}
+              </a>
             ))}
           </div>
         </div>
