@@ -327,7 +327,8 @@ export default function Dashboard() {
     }
   };
 
-  const handleDeleteNotification = async (notification: DashboardNotification) => {
+  const handleDeleteNotification = async (event: React.MouseEvent, notification: DashboardNotification) => {
+    event.stopPropagation();
     setNotificationMutating(notification.id, true);
     try {
       await api.delete(`/api/notifications/${notification.id}`);
@@ -537,10 +538,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleDeleteNotification(notice);
-                          }}
+                          onClick={(event) => handleDeleteNotification(event, notice)}
                           disabled={isNotificationMutating(notice.id)}
                           aria-label="알림 삭제"
                         >

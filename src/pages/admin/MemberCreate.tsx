@@ -261,7 +261,7 @@ const AdminMemberCreate = () => {
                     className="bg-muted"
                   />
                   <p className="text-xs text-muted-foreground">
-                    회원이 첫 로그인 시 사용할 비밀번호입니다.
+                    ℹ️ 회원이 첫 로그인 시 사용할 비밀번호입니다.
                   </p>
                 </div>
 

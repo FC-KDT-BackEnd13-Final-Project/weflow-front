@@ -49,6 +49,7 @@ const AdminMemberDetail = () => {
 
   const [formData, setFormData] = useState({
     name: "",
+    phoneNumber: "",
     email: "",
     role: "",
     status: "",
@@ -71,6 +72,7 @@ const AdminMemberDetail = () => {
           const member = location.state.member;
           setFormData({
             name: member.name || "",
+            phoneNumber: member.phoneNumber || "",
             email: member.email || "",
             role: member.role || "",
             status: member.status || "",
@@ -84,6 +86,7 @@ const AdminMemberDetail = () => {
               const member = userResponse.data;
               setFormData({
                 name: member.name || "",
+                phoneNumber: member.phoneNumber || "",
                 email: member.email || "",
                 role: member.role || "",
                 status: member.status || "",
@@ -270,6 +273,7 @@ const AdminMemberDetail = () => {
     try {
       const response = await adminApi.updateUser(parseInt(id), {
         name: formData.name,
+        phoneNumber: formData.phoneNumber,
         role: formData.role,
         status: formData.status,
         companyId: parseInt(formData.companyId),
@@ -336,6 +340,17 @@ const AdminMemberDetail = () => {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="phoneNumber">전화번호</Label>
+              <Input
+                id="phoneNumber"
+                placeholder="전화번호 입력"
+                value={formData.phoneNumber}
+                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                disabled={isDeleted}
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="email">이메일</Label>
               <Input
                 id="email"
@@ -345,7 +360,7 @@ const AdminMemberDetail = () => {
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground">
-                이메일은 수정할 수 없습니다.
+                  ℹ️ 이메일은 수정할 수 없습니다.
               </p>
             </div>
 
@@ -395,7 +410,7 @@ const AdminMemberDetail = () => {
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground">
-                상태 수정은 하단의 [삭제] 혹은 [복구] 버튼을 이용하세요.
+                  ℹ️ 상태 수정은 하단의 [삭제] 혹은 [복구] 버튼을 이용하세요.
               </p>
             </div>
 

@@ -29,9 +29,13 @@ const BulkMemberUpload = () => {
   // CSV 전체에 적용되는 공통 값
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
+  const [password, setPassword] = useState("");
 
   // 회사 목록
   const [companies, setCompanies] = useState<any[]>([]);
+
+  // 드래그 상태
+  const [isDragging, setIsDragging] = useState(false);
 
   // Fetch companies
   useEffect(() => {
@@ -58,49 +62,163 @@ const BulkMemberUpload = () => {
     }
   }, [company, companies]);
 
-  // CSV 업로드 핸들러
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.length) return;
-
-    const file = e.target.files[0];
+  // 파일 처리 공통 함수
+  const processFile = (file: File) => {
     setCsvFile(file);
 
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (result) => {
+      complete: async (result) => {
         const rows = result.data as any[];
 
-        const formatted = rows.map((row) => ({
-          name: row["이름"] || "",
-          phone: row["전화번호"] || "",
-          email: row["이메일"] || "",
-          status:
-            row["이름"] && row["이메일"] && row["전화번호"]
-              ? "준비됨"
-              : "누락된 필드 있음",
-        }));
+        // 1. 이메일 목록 추출 (유효한 이메일만)
+        const emailsToCheck = rows
+          .map((row) => row["이메일"])
+          .filter((email) => email && email.trim() !== "");
+
+        let duplicates: string[] = [];
+        if (emailsToCheck.length > 0) {
+          try {
+            duplicates = await adminApi.checkDuplicateEmails(emailsToCheck);
+          } catch (error) {
+            console.error("이메일 중복 체크 실패:", error);
+            toast({
+              title: "중복 체크 실패",
+              description: "서버 연결 상태를 확인해주세요.",
+              variant: "destructive",
+            });
+          }
+        }
+
+        const formatted = rows.map((row) => {
+          const email = row["이메일"] || "";
+          const name = row["이름"] || "";
+          let status = "";
+
+          if (!name || !email) {
+            status = "누락된 필드 있음";
+          } else if (duplicates.includes(email)) {
+            status = "이미 가입된 이메일";
+          } else {
+            status = "준비됨";
+          }
+
+          return {
+            name: name,
+            phone: row["전화번호"] || "",
+            email: email,
+            status: status,
+          };
+        });
 
         setParsedData(formatted);
       },
     });
   };
 
+  // CSV 업로드 핸들러 (Input)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    processFile(e.target.files[0]);
+  };
+
+  // 드래그 핸들러
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
+        toast({ title: "CSV 파일만 업로드 가능합니다.", variant: "destructive" });
+        return;
+      }
+      processFile(file);
+    }
+  };
+
+  // 취소 핸들러
+  const handleCancel = () => {
+    setCsvFile(null);
+    setParsedData([]);
+    setCompany("");
+    setRole("");
+    setPassword("");
+    toast({
+      title: "취소되었습니다",
+      description: "입력한 내용이 모두 초기화되었습니다.",
+    });
+  };
+
   // 최종 등록 API 호출
-  const handleRegister = () => {
+  const handleRegister = async () => {
     const invalid = parsedData.some((u) => u.status !== "준비됨");
 
-    if (!company || !role)
-      return toast({ title: "회사와 회원 종류를 선택하세요.", variant: "destructive" });
+    if (!company)
+      return toast({ title: "회사를 선택하세요.", variant: "destructive" });
+
+    if (!password || password.trim().length === 0)
+      return toast({ title: "임시 비밀번호를 입력하세요.", variant: "destructive" });
 
     if (invalid)
       return toast({ title: "입력 오류가 있는 행이 있습니다.", variant: "destructive" });
 
-    // 서버 API 전송 로직
-    toast({
-      title: "일괄 등록 완료",
-      description: `${parsedData.length}명의 회원이 등록되었습니다.`,
-    });
+    if (!csvFile)
+      return toast({ title: "CSV 파일을 업로드하세요.", variant: "destructive" });
+
+    try {
+      const response = await adminApi.createUsersBatchFromCsv(
+        csvFile,
+        Number(company),
+        password
+      );
+
+      if (response.success) {
+        const { totalCount, successCount, failureCount, failures } = response.data;
+
+        if (failureCount > 0) {
+          // Partial Success
+          toast({
+            title: `일괄 등록 결과`,
+            description: `성공: ${successCount}명, 실패: ${failureCount}명`,
+            variant: "default",
+          });
+          console.log("실패 목록:", failures);
+        } else {
+          // Full Success
+          toast({
+            title: "일괄 등록 완료",
+            description: `${successCount}명의 회원이 등록되었습니다.`,
+          });
+        }
+
+        // 성공 후 초기화
+        setCsvFile(null);
+        setParsedData([]);
+        setPassword("");
+      }
+    } catch (error: any) {
+      console.error("일괄 등록 실패:", error);
+      toast({
+        title: "일괄 등록 실패",
+        description: error.response?.data?.message || "서버 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -143,6 +261,20 @@ const BulkMemberUpload = () => {
             </p>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="password">임시 비밀번호</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="전체 회원에게 적용될 임시 비밀번호"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              ℹ️ 모든 회원에게 동일한 임시 비밀번호가 적용되며, 첫 로그인 시 변경해야 합니다.
+            </p>
+          </div>
+
         </CardContent>
       </Card>
 
@@ -151,14 +283,26 @@ const BulkMemberUpload = () => {
         <CardContent className="py-8">
 
           {!csvFile ? (
-            <div className="border-2 border-dashed rounded-lg p-12 text-center bg-muted/30 cursor-pointer">
+            <label
+              htmlFor="csv-upload"
+              className={`block border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                isDragging ? "border-primary bg-primary/10" : "bg-muted/30 hover:bg-muted/50"
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <input id="csv-upload" type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-              <label htmlFor="csv-upload" className="flex flex-col items-center gap-4 cursor-pointer">
-                <Upload className="h-12 w-12 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">csv 파일을 업로드하세요.</p>
-                <Button variant="secondary">파일 업로드</Button>
-              </label>
-            </div>
+              <div className="flex flex-col items-center gap-4">
+                <Upload className={`h-12 w-12 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
+                <p className={`text-sm ${isDragging ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                  {isDragging ? "파일을 여기에 놓으세요!" : "csv 파일을 업로드하세요."}
+                </p>
+                <Button variant={isDragging ? "default" : "secondary"} asChild>
+                  <div>파일 업로드</div>
+                </Button>
+              </div>
+            </label>
           ) : (
             <p className="text-sm">📎 {csvFile.name}</p>
           )}
@@ -201,8 +345,9 @@ const BulkMemberUpload = () => {
 
             {/* 안내 */}
             <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground space-y-1">
-              <p>※ CSV 파일은 '이름, 전화번호, 이메일' 열이 필요합니다.</p>
+              <p>※ CSV 파일은 '이름, 이메일, 전화번호' 열이 필요합니다. (전화번호는 선택사항)</p>
               <p>※ 회원 종류와 소속 회사는 전체에 일괄 적용됩니다.</p>
+              <p>※ 모든 회원에게 동일한 임시 비밀번호가 적용됩니다.</p>
             </div>
 
           </CardContent>
@@ -210,7 +355,10 @@ const BulkMemberUpload = () => {
       )}
 
       {/* 버튼 */}
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={handleCancel}>
+          취소
+        </Button>
         <Button disabled={!csvFile} onClick={handleRegister}>
           일괄 등록
         </Button>

@@ -275,4 +275,27 @@ export const adminApi = {
     const response = await api.patch<CompanyDetailResponse>(`/api/admin/companies/${companyId}/restore`);
     return response.data;
   },
+
+  createUsersBatchFromCsv: async (
+    file: File,
+    companyId: number,
+    password: string
+  ): Promise<any> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("companyId", companyId.toString());
+    formData.append("password", password);
+
+    const response = await api.post("/api/admin/users/batch/csv", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  },
+
+  checkDuplicateEmails: async (emails: string[]): Promise<string[]> => {
+    const response = await api.post<any>("/api/admin/users/check-emails", emails);
+    return response.data.data;
+  },
 };
