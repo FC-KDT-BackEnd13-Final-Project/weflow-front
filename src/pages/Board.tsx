@@ -28,6 +28,7 @@ interface BoardPost {
   stepId: number;
   status: BoardPostStatus;
   questionStatus: BoardApprovalStatus;
+  hasQuestions: boolean;
 }
 
 const projectPhases = ["전체", "계약", "진행", "납품", "유지보수"];
@@ -142,9 +143,10 @@ export default function Board() {
           projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
           stepId: post.stepId,
           status: post.status === "CONFIRMED" ? "complete" : "progress",
+          hasQuestions: post.hasQuestions,
           questionStatus: post.hasQuestions
             ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
-            : "request",
+            : "request", // hasQuestions가 false여도 일단 request로 설정 (배지는 조건부 렌더링으로 숨김)
         }));
 
         setPosts(convertedPosts);
@@ -351,14 +353,16 @@ export default function Board() {
                       {/* 승인 요청 / 승인 */}
                       <div className="flex flex-col gap-2 items-end">
 
-                        <div
-                          className={cn(
-                            "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                            boardStatusStyles[post.questionStatus]
-                          )}
-                        >
-                          {boardStatusLabels[post.questionStatus]}
-                        </div>
+                        {post.hasQuestions && (
+                          <div
+                            className={cn(
+                              "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
+                              boardStatusStyles[post.questionStatus]
+                            )}
+                          >
+                            {boardStatusLabels[post.questionStatus]}
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-3 text-muted-foreground">
                           <div className="flex items-center gap-1 text-xs">
