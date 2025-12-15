@@ -14,12 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus } from "lucide-react";
+import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus, Trash2, GripVertical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { createPost, updatePost, getPost } from "@/apis/postApi";
-import { ProjectPhase } from "@/types/post";
-import type { FileRequest, QuestionRequest } from "@/types/post";
+import { ProjectPhase, QuestionType } from "@/types/post";
+import type { FileRequest, QuestionRequest, QuestionOptionRequest } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
 import { getPresignedUrl, uploadFileToS3 } from "@/apis/attachmentApi";
@@ -79,7 +79,19 @@ export default function BoardNew() {
   const [links, setLinks] = useState<string[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [questions, setQuestions] = useState<QuestionRequest[]>([]);
+
+  type LocalQuestionType = "객관식" | "복수선택" | "주관식";
+
+  interface LocalQuestion {
+    id: number;
+    questionText: string;
+    type: LocalQuestionType;
+    options: QuestionOptionRequest[];
+  }
+
+  const [questions, setQuestions] = useState<LocalQuestion[]>([]);
+  const [draggingQuestionId, setDraggingQuestionId] = useState<number | null>(null);
+  const [draggingOption, setDraggingOption] = useState<{ questionId: number; index: number } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof PostFormData, string>>>({});
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
@@ -110,12 +122,6 @@ export default function BoardNew() {
           status: phaseValue,
           step: stepValue,
         }));
-
-        console.log('부모 게시글 정보:', {
-          phase: phaseValue,
-          stepId: stepValue,
-          stepName: parentPost.step.stepName
-        });
       } catch (error) {
         console.error("부모 게시글 조회 실패:", error);
         toast({
@@ -156,7 +162,13 @@ export default function BoardNew() {
   // 수정 모드일 때 기존 게시글 데이터 불러오기
   useEffect(() => {
     const fetchPost = async () => {
-      if (!isEditMode || !id || !postId) return;
+      if (!isEditMode || !id || !postId) {
+        // 작성 모드일 때 상태 초기화
+        setFiles([]);
+        setLinks([]);
+        setQuestions([]);
+        return;
+      }
 
       try {
         const post = await getPost(Number(id), Number(postId));
@@ -223,21 +235,166 @@ export default function BoardNew() {
     setLinks(prev => prev.filter((_, i) => i !== index));
   };
 
+  const questionTypeToApi = (type: LocalQuestionType): QuestionType => {
+    switch (type) {
+      case "복수선택":
+        return QuestionType.MULTI;
+      case "주관식":
+        return QuestionType.TEXT;
+      default:
+        return QuestionType.SINGLE;
+    }
+  };
+
   const addQuestion = () => {
+    const nextId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1;
     setQuestions(prev => [
       ...prev,
-      { questionText: "", confirmLabel: "승인", rejectLabel: "반려" }
+      { id: nextId, questionText: "", type: "객관식", options: [] }
     ]);
   };
 
-  const updateQuestion = (index: number, field: keyof QuestionRequest, value: string) => {
-    setQuestions(prev => prev.map((q, i) =>
-      i === index ? { ...q, [field]: value } : q
-    ));
+  const handleQuestionTitleChange = (id: number, value: string) => {
+    setQuestions((prev) =>
+      prev.map((question) => (question.id === id ? { ...question, questionText: value } : question))
+    );
   };
 
-  const removeQuestion = (index: number) => {
-    setQuestions(prev => prev.filter((_, i) => i !== index));
+  const handleQuestionTypeChange = (id: number, nextType: LocalQuestionType) => {
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== id) return question;
+        if (nextType === "주관식") {
+          return { ...question, type: nextType, options: [] };
+        }
+        if (nextType === "복수선택") {
+          return {
+            ...question,
+            type: nextType,
+            options: question.options.map((option) => ({ ...option, hasInput: false })),
+          };
+        }
+        return { ...question, type: nextType };
+      })
+    );
+  };
+
+  const handleAddOption = (id: number) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === id
+          ? { ...question, options: [...question.options, { optionText: "", hasInput: false }] }
+          : question
+      )
+    );
+  };
+
+  const handleOptionChange = (questionId: number, optionIndex: number, value: string) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.map((option, idx) => (idx === optionIndex ? { ...option, optionText: value } : option)),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleOptionHasInputToggle = (questionId: number, optionIndex: number, checked: boolean) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.map((option, idx) =>
+                idx === optionIndex ? { ...option, hasInput: checked } : option
+              ),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleDeleteOption = (questionId: number, optionIndex: number) => {
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? {
+              ...question,
+              options: question.options.filter((_, idx) => idx !== optionIndex),
+            }
+          : question
+      )
+    );
+  };
+
+  const handleRemoveQuestion = (id: number) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const handleQuestionDragStart = (id: number) => setDraggingQuestionId(id);
+  const handleQuestionDragEnd = () => setDraggingQuestionId(null);
+  const handleQuestionDrop = (targetId: number) => {
+    if (draggingQuestionId === null || draggingQuestionId === targetId) return;
+    setQuestions((prev) => {
+      const current = [...prev];
+      const fromIndex = current.findIndex((question) => question.id === draggingQuestionId);
+      const toIndex = current.findIndex((question) => question.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const [moved] = current.splice(fromIndex, 1);
+      current.splice(toIndex, 0, moved);
+      return current;
+    });
+    setDraggingQuestionId(null);
+  };
+
+  const handleOptionDragStart = (questionId: number, index: number) => {
+    setDraggingOption({ questionId, index });
+  };
+
+  const handleOptionDragEnd = () => setDraggingOption(null);
+
+  const handleOptionDrop = (questionId: number, targetIndex: number) => {
+    if (!draggingOption || draggingOption.questionId !== questionId || draggingOption.index === targetIndex) return;
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== questionId) return question;
+        const currentOptions = [...question.options];
+        const [moved] = currentOptions.splice(draggingOption.index, 1);
+        currentOptions.splice(targetIndex, 0, moved);
+        return { ...question, options: currentOptions };
+      })
+    );
+    setDraggingOption(null);
+  };
+
+  const handleQuestionDropToEnd = () => {
+    if (draggingQuestionId === null) return;
+    setQuestions((prev) => {
+      const current = [...prev];
+      const fromIndex = current.findIndex((question) => question.id === draggingQuestionId);
+      if (fromIndex === -1) return prev;
+      const [moved] = current.splice(fromIndex, 1);
+      current.push(moved);
+      return current;
+    });
+    setDraggingQuestionId(null);
+  };
+
+  const handleOptionDropToEnd = (questionId: number) => {
+    if (!draggingOption || draggingOption.questionId !== questionId) return;
+    setQuestions((prev) =>
+      prev.map((question) => {
+        if (question.id !== questionId) return question;
+        const currentOptions = [...question.options];
+        const [moved] = currentOptions.splice(draggingOption.index, 1);
+        currentOptions.push(moved);
+        return { ...question, options: currentOptions };
+      })
+    );
+    setDraggingOption(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -308,15 +465,21 @@ export default function BoardNew() {
 
       if (isEditMode && postId) {
         // 수정 모드
-        await updatePost(Number(id), Number(postId), {
+        const requestPayload = {
           title: formData.title,
           content: formData.content,
           stepId: stepId,
           projectPhase: projectPhase,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
-          questions: questions.length > 0 ? questions : undefined,
-        });
+          questions: questions.length > 0 ? questions.map(q => ({
+            questionText: q.questionText,
+            questionType: questionTypeToApi(q.type),
+            options: q.type === "주관식" ? [] : q.options,
+          })) : undefined,
+        };
+
+        await updatePost(Number(id), Number(postId), requestPayload);
 
         toast({
           title: "게시글 수정 완료",
@@ -335,7 +498,11 @@ export default function BoardNew() {
           parentPostId: replyInfo?.parentPostId,
           links: links.map(url => ({ url })),
           files: uploadedFiles,
-          questions: questions.length > 0 ? questions : undefined,
+          questions: questions.length > 0 ? questions.map(q => ({
+            questionText: q.questionText,
+            questionType: questionTypeToApi(q.type),
+            options: q.type === "주관식" ? [] : q.options,
+          })) : undefined,
         });
 
         toast({
@@ -643,76 +810,146 @@ export default function BoardNew() {
               </div>
 
               {/* Questions */}
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2">
+                  <Label className="text-base font-semibold flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" />
-                    질문 추가
+                    질문 생성
                   </Label>
                   <Button
                     type="button"
-                    variant="outline"
                     size="sm"
                     onClick={addQuestion}
                     className="gap-2"
                   >
-                    <Plus className="h-4 w-4" />
-                    질문 추가
+                    <Plus className="h-4 w-4" /> 질문 추가
                   </Button>
                 </div>
 
-                {questions.length > 0 && (
-                  <div className="space-y-4 mt-3">
-                    {questions.map((question, index) => (
-                      <div
-                        key={index}
-                        className="p-4 border rounded-md bg-muted/30 space-y-3"
+                <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
+                  {questions.map((question, index) => (
+                    <div
+                      key={question.id}
+                      className="rounded bg-background p-4 pl-12 space-y-4 border relative"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => handleQuestionDrop(question.id)}
+                    >
+                      <button
+                        type="button"
+                        className="absolute top-4 right-4 text-red-500 hover:text-red-700"
+                        onClick={() => handleRemoveQuestion(question.id)}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">질문 {index + 1}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeQuestion(index)}
-                          >
-                            <X className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="absolute top-4 left-4 text-muted-foreground cursor-grab"
+                        draggable
+                        onDragStart={() => handleQuestionDragStart(question.id)}
+                        onDragEnd={handleQuestionDragEnd}
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </button>
+
+                      <p className="font-semibold text-gray-700">질문 #{index + 1}</p>
+
+                      <Input
+                        placeholder="질문을 입력하세요"
+                        value={question.questionText}
+                        onChange={(event) => handleQuestionTitleChange(question.id, event.target.value)}
+                      />
+
+                      <Select
+                        value={question.type}
+                        onValueChange={(value) => handleQuestionTypeChange(question.id, value as LocalQuestionType)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="질문 타입 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="객관식">객관식 (1개 선택)</SelectItem>
+                          <SelectItem value="복수선택">복수선택</SelectItem>
+                          <SelectItem value="주관식">주관식</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {(question.type === "객관식" || question.type === "복수선택") && (
+                        <div className="space-y-3">
+                          <p className="text-sm font-medium text-muted-foreground">
+                            {question.type === "복수선택" ? "옵션 목록 (복수 선택 가능)" : "옵션 목록"}
+                          </p>
+                          {question.options.map((option, idx) => (
+                            <div
+                              key={`${question.id}-${idx}`}
+                              className="flex flex-col gap-2"
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => handleOptionDrop(question.id, idx)}
+                            >
+                              <div className="flex gap-2 items-center">
+                                <button
+                                  type="button"
+                                  className="text-muted-foreground cursor-grab"
+                                  draggable
+                                  onDragStart={() => handleOptionDragStart(question.id, idx)}
+                                  onDragEnd={handleOptionDragEnd}
+                                >
+                                  <GripVertical className="h-4 w-4" />
+                                </button>
+                                <Input
+                                  placeholder="옵션 입력"
+                                  value={option.optionText}
+                                  onChange={(event) =>
+                                    handleOptionChange(question.id, idx, event.target.value)
+                                  }
+                                />
+                                {question.type === "객관식" && (
+                                  <label className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      checked={option.hasInput}
+                                      onChange={(event) =>
+                                        handleOptionHasInputToggle(question.id, idx, event.target.checked)
+                                      }
+                                    />
+                                    기타 입력 허용
+                                  </label>
+                                )}
+                                <Trash2
+                                  className="w-4 h-4 text-red-500 cursor-pointer"
+                                  onClick={() => handleDeleteOption(question.id, idx)}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <Button type="button" variant="outline" size="sm" onClick={() => handleAddOption(question.id)}>
+                            + 옵션 추가
                           </Button>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor={`question-text-${index}`}>질문 내용</Label>
-                          <Textarea
-                            id={`question-text-${index}`}
-                            placeholder="질문 내용을 입력하세요"
-                            value={question.questionText}
-                            onChange={(e) => updateQuestion(index, "questionText", e.target.value)}
-                            className="min-h-[80px]"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2">
-                            <Label htmlFor={`confirm-label-${index}`}>승인 버튼 텍스트</Label>
-                            <Input
-                              id={`confirm-label-${index}`}
-                              placeholder="승인"
-                              value={question.confirmLabel}
-                              onChange={(e) => updateQuestion(index, "confirmLabel", e.target.value)}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor={`reject-label-${index}`}>반려 버튼 텍스트</Label>
-                            <Input
-                              id={`reject-label-${index}`}
-                              placeholder="반려"
-                              value={question.rejectLabel}
-                              onChange={(e) => updateQuestion(index, "rejectLabel", e.target.value)}
-                            />
+                          <div
+                            className="h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-[10px] text-muted-foreground"
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={() => handleOptionDropToEnd(question.id)}
+                          >
+                            하단으로 드래그
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )}
+
+                      {question.type === "주관식" && (
+                        <p className="text-xs text-muted-foreground">
+                          주관식 질문 · 별도의 선택지가 없습니다.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  <div
+                    className="h-8 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-xs text-muted-foreground"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleQuestionDropToEnd}
+                  >
+                    카드 하단으로 드래그
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Actions */}

@@ -23,7 +23,7 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
-import { getPost, deletePost } from "@/apis/postApi";
+import { getPost, deletePost, answerQuestion } from "@/apis/postApi";
 import { getDownloadUrl } from "@/apis/attachmentApi";
 import { getComments, createComment, createReply, deleteComment as deleteCommentApi, getReplies } from "@/apis/commentApi";
 import { useUserStore } from "@/stores/user";
@@ -64,18 +64,25 @@ interface RespondentInfo {
 }
 
 interface QuestionAnswer {
-  response: "YES" | "NO" | "ETC";
+  selectedOptionIds: number[];
+  textInput: string;
   respondent: RespondentInfo;
   respondedAt: string;
 }
 
+interface QuestionOption {
+  optionId: number;
+  optionText: string;
+  hasInput: boolean;
+}
+
+type QuestionType = "SINGLE" | "MULTI" | "TEXT";
+
 interface PostQuestion {
   questionId: number;
   content: string;
-  buttonLabels: {
-    yes: string;
-    no: string;
-  };
+  questionType: QuestionType;
+  options: QuestionOption[];
   answer: QuestionAnswer | null;
   answerAction?: "confirm" | "reject";
 }
@@ -149,6 +156,13 @@ export default function BoardDetail() {
   const [loadingReplies, setLoadingReplies] = useState<Record<number, boolean>>({});
   const replyTextareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
+  // 질문 답변 상태
+  interface QuestionAnswerState {
+    selectedOptions: number[]; // 선택된 옵션 ID들
+    textInput: string; // 주관식 답변 또는 기타 입력
+  }
+  const [questionAnswers, setQuestionAnswers] = useState<Record<number, QuestionAnswerState>>({});
+
   // 백엔드에서 게시글 상세 조회 및 댓글 조회
   useEffect(() => {
     const fetchPostAndComments = async () => {
@@ -191,22 +205,28 @@ export default function BoardDetail() {
             url: link.url,
             title: link.title,
           })),
-          questions: postResponse.questions.map(q => ({
-            questionId: q.questionId,
-            content: q.content,
-            buttonLabels: {
-              yes: q.buttonLabels.yes,
-              no: q.buttonLabels.no,
-            },
-            answer: q.answer ? {
-              response: q.answer.response as "YES" | "NO" | "ETC",
-              respondent: {
-                memberId: q.answer.respondent.memberId,
-                name: q.answer.respondent.name,
-              },
-              respondedAt: q.answer.respondedAt,
-            } : null,
-          })),
+          questions: postResponse.questions.map(q => {
+            // questionType이 있는지 확인, 없으면 기본값 TEXT
+            const questionType = (q.questionType as QuestionType) || 'TEXT';
+            // options가 배열인지 확인
+            const options = Array.isArray(q.options) ? q.options : [];
+
+            return {
+              questionId: q.questionId,
+              content: q.content,
+              questionType,
+              options,
+              answer: q.answer ? {
+                selectedOptionIds: q.answer.selectedOptionIds || [],
+                textInput: q.answer.textInput || '',
+                respondent: {
+                  memberId: q.answer.respondent.memberId,
+                  name: q.answer.respondent.name,
+                },
+                respondedAt: q.answer.respondedAt,
+              } : null,
+            };
+          }),
           parentPost: postResponse.parentPost?.postId || null,
           isEdited: postResponse.isEdited,
           createdAt: postResponse.createdAt,
@@ -271,7 +291,7 @@ export default function BoardDetail() {
     const initialSelections: Record<number, "confirm" | "reject"> = {};
     post.questions.forEach((question) => {
       const derivedAction = question.answerAction
-        ?? (question.answer ? (question.answer.response === "NO" ? "reject" : "confirm") : undefined);
+        ?? (question.answer ? "confirm" : undefined);
       if (derivedAction) {
         initialSelections[question.questionId] = derivedAction;
       }
@@ -306,11 +326,9 @@ export default function BoardDetail() {
   const approvalStatusVariant = apiApprovalStatusToBoardStatus[post.status] ?? "request";
   const projectPhaseLabelText = projectPhaseLabels[post.projectPhase];
   const postOpenStatusLabelText = postOpenStatusLabels[post.openStatus];
-  const overallQuestionStatus: BoardApprovalStatus = post.questions.some((q) => q.answer?.response === "NO")
-    ? "rejected"
-    : post.questions.every((q) => q.answer)
-      ? "approved"
-      : "request";
+  const overallQuestionStatus: BoardApprovalStatus = post.questions.every((q) => q.answer)
+    ? "approved"
+    : "request";
 
   // 작성자의 role을 CLIENT/AGENCY/ADMIN으로 매핑
   const getAuthorUserRole = (authorRole: string): "CLIENT" | "AGENCY" | "ADMIN" => {
@@ -321,7 +339,7 @@ export default function BoardDetail() {
 
   // 현재 사용자가 질문에 답변할 수 있는지 체크
   const canAnswerQuestion = () => {
-    if (!user) return false;
+    if (!user || !post) return false;
 
     // 자문자답 방지: 작성자 본인이면 답변 불가
     if (user.id === post.author.memberId) return false;
@@ -337,6 +355,113 @@ export default function BoardDetail() {
 
     // 작성자와 다른 역할인 경우에만 답변 가능
     return currentUserRole !== authorUserRole;
+  };
+
+  // 질문 옵션 선택 핸들러
+  const handleOptionSelect = (questionId: number, optionId: number, questionType: string) => {
+    setQuestionAnswers(prev => {
+      const current = prev[questionId] || { selectedOptions: [], textInput: '' };
+
+      if (questionType === 'SINGLE') {
+        // 객관식: 하나만 선택
+        return {
+          ...prev,
+          [questionId]: {
+            ...current,
+            selectedOptions: [optionId],
+          }
+        };
+      } else {
+        // 복수선택: 토글
+        const isSelected = current.selectedOptions.includes(optionId);
+        return {
+          ...prev,
+          [questionId]: {
+            ...current,
+            selectedOptions: isSelected
+              ? current.selectedOptions.filter(id => id !== optionId)
+              : [...current.selectedOptions, optionId],
+          }
+        };
+      }
+    });
+  };
+
+  // 질문 텍스트 입력 핸들러
+  const handleQuestionTextChange = (questionId: number, text: string) => {
+    setQuestionAnswers(prev => ({
+      ...prev,
+      [questionId]: {
+        ...(prev[questionId] || { selectedOptions: [], textInput: '' }),
+        textInput: text,
+      }
+    }));
+  };
+
+  // 모든 질문 답변 제출
+  const handleSubmitAllAnswers = async () => {
+    if (!id || !postId || !post) return;
+
+    // 답변 가능한 질문들 필터링 (답변이 아직 없는 질문)
+    const unansweredQuestions = post.questions.filter(q => !q.answer && canAnswerQuestion());
+
+    // 각 질문에 대한 답변이 있는지 확인
+    const invalidQuestions = unansweredQuestions.filter(q => {
+      const answer = questionAnswers[q.questionId];
+      if (!answer) return true;
+
+      // 객관식/복수선택은 최소 1개 선택 필요
+      if (q.questionType !== "TEXT" && answer.selectedOptions.length === 0) return true;
+
+      // 주관식은 텍스트 입력 필요
+      if (q.questionType === "TEXT" && !answer.textInput.trim()) return true;
+
+      return false;
+    });
+
+    if (invalidQuestions.length > 0) {
+      toast({
+        title: "답변 미작성",
+        description: "모든 질문에 답변을 작성해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (unansweredQuestions.length === 0) {
+      toast({
+        title: "답변 불가",
+        description: "제출할 답변이 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // 모든 질문에 대한 답변을 순차적으로 제출
+      for (const question of unansweredQuestions) {
+        const answer = questionAnswers[question.questionId];
+        await answerQuestion(Number(id), Number(postId), question.questionId, {
+          selectedOptionIds: answer.selectedOptions,
+          textInput: answer.textInput || '',
+        });
+      }
+
+      toast({
+        title: "답변 제출 완료",
+        description: "모든 답변이 성공적으로 제출되었습니다.",
+      });
+
+      // 게시글 다시 조회하여 답변 반영
+      window.location.reload();
+    } catch (error) {
+      console.error('답변 제출 실패:', error);
+      toast({
+        title: "답변 제출 실패",
+        description: "답변 제출 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddComment = async () => {
@@ -720,8 +845,8 @@ export default function BoardDetail() {
     : null;
   const actionDialogLabel = actionDialog
     ? actionDialog.action === "confirm"
-      ? activeDialogQuestion?.buttonLabels.yes ?? "승인"
-      : activeDialogQuestion?.buttonLabels.no ?? "반려"
+      ? "승인"
+      : "반려"
     : "";
 
   const handleReply = () => {
@@ -834,9 +959,11 @@ export default function BoardDetail() {
                 <Badge variant="outline" className="bg-purple-50">
                   {post.step.stepName}
                 </Badge>
-                <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
-                  {boardStatusLabels[overallQuestionStatus]}
-                </Badge>
+                {post.questions.length > 0 && (
+                  <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
+                    {boardStatusLabels[overallQuestionStatus]}
+                  </Badge>
+                )}
               </div>
               <Badge variant="outline" className="bg-slate-50">
                 {postOpenStatusLabelText}
@@ -944,79 +1071,187 @@ export default function BoardDetail() {
                   질문 및 답변
                 </Label>
                 {post.questions.length > 0 ? (
-                  <div className="mt-2 space-y-4">
-                    {post.questions.map((question) => {
-                      const isAnswered = Boolean(question.answer);
-                      const selectedAction = questionSelections[question.questionId];
-                      const answeredResponse = question.answer?.response;
-                      const questionStatus: BoardApprovalStatus = answeredResponse
-                        ? answeredResponse === "NO"
-                          ? "rejected"
-                          : "approved"
-                        : "request";
-                      const confirmLabel = question.buttonLabels.yes;
-                      const rejectLabel = question.buttonLabels.no;
-                      return (
-                        <div key={question.questionId} className="rounded-lg border p-4 space-y-3 bg-muted/20">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="font-semibold text-sm text-foreground">{question.content}</p>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={cn("border", boardStatusStyles[questionStatus])}
-                            >
-                              {boardStatusLabels[questionStatus]}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant={selectedAction === "confirm" ? "default" : "outline"}
-                              className={cn(
-                                "flex-1 min-w-[120px] transition-colors",
-                                selectedAction === "confirm"
-                                  ? "ring-2 ring-primary hover:bg-primary/90"
-                                  : "border-primary/40 text-primary hover:bg-primary/10"
-                              )}
-                              disabled={isAnswered || !canAnswerQuestion()}
-                              aria-pressed={selectedAction === "confirm"}
-                              onClick={() => openQuestionAction(question.questionId, "confirm")}
-                            >
-                              {confirmLabel}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant={selectedAction === "reject" ? "destructive" : "outline"}
-                              className={cn(
-                                "flex-1 min-w-[120px] transition-colors",
-                                selectedAction === "reject"
-                                  ? "ring-2 ring-destructive hover:bg-destructive/90 text-white"
-                                  : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              )}
-                              disabled={isAnswered || !canAnswerQuestion()}
-                              aria-pressed={selectedAction === "reject"}
-                              onClick={() => openQuestionAction(question.questionId, "reject")}
-                            >
-                              {rejectLabel}
-                            </Button>
-                          </div>
-                          {question.answer ? (
-                            <div className="rounded-md border bg-background p-3 space-y-2">
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                <span>응답 {question.answer.response}</span>
-                                <span>by {question.answer.respondent.name}</span>
-                                <span>{formatDateTime(question.answer.respondedAt)}</span>
+                  <>
+                    <div className="mt-2 space-y-4">
+                      {post.questions.map((question, qIndex) => {
+                        const questionTypeLabel =
+                          question.questionType === "SINGLE" ? "객관식 (1개 선택)" :
+                          question.questionType === "MULTI" ? "복수선택" :
+                          "주관식";
+
+                        return (
+                          <div key={question.questionId} className="rounded-lg border p-4 space-y-3 bg-muted/20">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-medium text-muted-foreground">질문 #{qIndex + 1}</span>
+                                  <Badge variant="secondary" className="text-xs">
+                                    {questionTypeLabel}
+                                  </Badge>
+                                </div>
+                                <p className="font-semibold text-sm text-foreground">{question.content}</p>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">아직 답변이 등록되지 않았습니다.</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+
+                            {/* 답변이 이미 있는 경우 */}
+                            {question.answer ? (
+                              <>
+                                {/* 옵션 표시 (참고용) */}
+                                {(question.questionType === "SINGLE" || question.questionType === "MULTI") && question.options.length > 0 && (
+                                  <div className="space-y-2 pl-4">
+                                    <p className="text-xs font-medium text-muted-foreground">보기:</p>
+                                    {question.options.map((option, idx) => {
+                                      const isSelected = question.answer?.selectedOptionIds?.includes(option.optionId);
+
+                                      return (
+                                        <div key={option.optionId} className="flex items-center gap-2 text-sm">
+                                          <span className="text-muted-foreground">{idx + 1}.</span>
+                                          <span className={isSelected ? "font-semibold text-primary" : ""}>
+                                            {option.optionText}
+                                            {isSelected && " ✓"}
+                                          </span>
+                                          {option.hasInput && question.questionType === "SINGLE" && (
+                                            <Badge variant="outline" className="text-xs ml-2">기타 입력 가능</Badge>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                <div className="rounded-md border bg-background p-3 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    <span className="font-medium">답변자:</span>
+                                    <span>{question.answer.respondent.name}</span>
+                                    <span>{formatDateTime(question.answer.respondedAt)}</span>
+                                  </div>
+                                  {question.answer?.textInput && (
+                                    <div className="mt-2 pt-2 border-t">
+                                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                                        {question.questionType === "TEXT" ? "답변 내용:" : "기타 의견:"}
+                                      </p>
+                                      <p className="text-sm whitespace-pre-line">{question.answer.textInput}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            ) : canAnswerQuestion() ? (
+                              /* 답변 가능한 경우 답변 UI 표시 */
+                              <div className="space-y-3">
+                                {/* 객관식 (라디오 버튼) */}
+                                {question.questionType === "SINGLE" && question.options.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 선택하세요:</p>
+                                    {question.options.map((option) => {
+                                      const answerState = questionAnswers[question.questionId];
+                                      const isSelected = answerState?.selectedOptions.includes(option.optionId);
+                                      return (
+                                        <div key={option.optionId} className="flex items-start gap-2">
+                                          <input
+                                            type="radio"
+                                            id={`q${question.questionId}-opt${option.optionId}`}
+                                            name={`question-${question.questionId}`}
+                                            checked={isSelected}
+                                            onChange={() => handleOptionSelect(question.questionId, option.optionId, question.questionType)}
+                                            className="mt-1"
+                                          />
+                                          <label
+                                            htmlFor={`q${question.questionId}-opt${option.optionId}`}
+                                            className="flex-1 cursor-pointer"
+                                          >
+                                            {option.optionText}
+                                            {option.hasInput && isSelected && (
+                                              <Textarea
+                                                placeholder="기타 의견을 입력하세요"
+                                                value={answerState?.textInput || ''}
+                                                onChange={(e) => handleQuestionTextChange(question.questionId, e.target.value)}
+                                                className="mt-2 min-h-[60px]"
+                                              />
+                                            )}
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* 복수선택 (체크박스) */}
+                                {question.questionType === "MULTI" && question.options.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 선택하세요 (복수 가능):</p>
+                                    {question.options.map((option) => {
+                                      const answerState = questionAnswers[question.questionId];
+                                      const isSelected = answerState?.selectedOptions.includes(option.optionId);
+                                      return (
+                                        <div key={option.optionId} className="flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            id={`q${question.questionId}-opt${option.optionId}`}
+                                            checked={isSelected}
+                                            onChange={() => handleOptionSelect(question.questionId, option.optionId, question.questionType)}
+                                          />
+                                          <label
+                                            htmlFor={`q${question.questionId}-opt${option.optionId}`}
+                                            className="cursor-pointer"
+                                          >
+                                            {option.optionText}
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* 주관식 (텍스트 입력) */}
+                                {question.questionType === "TEXT" && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 입력하세요:</p>
+                                    <Textarea
+                                      placeholder="답변을 입력하세요"
+                                      value={questionAnswers[question.questionId]?.textInput || ''}
+                                      onChange={(e) => handleQuestionTextChange(question.questionId, e.target.value)}
+                                      className="min-h-[100px]"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              /* 답변 권한이 없는 경우 */
+                              <div className="rounded-md border bg-muted/50 p-3">
+                                {(question.questionType === "SINGLE" || question.questionType === "MULTI") && question.options.length > 0 && (
+                                  <div className="space-y-2 mb-3">
+                                    <p className="text-xs font-medium text-muted-foreground">보기:</p>
+                                    {question.options.map((option, idx) => (
+                                      <div key={option.optionId} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <span>{idx + 1}.</span>
+                                        <span>{option.optionText}</span>
+                                        {option.hasInput && question.questionType === "SINGLE" && (
+                                          <Badge variant="outline" className="text-xs ml-2">기타 입력 가능</Badge>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {question.questionType === "TEXT" && (
+                                  <p className="text-xs text-muted-foreground italic mb-3">주관식 답변이 필요합니다.</p>
+                                )}
+                                <p className="text-sm text-muted-foreground text-center">아직 답변이 등록되지 않았습니다.</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 통합 답변 제출 버튼 */}
+                    {canAnswerQuestion() && post.questions.some(q => !q.answer) && (
+                      <div className="mt-4 flex justify-end">
+                        <Button onClick={handleSubmitAllAnswers} size="lg">
+                          모든 답변 제출
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <p className="mt-2 text-sm text-muted-foreground">등록된 질문이 없습니다.</p>
                 )}
