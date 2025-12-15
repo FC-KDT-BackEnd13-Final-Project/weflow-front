@@ -1,9 +1,13 @@
 import { cn } from "@/lib/utils";
-import { AttachmentResponse } from "@/lib/stepTypes";
+import type { AttachmentResponse as StepAttachmentResponse } from "@/lib/stepTypes";
+import type {
+  AttachmentResponse as CommonAttachmentResponse,
+  AttachmentType,
+} from "@/types/attachment";
 import { Button } from "@/components/ui/button";
 import { Download, Link2, Paperclip } from "lucide-react";
 
-type AttachmentInputItem = AttachmentResponse | string;
+type AttachmentInputItem = StepAttachmentResponse | CommonAttachmentResponse | string;
 
 interface AttachmentListProps {
   items: AttachmentInputItem[];
@@ -24,17 +28,30 @@ const normalizeAttachments = (items: AttachmentInputItem[]) => {
   const seen = new Set<string>();
   const mapped = items
     .map((item, idx) => {
-      const attachmentType = typeof item === "string" ? "LINK" : (item as { attachmentType?: string }).attachmentType;
-      const pathValue = typeof item === "string" ? undefined : item?.filePath || item?.path;
-      const url = typeof item === "string" ? item : item?.url || pathValue;
-      const baseName = typeof item === "string" ? url : item?.fileName || item?.name || item?.originalName || pathValue || item?.url;
-      const isLinkType = attachmentType === "LINK" || Boolean((item as AttachmentResponse).isLink) || Boolean((item as AttachmentResponse).link);
-      const isLink =
-        typeof item === "string" ||
-        isLinkType;
-      const id = typeof item === "string" ? `link-${idx}` : item?.id ?? `${attachmentType ?? "att"}-${idx}`;
+      const attachmentType: AttachmentType | "LINK" | undefined =
+        typeof item === "string" ? "LINK" : (item as CommonAttachmentResponse)?.attachmentType;
+      const pathValue = typeof item === "string" ? undefined : (item as StepAttachmentResponse | CommonAttachmentResponse)?.filePath || (item as StepAttachmentResponse)?.path;
+      const url = typeof item === "string" ? item : (item as StepAttachmentResponse | CommonAttachmentResponse)?.url || pathValue;
+      const baseName =
+        typeof item === "string"
+          ? url
+          : (item as StepAttachmentResponse | CommonAttachmentResponse)?.fileName ||
+            (item as StepAttachmentResponse)?.name ||
+            (item as StepAttachmentResponse)?.originalName ||
+            pathValue ||
+            (item as StepAttachmentResponse | CommonAttachmentResponse)?.url;
+      const isLinkType =
+        attachmentType === "LINK" ||
+        Boolean((item as StepAttachmentResponse).isLink) ||
+        Boolean((item as StepAttachmentResponse | CommonAttachmentResponse).url && !(item as StepAttachmentResponse | CommonAttachmentResponse).filePath);
+      const isLink = typeof item === "string" || isLinkType;
+      const id = typeof item === "string" ? `link-${idx}` : (item as StepAttachmentResponse | CommonAttachmentResponse)?.id ?? `${attachmentType ?? "att"}-${idx}`;
       const key = isLink ? `link-${url || baseName}` : `file-${pathValue || url || baseName}`;
-      const size = typeof item === "string" ? undefined : (item as AttachmentResponse)?.fileSize ?? (item as { size?: number }).size;
+      const size =
+        typeof item === "string"
+          ? undefined
+          : (item as StepAttachmentResponse | CommonAttachmentResponse)?.fileSize ??
+            (item as { size?: number }).size;
       if (!baseName || seen.has(key)) return null;
       seen.add(key);
       return {
