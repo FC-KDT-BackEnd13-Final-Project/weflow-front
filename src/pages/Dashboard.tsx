@@ -118,8 +118,10 @@ interface DashboardApproval {
   title: string;
   projectId?: number;
   projectName?: string;
-  stepName?: string;
-  dueDate?: string;
+  stepTitle?: string;
+  stepId?: number;
+  phase?: string;
+  createdAt?: string;
 }
 
 interface DashboardNotification {
@@ -199,8 +201,10 @@ export default function Dashboard() {
                 title: approval.title,
                 projectId: approval.projectId ?? approval.project?.id,
                 projectName: approval.projectName ?? approval.project?.name,
-                stepName: approval.stepName ?? approval.step,
-                dueDate: approval.dueDate,
+                stepTitle: approval.stepTitle,
+                stepId: approval.stepId,
+                phase: approval.phase,
+                createdAt: approval.createdAt ?? approval.requestedAt ?? approval.created_at,
               }))
             : [],
           recentNotifications: Array.isArray(data.recentNotifications)
@@ -454,7 +458,7 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>다가오는 승인</CardTitle>
+              <CardTitle>승인 대기</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {isLoadingDashboard ? (
@@ -474,14 +478,18 @@ export default function Dashboard() {
                         : undefined
                     }
                   >
-                    <p className="font-medium">{approval.title}</p>
-                    <p className="text-muted-foreground">{approval.projectName ?? "프로젝트 정보 없음"}</p>
+                    <p className="text-base font-semibold leading-6 text-foreground line-clamp-2 break-words">
+                      {approval.title}
+                    </p>
+                    <div className="mt-1 text-sm text-foreground font-medium">
+                      {approval.projectName ?? "프로젝트 정보 없음"}
+                    </div>
                     <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        <Calendar className="inline-block h-3 w-3 mr-1" />
-                        {approval.dueDate ? formatDateLabel(approval.dueDate) : "마감일 미정"}
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="inline-block h-3 w-3" />
+                        {approval.createdAt ? formatDateLabel(approval.createdAt) : "-"}
                       </span>
-                      <span>{approval.stepName ?? "단계 미정"}</span>
+                      <span className="text-foreground/80">{approval.stepTitle ?? "단계 미정"}</span>
                     </div>
                   </div>
                 ))
