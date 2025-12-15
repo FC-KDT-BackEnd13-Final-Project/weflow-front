@@ -27,6 +27,7 @@ import {
   ProjectSummaryResponse,
   fetchProjectDetail,
   ProjectRole,
+  ProjectPhase,
 } from "@/apis/projects";
 import { useUserStore } from "@/stores/user";
 
@@ -49,6 +50,20 @@ const statusBadgeMap: Record<
   CLOSED: "complete",
 };
 
+const projectPhaseLabelMap: Record<ProjectPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
+
+const projectPhaseBadgeMap: Record<ProjectPhase, string> = {
+  CONTRACT: "bg-blue-50 text-blue-700 border-blue-100",
+  IN_PROGRESS: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  DELIVERY: "bg-amber-50 text-amber-700 border-amber-100",
+  MAINTENANCE: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
 export default function Projects() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -67,6 +82,61 @@ export default function Projects() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const getMembershipState = (
+    project: ProjectSummaryResponse
+  ): "joined" | "not-joined" | "unknown" => {
+    if (userRole === "SYSTEM_ADMIN") return "joined";
+    if (project.projectRole) return "joined";
+    if (userRole === "CLIENT") return "joined";
+    if (userRole === "AGENCY") {
+      const state = membershipStatus[project.projectId];
+      if (state === "joined" || state === "not-joined") return state;
+      return "unknown";
+    }
+    return "not-joined";
+  };
+
+  const enrichProjects = async (items: ProjectSummaryResponse[]) => {
+    const targets = items.filter(
+      (p) => !(p.endDateExpected ?? p.endDate) || !(p.projectPhase ?? p.phase)
+    );
+    if (targets.length === 0) return;
+
+    const results = await Promise.allSettled(
+      targets.map((p) => fetchProjectDetail(p.projectId))
+    );
+
+    const updates = new Map<number, Partial<ProjectSummaryResponse>>();
+    results.forEach((res, idx) => {
+      if (res.status !== "fulfilled") return;
+      const projectId = targets[idx].projectId;
+      updates.set(projectId, {
+        endDateExpected:
+          res.value.endDateExpected ??
+          (res.value as any)?.expectedEndDate ??
+          null,
+        expectedEndDate:
+          (res.value as any)?.expectedEndDate ??
+          res.value.endDateExpected ??
+          null,
+        endDate: (res.value as any)?.endDate ?? null,
+        projectPhase:
+          (res.value as any)?.phase ??
+          targets[idx].projectPhase ??
+          targets[idx].phase ??
+          null,
+        phase: (res.value as any)?.phase ?? null,
+      });
+    });
+
+    if (updates.size === 0) return;
+    setProjects((prev) =>
+      prev.map((p) =>
+        updates.has(p.projectId) ? { ...p, ...updates.get(p.projectId)! } : p
+      )
+    );
+  };
+
   const loadProjects = async () => {
     try {
       setLoading(true);
@@ -76,6 +146,7 @@ export default function Projects() {
       setTotalCount(data.totalCount ?? 0);
       setPage(data.page);
       setSize(data.size);
+      void enrichProjects(data.projects ?? []);
     } catch (err) {
       setError("프로젝트 목록을 불러오지 못했습니다.");
     } finally {
@@ -132,43 +203,59 @@ export default function Projects() {
     });
   }, [projects, searchQuery, statusFilter]);
 
+  const filteredAndSortedProjects = useMemo(() => {
+    if (userRole !== "AGENCY") return filteredProjects;
+
+    const priority = {
+      joined: 0,
+      unknown: 1,
+      "not-joined": 2,
+    } as const;
+
+    return [...filteredProjects].sort(
+      (a, b) =>
+        priority[getMembershipState(a)] - priority[getMembershipState(b)]
+    );
+  }, [filteredProjects, userRole, membershipStatus]);
+
   // 필터 변경 시 첫 페이지로 이동
   useEffect(() => {
     setPage(0);
   }, [searchQuery, statusFilter]);
 
+  const formatDate = (value?: string | null) => {
+    if (!value) return "미정";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "미정";
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())}`;
+  };
+
   const totalPages = Math.max(1, Math.ceil(totalCount / size));
   const currentPage = Math.min(page, totalPages - 1);
-  const paginatedProjects = filteredProjects.slice(
+  const paginatedProjects = filteredAndSortedProjects.slice(
     currentPage * size,
     currentPage * size + size
   );
 
   const handleCardClick = async (project: ProjectSummaryResponse) => {
-    const isMember =
-      project.projectRole !== undefined && project.projectRole !== null;
-    const assumedMember = !isMember && userRole === "CLIENT"; // 클라이언트 목록은 이미 본인 프로젝트만
+    const membershipState = getMembershipState(project);
     const isSystemAdmin = userRole === "SYSTEM_ADMIN";
-    const isClientMember = assumedMember;
-    const agencyKnownMember = membershipStatus[project.projectId] === "joined";
 
-    if (isSystemAdmin || isMember || isClientMember || agencyKnownMember) {
-      const nextStatus =
-        isMember || agencyKnownMember
-          ? "joined"
-          : membershipStatus[project.projectId];
-      if (nextStatus) {
-        setMembershipStatus((prev) => ({
-          ...prev,
-          [project.projectId]: nextStatus,
-        }));
-      }
+    if (isSystemAdmin || membershipState === "joined") {
       navigate(`/project/${project.projectId}/dashboard`);
       return;
     }
 
-    // AGENCY는 목록은 전체지만 대시보드는 본인 프로젝트만 입장 가능 -> 없는 경우 상세 호출로 검증
     if (userRole === "AGENCY") {
+      if (membershipState === "not-joined") {
+        toast({
+          title: "접근 불가",
+          description: "참여 중인 프로젝트만 볼 수 있습니다.",
+        });
+        return;
+      }
+
       try {
         await fetchProjectDetail(project.projectId);
         setMembershipStatus((prev) => ({
@@ -189,6 +276,12 @@ export default function Projects() {
       return;
     }
 
+    if (userRole === "CLIENT") {
+      navigate(`/project/${project.projectId}/dashboard`);
+      return;
+    }
+
+    // AGENCY는 목록은 전체지만 대시보드는 본인 프로젝트만 입장 가능 -> 없는 경우 상세 호출로 검증
     toast({
       title: "접근 불가",
       description: "참여 중인 프로젝트만 볼 수 있습니다.",
@@ -252,44 +345,74 @@ export default function Projects() {
               <Card
                 key={project.projectId}
                 className={`card-hover ${
-                  userRole === "SYSTEM_ADMIN" ||
-                  (project.projectRole !== null &&
-                    project.projectRole !== undefined) ||
-                  userRole === "CLIENT" ||
-                  userRole === "AGENCY"
-                    ? "cursor-pointer"
-                    : "cursor-not-allowed opacity-75"
+                  (() => {
+                    const membershipState = getMembershipState(project);
+                    const isDisabled =
+                      userRole === "AGENCY" && membershipState === "not-joined";
+                    if (isDisabled) return "cursor-not-allowed opacity-50";
+                    if (
+                      membershipState === "joined" ||
+                      userRole === "SYSTEM_ADMIN" ||
+                      userRole === "CLIENT" ||
+                      (userRole === "AGENCY" &&
+                        membershipState !== "not-joined")
+                    ) {
+                      return "cursor-pointer";
+                    }
+                    return "cursor-not-allowed opacity-75";
+                  })()
                 }`}
                 onClick={() => handleCardClick(project)}
               >
                 <CardHeader>
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-lg">{project.name}</CardTitle>
-                    <StatusBadge status={statusBadgeMap[project.status]}>
-                      {statusLabelMap[project.status]}
-                    </StatusBadge>
+                  <div className="flex items-start gap-3 w-full justify-between">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-lg">{project.name}</CardTitle>
+                        <StatusBadge
+                          status={statusBadgeMap[project.status]}
+                          className="px-3.5 py-1.5 text-sm leading-none"
+                        >
+                          {statusLabelMap[project.status]}
+                        </StatusBadge>
+                      </div>
+                      <CardDescription>
+                        {(() => {
+                          if (userRole === "SYSTEM_ADMIN") return ""; // 시스템 관리자는 표시 생략
+                          const membershipState = getMembershipState(project);
+                          if (membershipState === "joined") return "참여중";
+                          if (userRole === "AGENCY") {
+                            if (membershipState === "unknown") return "확인 중…";
+                            return "참여하지 않음";
+                          }
+                          if (userRole === "CLIENT") return "참여중";
+                          return membershipState === "not-joined"
+                            ? "참여하지 않음"
+                            : "";
+                        })()}
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-start justify-end gap-2 ml-auto">
+                      {(() => {
+                        const phaseValue =
+                          (project.projectPhase ??
+                            project.phase) as ProjectPhase | undefined;
+                        if (!phaseValue) return null;
+                        const phaseLabel =
+                          projectPhaseLabelMap[phaseValue] ?? phaseValue;
+                        const phaseClass =
+                          projectPhaseBadgeMap[phaseValue] ??
+                          "bg-slate-100 text-slate-700 border-slate-200";
+                        return (
+                          <Badge
+                            className={`border ${phaseClass} px-3.5 py-1.5 text-sm leading-none`}
+                          >
+                            {phaseLabel}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
                   </div>
-                  <CardDescription>
-                    {(() => {
-                      if (userRole === "SYSTEM_ADMIN") return ""; // 시스템 관리자는 표시 생략
-                      // 이미 서버에서 role 내려오면 → 참여중
-                      if (project.projectRole) return "참여중";
-
-                      // CLIENT는 목록 자체가 본인 것만 → 참여중
-                      if (userRole === "CLIENT") return "참여중";
-
-                      // AGENCY는 membershipStatus 보고
-                      if (userRole === "AGENCY") {
-                        const state = membershipStatus[project.projectId];
-                        if (state === "joined") return "참여중";
-                        if (state === "not-joined") return "참여하지 않음";
-                        return "확인 중…";
-                      }
-
-                      // 그 외
-                      return "참여하지 않음";
-                    })()}
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
@@ -302,6 +425,23 @@ export default function Projects() {
                     <span className="text-muted-foreground">프로젝트 ID</span>
                     <span className="font-medium">{project.projectId}</span>
                   </div>
+                  {(() => {
+                    const membershipState = getMembershipState(project);
+                    const showDeadline = membershipState !== "not-joined";
+                    if (!showDeadline) return null;
+                    return (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">마감일</span>
+                        <span className="font-medium">
+                          {formatDate(
+                            project.endDateExpected ??
+                              project.expectedEndDate ??
+                              project.endDate
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             ))}

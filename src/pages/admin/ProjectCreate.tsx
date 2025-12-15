@@ -491,7 +491,10 @@ const ProjectCreate = () => {
 
             <div className="space-y-2">
               <Label>프로젝트 단계</Label>
-              <Select value={phase} onValueChange={(v) => setPhase(v as ProjectPhase)}>
+              <Select
+                value={phase}
+                onValueChange={(v) => setPhase(v as ProjectPhase)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -539,7 +542,11 @@ const ProjectCreate = () => {
               </Button>
 
               <span className="text-sm text-muted-foreground">
-                {contractFileName ? "업로드됨" : contractUploading ? "업로드 중..." : "선택된 파일 없음"}
+                {contractFileName
+                  ? "업로드됨"
+                  : contractUploading
+                  ? "업로드 중..."
+                  : "선택된 파일 없음"}
               </span>
 
               <div className="flex-1 flex items-center text-sm text-muted-foreground gap-2 min-w-0">
