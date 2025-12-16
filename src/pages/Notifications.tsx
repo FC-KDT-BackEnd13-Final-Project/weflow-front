@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { X, Mail, CheckCheck } from "lucide-react";
+import { X, Mail, MailOpen } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
 
@@ -253,7 +253,7 @@ export default function Notifications() {
               </div>
               {hasUnread && (
                 <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
-                  <CheckCheck className="mr-2 h-4 w-4" />
+                  <MailOpen className="mr-2 h-4 w-4" />
                   모두 읽음
                 </Button>
               )}
