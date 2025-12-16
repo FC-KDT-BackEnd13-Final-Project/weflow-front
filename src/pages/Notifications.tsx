@@ -212,16 +212,6 @@ export default function Notifications() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">로딩 중...</p>
-        </div>
-      </AppLayout>
-    );
-  }
-
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -260,7 +250,9 @@ export default function Notifications() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {filteredNotifications.length === 0 ? (
+            {isLoading ? (
+              <div className="py-12 text-center text-sm text-muted-foreground">알림을 불러오는 중...</div>
+            ) : filteredNotifications.length === 0 ? (
               <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">
                 {notifications.length === 0 ? "알림이 없습니다." : "선택한 조건에 해당하는 알림이 없습니다."}
               </div>
