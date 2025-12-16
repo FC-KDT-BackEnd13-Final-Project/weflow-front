@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -18,7 +19,7 @@ import { authApi } from "@/apis/auth";
 import { companiesApi } from "@/apis/companies";
 
 /* =========================
-   role 옵션 
+   role 옵션
 ========================= */
 
 const roleOptions = [
@@ -26,10 +27,6 @@ const roleOptions = [
   { value: "CLIENT", label: "고객사" },
   { value: "AGENCY", label: "개발사" },
 ];
-
-/* =========================
-   컴포넌트
-========================= */
 
 export default function Settings() {
   const { toast } = useToast();
@@ -40,7 +37,6 @@ export default function Settings() {
   const [isEditing, setIsEditing] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
 
-  const [userData, setUserData] = useState<any>(null);
   const [companyData, setCompanyData] = useState<any>(null);
 
   const [profile, setProfile] = useState({
@@ -48,6 +44,7 @@ export default function Settings() {
     phone: "",
     role: "",
     email: "",
+    isEmailNotificationEnabled: false,
   });
 
   const [formData, setFormData] = useState(profile);
@@ -60,18 +57,20 @@ export default function Settings() {
     const fetchData = async () => {
       try {
         const userRes = await authApi.getMe();
-        if (!userRes.success) throw new Error();
 
-        const initialProfile = {
-          name: userRes.data.name,
-          phone: userRes.data.phoneNumber,
-          role: userRes.data.role, // 🔥 그대로 사용
-          email: userRes.data.email,
-        };
+        if (userRes.success) {
+          const initialProfile = {
+            name: userRes.data.name,
+            phone: userRes.data.phoneNumber,
+            role: userRes.data.role,
+            email: userRes.data.email,
+            isEmailNotificationEnabled:
+              userRes.data.isEmailNotificationEnabled ?? false,
+          };
 
-        setUserData(userRes.data);
-        setProfile(initialProfile);
-        setFormData(initialProfile);
+          setProfile(initialProfile);
+          setFormData(initialProfile);
+        }
 
         try {
           const companyRes = await companiesApi.getMyCompany();
@@ -79,7 +78,7 @@ export default function Settings() {
             setCompanyData(companyRes.data);
           }
         } catch {
-          // 회사 정보 없을 수 있음
+          // 회사 정보 없을 수 있음 → 무시
         }
       } catch (error: any) {
         toast({
@@ -113,6 +112,14 @@ export default function Settings() {
     setIsDirty(true);
   };
 
+  const handleEmailNotificationChange = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      isEmailNotificationEnabled: checked,
+    }));
+    setIsDirty(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -121,27 +128,25 @@ export default function Settings() {
       const res = await authApi.updateMe({
         name: formData.name,
         phoneNumber: formData.phone,
+        isEmailNotificationEnabled:
+          formData.isEmailNotificationEnabled,
       });
 
       if (res.success) {
-        const updated = {
+        const updatedProfile = {
+          ...profile,
           name: res.data.name,
           phone: res.data.phoneNumber,
-          role: formData.role, // 그대로 유지
-          email: res.data.email,
+          isEmailNotificationEnabled:
+            res.data.isEmailNotificationEnabled,
         };
 
-        setProfile(updated);
-        setFormData(updated);
-        setUserData((prev: any) => ({
-          ...prev,
-          name: res.data.name,
-          phoneNumber: res.data.phoneNumber,
-        }));
-
-        toast({ title: "회원 정보가 저장되었습니다." });
+        setProfile(updatedProfile);
+        setFormData(updatedProfile);
         setIsDirty(false);
         setIsEditing(false);
+
+        toast({ title: "회원 정보가 저장되었습니다." });
       }
     } catch (error: any) {
       toast({
@@ -169,17 +174,14 @@ export default function Settings() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* 헤더 */}
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            설정
-          </h1>
+          <h1 className="text-3xl font-semibold">설정</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            회원 정보를 확인하고 필요한 내용을 수정하세요.
+            회원 정보를 확인하고 수정하세요.
           </p>
         </div>
 
-        {/* ================= 회원 정보 ================= */}
+        {/* 회원 정보 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>회원 정보</CardTitle>
@@ -206,21 +208,21 @@ export default function Settings() {
             ) : isEditing ? (
               <form className="space-y-6" onSubmit={handleSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                  <div>
                     <Label>이름</Label>
                     <Input
                       value={formData.name}
                       onChange={handleChange("name")}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div>
                     <Label>연락처</Label>
                     <Input
                       value={formData.phone}
                       onChange={handleChange("phone")}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div>
                     <Label>역할</Label>
                     <Select
                       value={formData.role}
@@ -231,20 +233,34 @@ export default function Settings() {
                       </SelectTrigger>
                       <SelectContent>
                         {roleOptions.map((r) => (
-                          <SelectItem
-                            key={r.value}
-                            value={r.value}
-                          >
+                          <SelectItem key={r.value} value={r.value}>
                             {r.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div>
                     <Label>이메일</Label>
                     <Input value={formData.email} readOnly />
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
+                    <Label className="text-base">
+                      중요 알림 이메일 수신
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      승인 요청, 멘션 등
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.isEmailNotificationEnabled}
+                    onCheckedChange={
+                      handleEmailNotificationChange
+                    }
+                  />
                 </div>
 
                 <div className="flex justify-end gap-3">
@@ -266,105 +282,57 @@ export default function Settings() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    이름
-                  </p>
-                  <p className="font-medium mt-1">
-                    {profile.name}
-                  </p>
+                  <p className="text-sm text-muted-foreground">이름</p>
+                  <p className="font-medium">{profile.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    연락처
-                  </p>
-                  <p className="font-medium mt-1">
-                    {profile.phone}
-                  </p>
+                  <p className="text-sm text-muted-foreground">연락처</p>
+                  <p className="font-medium">{profile.phone}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    역할
-                  </p>
-                  <p className="font-medium mt-1">
-                    {profile.role}
-                  </p>
+                  <p className="text-sm text-muted-foreground">역할</p>
+                  <p className="font-medium">{profile.role}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">
-                    이메일
-                  </p>
-                  <p className="font-medium mt-1">
-                    {profile.email}
-                  </p>
+                  <p className="text-sm text-muted-foreground">이메일</p>
+                  <p className="font-medium">{profile.email}</p>
+                </div>
+                <div className="md:col-span-2 flex items-center justify-between border-t pt-4">
+                  <p className="text-sm">이메일 알림</p>
+                  <Badge>
+                    {profile.isEmailNotificationEnabled
+                      ? "ON"
+                      : "OFF"}
+                  </Badge>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* ================= 회사 정보 ================= */}
+        {/* 회사 정보 */}
         <Card>
           <CardHeader>
             <CardTitle>회사 정보</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            {isLoading ? (
-              <div className="md:col-span-2 text-sm text-muted-foreground">
-                회사 정보를 불러오는 중입니다…
-              </div>
-            ) : companyData ? (
-              <>
+          <CardContent>
+            {companyData ? (
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-muted-foreground">회사명</p>
-                  <p className="font-medium mt-1">
-                    {companyData.name}
-                  </p>
+                  <p className="font-medium">{companyData.name}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">
-                    사업자번호
-                  </p>
-                  <p className="font-medium mt-1">
-                    {companyData.businessNumber}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">
-                    대표자
-                  </p>
-                  <p className="font-medium mt-1">
+                  <p className="text-muted-foreground">대표자</p>
+                  <p className="font-medium">
                     {companyData.representative}
                   </p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">
-                    이메일
-                  </p>
-                  <p className="font-medium mt-1">
-                    {companyData.email}
-                  </p>
-                </div>
-                <div className="md:col-span-2">
-                  <p className="text-muted-foreground">
-                    주소
-                  </p>
-                  <p className="font-medium mt-1">
-                    {companyData.address}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">
-                    상태
-                  </p>
-                  <Badge className="mt-1">
-                    {companyData.status}
-                  </Badge>
-                </div>
-              </>
-            ) : (
-              <div className="md:col-span-2 text-center text-muted-foreground">
-                회사 정보를 확인할 수 없습니다.
               </div>
+            ) : (
+              <p className="text-muted-foreground">
+                회사 정보가 없습니다.
+              </p>
             )}
           </CardContent>
         </Card>
