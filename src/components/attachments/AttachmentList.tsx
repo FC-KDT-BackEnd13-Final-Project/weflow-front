@@ -6,6 +6,7 @@ import type {
 } from "@/types/attachment";
 import { Button } from "@/components/ui/button";
 import { Download, Link2, Paperclip } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 type AttachmentInputItem = StepAttachmentResponse | CommonAttachmentResponse | string;
 
@@ -75,23 +76,23 @@ export function AttachmentList({
   items,
   emptyText = "첨부가 없습니다.",
   fileLabel = "첨부파일",
-  linkLabel = "관련 링크",
+  linkLabel = "링크",
   className,
 }: AttachmentListProps) {
   const { files, links, hasAny } = normalizeAttachments(items);
 
   if (!hasAny) {
-    return <p className={cn("text-sm text-muted-foreground", className)}>{emptyText}</p>;
+    return <p className={cn("mt-2 text-sm text-muted-foreground", className)}>{emptyText}</p>;
   }
 
   return (
     <div className={cn("space-y-4", className)}>
       {!!files.length && (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+          <Label className="flex items-center gap-2 text-sm font-semibold">
             <Paperclip className="h-4 w-4" />
             {fileLabel}
-          </p>
+          </Label>
           <div className="space-y-2">
             {files.map((file) => {
               const sizeText = formatFileSize(file.size);
@@ -124,10 +125,10 @@ export function AttachmentList({
       )}
       {!!links.length && (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground inline-flex items-center gap-2 font-semibold">
+          <Label className="flex items-center gap-2 text-sm font-semibold">
             <Link2 className="h-4 w-4" />
             {linkLabel}
-          </p>
+          </Label>
           <div className="space-y-2">
             {links.map((link) => (
               <a
@@ -137,8 +138,9 @@ export function AttachmentList({
                 rel="noreferrer"
                 className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
               >
-                <div className="font-medium break-all line-clamp-2">{link.name}</div>
-                {link.url && <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>}
+                <div className="text-xs text-muted-foreground break-all line-clamp-1 mt-1">
+                  {link.url || link.name}
+                </div>
               </a>
             ))}
           </div>
