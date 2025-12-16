@@ -194,7 +194,7 @@ export default function BoardNew() {
     };
 
     fetchPost();
-  }, [isEditMode, id, postId, toast, navigate]);
+  }, [isEditMode, id, postId, location.key, toast, navigate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
