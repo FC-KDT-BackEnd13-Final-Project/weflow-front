@@ -39,6 +39,7 @@ const BulkMemberUpload = () => {
 
   // 로딩 상태
   const [isLoading, setIsLoading] = useState(false);
+  const [currentProgress, setCurrentProgress] = useState(0); // 현재 진행 상황 (명)
 
   // 스크롤 Ref
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -46,7 +47,7 @@ const BulkMemberUpload = () => {
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
+  
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -86,10 +87,10 @@ const BulkMemberUpload = () => {
       complete: async (result) => {
         const rows = result.data as any[];
 
-        if (rows.length > 800) {
+        if (rows.length > 1000) {
           toast({
             title: "파일 크기 초과",
-            description: "한 번에 최대 800명까지만 등록할 수 있습니다.",
+            description: "한 번에 최대 1000명까지만 등록할 수 있습니다.",
             variant: "destructive",
           });
           setCsvFile(null);
@@ -188,7 +189,7 @@ const BulkMemberUpload = () => {
     });
   };
 
-  // 최종 등록 API 호출
+  // 최종 등록 API 호출 (Chunk 분할 전송)
   const handleRegister = async () => {
     const invalid = parsedData.some((u) => u.status !== "준비됨");
 
@@ -201,51 +202,84 @@ const BulkMemberUpload = () => {
     if (invalid)
       return toast({ title: "입력 오류가 있는 행이 있습니다.", variant: "destructive" });
 
-    if (!csvFile)
+    if (!csvFile || parsedData.length === 0)
       return toast({ title: "CSV 파일을 업로드하세요.", variant: "destructive" });
 
     setIsLoading(true);
+    setCurrentProgress(0);
+
+    let totalSuccess = 0;
+    let totalFailure = 0;
+    const allFailures: any[] = [];
+    const BATCH_SIZE = 100; // 100명씩 분할 전송
 
     try {
-      const response = await adminApi.createUsersBatchFromCsv(
-        csvFile,
-        Number(company),
-        password
-      );
+      for (let i = 0; i < parsedData.length; i += BATCH_SIZE) {
+        const chunk = parsedData.slice(i, i + BATCH_SIZE);
+        
+        // Chunk를 다시 CSV 포맷으로 변환
+        // (API가 File 객체를 요구하므로 CSV string -> File 변환 필요)
+        // Papa.unparse는 배열 데이터를 CSV 문자열로 바꿔줍니다.
+        const csvContent = Papa.unparse(chunk.map(user => ({
+          "이름": user.name,
+          "이메일": user.email,
+          "전화번호": user.phone
+        })));
+        
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const chunkFile = new File([blob], `chunk_${i}.csv`, { type: "text/csv" });
 
-      if (response.success) {
-        const { totalCount, successCount, failureCount, failures } = response.data;
+        // API 호출
+        const response = await adminApi.createUsersBatchFromCsv(
+          chunkFile,
+          Number(company),
+          password
+        );
 
-        if (failureCount > 0) {
-          // Partial Success
-          toast({
-            title: `일괄 등록 결과`,
-            description: `성공: ${successCount}명, 실패: ${failureCount}명`,
-            variant: "default",
-          });
-          console.log("실패 목록:", failures);
-        } else {
-          // Full Success
-          toast({
-            title: "일괄 등록 완료",
-            description: `${successCount}명의 회원이 등록되었습니다.`,
-          });
+        if (response.success) {
+          totalSuccess += response.data.successCount;
+          totalFailure += response.data.failureCount;
+          if (response.data.failures && response.data.failures.length > 0) {
+            allFailures.push(...response.data.failures);
+          }
         }
-
-        // 성공 후 초기화
-        setCsvFile(null);
-        setParsedData([]);
-        setPassword("");
+        
+        // 진행률 업데이트
+        setCurrentProgress(Math.min(i + BATCH_SIZE, parsedData.length));
       }
+
+      // 최종 결과 처리
+      if (totalFailure > 0) {
+        // Partial Success or Failure
+        toast({
+          title: `일괄 등록 결과`,
+          description: `성공: ${totalSuccess}명, 실패: ${totalFailure}명`,
+          variant: "default",
+        });
+        console.log("전체 실패 목록:", allFailures);
+      } else {
+        // Full Success
+        toast({
+          title: "일괄 등록 완료",
+          description: `${totalSuccess}명의 회원이 모두 등록되었습니다.`, 
+        });
+      }
+
+      // 성공 후 초기화
+      setCsvFile(null);
+      setParsedData([]);
+      setPassword("");
+
     } catch (error: any) {
-      console.error("일괄 등록 실패:", error);
+      console.error("일괄 등록 중단:", error);
       toast({
-        title: "일괄 등록 실패",
-        description: error.response?.data?.message || "서버 오류가 발생했습니다.",
+        title: "일괄 등록 중단",
+        description: error.response?.data?.message || "처리 중 오류가 발생하여 중단되었습니다.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
+      setCurrentProgress(0);
     }
   };
 
@@ -255,7 +289,15 @@ const BulkMemberUpload = () => {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
           <p className="mt-4 text-lg font-medium text-foreground">회원 일괄 등록 중입니다...</p>
-          <p className="text-sm text-muted-foreground">데이터 양에 따라 시간이 소요될 수 있습니다.</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            {currentProgress} / {parsedData.length} 명 처리 중
+          </p>
+          <div className="w-64 h-2 bg-muted rounded-full mt-4 overflow-hidden">
+            <div 
+              className="h-full bg-primary transition-all duration-300 ease-out"
+              style={{ width: `${(currentProgress / parsedData.length) * 100}%` }}
+            />
+          </div>
         </div>
       )}
 
