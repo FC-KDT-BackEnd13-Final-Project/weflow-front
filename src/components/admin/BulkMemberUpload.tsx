@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Upload } from "lucide-react";
+import { Upload, Loader2, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { adminApi } from "@/apis/admin";
 
@@ -36,6 +36,16 @@ const BulkMemberUpload = () => {
 
   // 드래그 상태
   const [isDragging, setIsDragging] = useState(false);
+
+  // 로딩 상태
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 스크롤 Ref
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   // Fetch companies
   useEffect(() => {
@@ -71,6 +81,16 @@ const BulkMemberUpload = () => {
       skipEmptyLines: true,
       complete: async (result) => {
         const rows = result.data as any[];
+
+        if (rows.length > 1000) {
+          toast({
+            title: "파일 크기 초과",
+            description: "한 번에 최대 1000명까지만 등록할 수 있습니다.",
+            variant: "destructive",
+          });
+          setCsvFile(null);
+          return;
+        }
 
         // 1. 이메일 목록 추출 (유효한 이메일만)
         const emailsToCheck = rows
@@ -180,6 +200,8 @@ const BulkMemberUpload = () => {
     if (!csvFile)
       return toast({ title: "CSV 파일을 업로드하세요.", variant: "destructive" });
 
+    setIsLoading(true);
+
     try {
       const response = await adminApi.createUsersBatchFromCsv(
         csvFile,
@@ -218,11 +240,21 @@ const BulkMemberUpload = () => {
         description: error.response?.data?.message || "서버 오류가 발생했습니다.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {isLoading && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="mt-4 text-lg font-medium text-foreground">회원 일괄 등록 중입니다...</p>
+          <p className="text-sm text-muted-foreground">데이터 양에 따라 시간이 소요될 수 있습니다.</p>
+        </div>
+      )}
+
       {/* 회사 / 역할 공통 선택 */}
       <Card>
         <CardContent className="space-y-4 py-6">
@@ -348,6 +380,7 @@ const BulkMemberUpload = () => {
               <p>※ CSV 파일은 '이름, 이메일, 전화번호' 열이 필요합니다. (전화번호는 선택사항)</p>
               <p>※ 회원 종류와 소속 회사는 전체에 일괄 적용됩니다.</p>
               <p>※ 모든 회원에게 동일한 임시 비밀번호가 적용됩니다.</p>
+              <p>※ 목록 중 이미 가입된 이메일이 하나라도 포함되어 있으면 일괄 등록을 진행할 수 없습니다.</p>
             </div>
 
           </CardContent>
@@ -363,6 +396,22 @@ const BulkMemberUpload = () => {
           일괄 등록
         </Button>
       </div>
+
+      {/* 스크롤 타겟 */}
+      <div ref={bottomRef} />
+
+      {/* 맨 아래로 가기 버튼 (데이터가 많을 때만 표시) */}
+      {parsedData.length > 20 && (
+        <Button
+          variant="secondary"
+          size="icon"
+          className="fixed bottom-8 right-8 rounded-full shadow-lg z-40 border hover:bg-muted"
+          onClick={scrollToBottom}
+          title="맨 아래로 스크롤"
+        >
+          <ArrowDown className="h-5 w-5" />
+        </Button>
+      )}
     </div>
   );
 };

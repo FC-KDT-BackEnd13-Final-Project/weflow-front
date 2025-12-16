@@ -136,12 +136,12 @@ const AdminCompanyEdit = () => {
 
       <Card className={isDeleted ? "opacity-70" : ""}>
         <CardHeader>
-          <CardTitle>회사명</CardTitle>
+          <CardTitle>회사</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name">회사명</Label>
+              <Label htmlFor="name">회사명 *</Label>
               <Input
                 id="name"
                 value={formData.name}
@@ -164,7 +164,6 @@ const AdminCompanyEdit = () => {
                 }
                 placeholder="대표자명 입력"
                 disabled={isDeleted}
-                required
               />
             </div>
 
@@ -179,7 +178,6 @@ const AdminCompanyEdit = () => {
                 }
                 placeholder="example@company.com"
                 disabled={isDeleted}
-                required
               />
             </div>
 

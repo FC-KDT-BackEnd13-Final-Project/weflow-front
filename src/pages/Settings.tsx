@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "@/apis/auth";
 import { companiesApi } from "@/apis/companies";
@@ -100,11 +93,6 @@ export default function Settings() {
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     setFormData((prev) => ({ ...prev, [field]: event.target.value }));
-    setIsDirty(true);
-  };
-
-  const handleRoleChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, role: value }));
     setIsDirty(true);
   };
 
@@ -233,24 +221,20 @@ export default function Settings() {
                   </div>
                   <div className="space-y-2">
                     <Label>역할</Label>
-                    <Select value={formData.role} onValueChange={handleRoleChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="역할을 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roleOptions.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {roleOptions.find((role) => role.value === formData.role)?.label ?? formData.role}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      ℹ️ 역할은 변경할 수 없습니다.
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">이메일</Label>
-                    <Input id="email" type="email" value={formData.email} readOnly />
+                    <Label>이메일</Label>
+                    <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {formData.email}
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      로그인 이메일은 관리자에게 요청하여 변경할 수 있습니다.
+                      ℹ️ 로그인 이메일 변경은 관리자에게 문의하세요.
                     </p>
                   </div>
                 </div>
@@ -303,13 +287,8 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="pt-4 border-t">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">중요 알림 이메일 수신</p>
-                      <p className="text-base font-medium mt-1">
-                        {profile.isEmailNotificationEnabled ? "활성화" : "비활성화"}
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">중요 알림 이메일 수신</p>
                     <Badge variant={profile.isEmailNotificationEnabled ? "default" : "secondary"}>
                       {profile.isEmailNotificationEnabled ? "ON" : "OFF"}
                     </Badge>
