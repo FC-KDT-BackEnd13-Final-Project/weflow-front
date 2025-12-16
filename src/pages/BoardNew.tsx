@@ -486,6 +486,17 @@ export default function BoardNew() {
           description: "게시글이 성공적으로 수정되었습니다.",
         });
 
+        // 상태 초기화
+        setFiles([]);
+        setLinks([]);
+        setQuestions([]);
+        setFormData({
+          title: "",
+          content: "",
+          status: "",
+          step: "",
+        });
+
         // 수정한 게시글 상세 페이지로 이동
         navigate(`/project/${id}/board/${postId}`);
       } else {
@@ -508,6 +519,17 @@ export default function BoardNew() {
         toast({
           title: "게시글 작성 완료",
           description: "게시글이 성공적으로 작성되었습니다.",
+        });
+
+        // 상태 초기화
+        setFiles([]);
+        setLinks([]);
+        setQuestions([]);
+        setFormData({
+          title: "",
+          content: "",
+          status: "",
+          step: "",
         });
 
         // 방금 작성한 게시글 상세 페이지로 이동
