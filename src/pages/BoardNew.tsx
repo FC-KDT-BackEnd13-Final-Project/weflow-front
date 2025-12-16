@@ -162,34 +162,34 @@ export default function BoardNew() {
   // 수정 모드일 때 기존 게시글 데이터 불러오기
   useEffect(() => {
     const fetchPost = async () => {
-      if (!isEditMode || !id || !postId) {
-        // 작성 모드일 때 상태 초기화
+      if (isEditMode && id && postId) {
+        // 수정 모드: 기존 게시글 데이터 로드
+        try {
+          const post = await getPost(Number(id), Number(postId));
+
+          setFormData({
+            title: post.title,
+            content: post.content,
+            status: post.projectPhase, // ProjectPhase enum 값 사용
+            step: post.step.stepId.toString(),
+          });
+
+          setLinks(post.links.map(link => link.url));
+          // 파일은 별도 처리 필요
+        } catch (error) {
+          console.error("게시글 조회 실패:", error);
+          toast({
+            title: "게시글 로딩 실패",
+            description: "게시글을 불러올 수 없습니다.",
+            variant: "destructive",
+          });
+          navigate(`/project/${id}/board`);
+        }
+      } else {
+        // 작성 모드: 상태 초기화
         setFiles([]);
         setLinks([]);
         setQuestions([]);
-        return;
-      }
-
-      try {
-        const post = await getPost(Number(id), Number(postId));
-
-        setFormData({
-          title: post.title,
-          content: post.content,
-          status: post.projectPhase, // ProjectPhase enum 값 사용
-          step: post.step.stepId.toString(),
-        });
-
-        setLinks(post.links.map(link => link.url));
-        // 파일은 별도 처리 필요
-      } catch (error) {
-        console.error("게시글 조회 실패:", error);
-        toast({
-          title: "게시글 로딩 실패",
-          description: "게시글을 불러올 수 없습니다.",
-          variant: "destructive",
-        });
-        navigate(`/project/${id}/board`);
       }
     };
 
