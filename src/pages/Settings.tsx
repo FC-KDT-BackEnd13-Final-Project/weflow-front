@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -19,27 +18,30 @@ import { useNavigate } from "react-router-dom";
 import { authApi } from "@/apis/auth";
 import { companiesApi } from "@/apis/companies";
 
-/* =========================
-   role 옵션
-========================= */
-
 const roleOptions = [
-  { value: "SYSTEM_ADMIN", label: "시스템 관리자" },
-  { value: "CLIENT", label: "고객사" },
-  { value: "AGENCY", label: "개발사" },
+  { value: "CLIENT", label: "고객사 담당자" },
+  { value: "ADMIN", label: "관리자" },
+  { value: "PM", label: "PM" },
+  { value: "DEVELOPER", label: "개발자" },
 ];
+
+const formatDateTime = (value: string) =>
+  new Date(value).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 
 export default function Settings() {
   const { toast } = useToast();
   const navigate = useNavigate();
-
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-
+  const [userData, setUserData] = useState<any>(null);
   const [companyData, setCompanyData] = useState<any>(null);
-
   const [profile, setProfile] = useState({
     name: "",
     phone: "",
@@ -47,12 +49,9 @@ export default function Settings() {
     email: "",
     isEmailNotificationEnabled: false,
   });
-
   const [formData, setFormData] = useState(profile);
-
-  /* =========================
-     데이터 로딩
-  ========================= */
+  const [isDirty, setIsDirty] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -70,37 +69,24 @@ export default function Settings() {
           };
           setProfile(initialProfile);
           setFormData(initialProfile);
-        const userRes = await authApi.getMe();
 
-        if (userRes.success) {
-          const initialProfile = {
-            name: userRes.data.name,
-            phone: userRes.data.phoneNumber,
-            role: userRes.data.role,
-            email: userRes.data.email,
-            isEmailNotificationEnabled:
-              userRes.data.isEmailNotificationEnabled ?? false,
-          };
-
-          setProfile(initialProfile);
-          setFormData(initialProfile);
-        }
-
-        try {
-          const companyRes = await companiesApi.getMyCompany();
-          if (companyRes.success) {
-            setCompanyData(companyRes.data);
+          // 2. 회사 정보 조회 (선택 - 실패해도 페이지는 표시)
+          try {
+            const companyResponse = await companiesApi.getMyCompany();
+            if (companyResponse.success) {
+              setCompanyData(companyResponse.data);
+            }
+          } catch (companyError) {
+            console.log("회사 정보가 없거나 조회 실패:", companyError);
+            // 회사 정보 조회 실패는 페이지 렌더링을 막지 않음
           }
-        } catch {
-          // 회사 정보 없을 수 있음 → 무시
         }
       } catch (error: any) {
+        console.error("사용자 정보 조회 실패:", error);
         toast({
           variant: "destructive",
           title: "정보 조회 실패",
-          description:
-            error.response?.data?.message ||
-            "사용자 정보를 불러올 수 없습니다.",
+          description: error.response?.data?.message || "사용자 정보를 불러올 수 없습니다.",
         });
       } finally {
         setIsLoading(false);
@@ -110,16 +96,12 @@ export default function Settings() {
     fetchData();
   }, [toast]);
 
-  /* =========================
-     핸들러
-  ========================= */
-
-  const handleChange =
-    (field: "name" | "phone") =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      setIsDirty(true);
-    };
+  const handleChange = (field: "name" | "phone") => (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setFormData((prev) => ({ ...prev, [field]: event.target.value }));
+    setIsDirty(true);
+  };
 
   const handleRoleChange = (value: string) => {
     setFormData((prev) => ({ ...prev, role: value }));
@@ -136,11 +118,9 @@ export default function Settings() {
     setIsSaving(true);
 
     try {
-      const res = await authApi.updateMe({
+      const response = await authApi.updateMe({
         name: formData.name,
         phoneNumber: formData.phone,
-        isEmailNotificationEnabled:
-          formData.isEmailNotificationEnabled,
         isEmailNotificationEnabled: formData.isEmailNotificationEnabled,
       });
 
@@ -151,17 +131,10 @@ export default function Settings() {
           role: formData.role,
           email: response.data.email,
           isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
-      if (res.success) {
-        const updatedProfile = {
-          ...profile,
-          name: res.data.name,
-          phone: res.data.phoneNumber,
-          isEmailNotificationEnabled:
-            res.data.isEmailNotificationEnabled,
         };
+        setProfile(updatedProfile);
+        setFormData(updatedProfile);
 
-        setProfile(updated);
-        setFormData(updated);
         setUserData((prev: any) => ({
           ...prev,
           name: response.data.name,
@@ -169,21 +142,18 @@ export default function Settings() {
           isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
         }));
 
-        toast({ title: "회원 정보가 저장되었습니다." });
-        setProfile(updatedProfile);
-        setFormData(updatedProfile);
+        toast({
+          title: "회원 정보가 저장되었습니다.",
+          description: response.message,
+        });
         setIsDirty(false);
         setIsEditing(false);
-
-        toast({ title: "회원 정보가 저장되었습니다." });
       }
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "회원 정보 수정 실패",
-        description:
-          error.response?.data?.message ||
-          "정보 수정에 실패했습니다.",
+        description: error.response?.data?.message || "정보 수정에 실패했습니다.",
       });
     } finally {
       setIsSaving(false);
@@ -196,108 +166,95 @@ export default function Settings() {
     setIsEditing(false);
   };
 
-  /* =========================
-     렌더
-  ========================= */
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">사용자 정보를 불러올 수 없습니다.</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold">설정</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">설정</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            회원 정보를 확인하고 수정하세요.
+            회원 정보를 확인하고 필요한 내용을 수정하세요.
           </p>
         </div>
 
-        {/* 회원 정보 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>회원 정보</CardTitle>
-            {!isEditing && !isLoading && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setFormData(profile);
-                  setIsEditing(true);
-                  setIsDirty(false);
-                }}
-              >
+            {!isEditing && (
+              <Button variant="outline" size="sm" onClick={() => {
+                setFormData(profile);
+                setIsDirty(false);
+                setIsEditing(true);
+              }}>
                 수정
               </Button>
             )}
           </CardHeader>
-
           <CardContent>
-            {isLoading ? (
-              <div className="text-sm text-muted-foreground">
-                회원 정보를 불러오는 중입니다…
-              </div>
-            ) : isEditing ? (
+            {isEditing ? (
               <form className="space-y-6" onSubmit={handleSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>이름</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">이름</Label>
                     <Input
+                      id="name"
                       value={formData.name}
                       onChange={handleChange("name")}
+                      placeholder="이름을 입력하세요"
                     />
                   </div>
-                  <div>
-                    <Label>연락처</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">연락처</Label>
                     <Input
+                      id="phone"
                       value={formData.phone}
                       onChange={handleChange("phone")}
+                      placeholder="010-0000-0000"
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>역할</Label>
-                    <Select
-                      value={formData.role}
-                      onValueChange={handleRoleChange}
-                    >
+                    <Select value={formData.role} onValueChange={handleRoleChange}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="역할을 선택하세요" />
                       </SelectTrigger>
                       <SelectContent>
-                        {roleOptions.map((r) => (
-                          <SelectItem key={r.value} value={r.value}>
-                            {r.label}
+                        {roleOptions.map((role) => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>이메일</Label>
-                    <Input value={formData.email} readOnly />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div>
-                    <Label className="text-base">
-                      중요 알림 이메일 수신
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      승인 요청, 멘션 등
+                  <div className="space-y-2">
+                    <Label htmlFor="email">이메일</Label>
+                    <Input id="email" type="email" value={formData.email} readOnly />
+                    <p className="text-xs text-muted-foreground">
+                      로그인 이메일은 관리자에게 요청하여 변경할 수 있습니다.
                     </p>
                   </div>
-                  <Switch
-                    checked={formData.isEmailNotificationEnabled}
-                    onCheckedChange={
-                      handleEmailNotificationChange
-                    }
-                  />
                 </div>
 
-                <div className="flex justify-end gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleReset}
-                  >
                 <div className="flex items-center justify-between rounded-lg border p-4">
                   <div className="space-y-0.5">
                     <Label htmlFor="email-notification" className="text-base">
@@ -318,39 +275,33 @@ export default function Settings() {
                   <Button type="button" variant="outline" onClick={handleReset} disabled={isSaving}>
                     취소
                   </Button>
-                  <Button
-                    type="submit"
-                    disabled={!isDirty || isSaving}
-                  >
+                  <Button type="submit" disabled={!isDirty || isSaving}>
                     {isSaving ? "저장 중..." : "저장"}
                   </Button>
                 </div>
               </form>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm text-muted-foreground">이름</p>
-                  <p className="font-medium">{profile.name}</p>
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="text-sm text-muted-foreground">이름</p>
+                    <p className="text-base font-medium mt-1">{profile.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">연락처</p>
+                    <p className="text-base font-medium mt-1">{profile.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">역할</p>
+                    <p className="text-base font-medium mt-1">
+                      {roleOptions.find((role) => role.value === profile.role)?.label ?? profile.role}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">이메일</p>
+                    <p className="text-base font-medium mt-1">{profile.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">연락처</p>
-                  <p className="font-medium">{profile.phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">역할</p>
-                  <p className="font-medium">{profile.role}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">이메일</p>
-                  <p className="font-medium">{profile.email}</p>
-                </div>
-                <div className="md:col-span-2 flex items-center justify-between border-t pt-4">
-                  <p className="text-sm">이메일 알림</p>
-                  <Badge>
-                    {profile.isEmailNotificationEnabled
-                      ? "ON"
-                      : "OFF"}
-                  </Badge>
                 <div className="pt-4 border-t">
                   <div className="flex items-center justify-between">
                     <div>
@@ -374,41 +325,39 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* 회사 정보 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>회사 정보</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {companyData ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-muted-foreground">회사명</p>
-                  <p className="font-medium">{companyData.name}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">대표자</p>
-                  <p className="font-medium">
-                    {companyData.representative}
-                  </p>
-                </div>
+        {companyData && (
+          <Card>
+            <CardHeader>
+              <CardTitle>회사 정보</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
+              <div>
+                <p className="text-muted-foreground">회사명</p>
+                <p className="font-medium mt-1">{companyData.name}</p>
               </div>
-            ) : (
-              <p className="text-muted-foreground">
-                회사 정보가 없습니다.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            onClick={() => navigate("/settings/password")}
-          >
-            비밀번호 변경
-          </Button>
-        </div>
+              <div>
+                <p className="text-muted-foreground">사업자번호</p>
+                <p className="font-medium mt-1">{companyData.businessNumber}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">대표자</p>
+                <p className="font-medium mt-1">{companyData.representative}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">이메일</p>
+                <p className="font-medium mt-1">{companyData.email}</p>
+              </div>
+              <div className="md:col-span-2">
+                <p className="text-muted-foreground">주소</p>
+                <p className="font-medium mt-1">{companyData.address}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">상태</p>
+                <Badge className="mt-1">{companyData.status}</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
