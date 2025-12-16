@@ -34,6 +34,7 @@ export interface UserProfile {
   phoneNumber: string;
   role: string;
   status: string;
+  isEmailNotificationEnabled: boolean;
   company: Company;
 }
 
@@ -46,6 +47,7 @@ interface UserProfileResponse {
 interface UpdateUserRequest {
   name: string;
   phoneNumber: string;
+  isEmailNotificationEnabled?: boolean;
 }
 
 interface UpdateUserResponse {
@@ -56,6 +58,7 @@ interface UpdateUserResponse {
     email: string;
     name: string;
     phoneNumber: string;
+    isEmailNotificationEnabled: boolean;
   };
 }
 
