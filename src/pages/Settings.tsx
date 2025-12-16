@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Select,
@@ -56,6 +57,19 @@ export default function Settings() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // 1. 사용자 정보 조회 (필수)
+        const userResponse = await authApi.getMe();
+        if (userResponse.success) {
+          setUserData(userResponse.data);
+          const initialProfile = {
+            name: userResponse.data.name,
+            phone: userResponse.data.phoneNumber,
+            role: userResponse.data.role,
+            email: userResponse.data.email,
+            isEmailNotificationEnabled: userResponse.data.isEmailNotificationEnabled ?? false,
+          };
+          setProfile(initialProfile);
+          setFormData(initialProfile);
         const userRes = await authApi.getMe();
 
         if (userRes.success) {
@@ -113,15 +127,12 @@ export default function Settings() {
   };
 
   const handleEmailNotificationChange = (checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      isEmailNotificationEnabled: checked,
-    }));
+    setFormData((prev) => ({ ...prev, isEmailNotificationEnabled: checked }));
     setIsDirty(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setIsSaving(true);
 
     try {
@@ -130,8 +141,16 @@ export default function Settings() {
         phoneNumber: formData.phone,
         isEmailNotificationEnabled:
           formData.isEmailNotificationEnabled,
+        isEmailNotificationEnabled: formData.isEmailNotificationEnabled,
       });
 
+      if (response.success) {
+        const updatedProfile = {
+          name: response.data.name,
+          phone: response.data.phoneNumber,
+          role: formData.role,
+          email: response.data.email,
+          isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
       if (res.success) {
         const updatedProfile = {
           ...profile,
@@ -141,6 +160,16 @@ export default function Settings() {
             res.data.isEmailNotificationEnabled,
         };
 
+        setProfile(updated);
+        setFormData(updated);
+        setUserData((prev: any) => ({
+          ...prev,
+          name: response.data.name,
+          phoneNumber: response.data.phoneNumber,
+          isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
+        }));
+
+        toast({ title: "회원 정보가 저장되었습니다." });
         setProfile(updatedProfile);
         setFormData(updatedProfile);
         setIsDirty(false);
@@ -269,6 +298,24 @@ export default function Settings() {
                     variant="outline"
                     onClick={handleReset}
                   >
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="email-notification" className="text-base">
+                      중요 알림 이메일 수신
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      승인 요청, 멘션 등 중요한 알림을 이메일로 받습니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="email-notification"
+                    checked={formData.isEmailNotificationEnabled}
+                    onCheckedChange={handleEmailNotificationChange}
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3">
+                  <Button type="button" variant="outline" onClick={handleReset} disabled={isSaving}>
                     취소
                   </Button>
                   <Button
@@ -304,6 +351,23 @@ export default function Settings() {
                       ? "ON"
                       : "OFF"}
                   </Badge>
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">중요 알림 이메일 수신</p>
+                      <p className="text-base font-medium mt-1">
+                        {profile.isEmailNotificationEnabled ? "활성화" : "비활성화"}
+                      </p>
+                    </div>
+                    <Badge variant={profile.isEmailNotificationEnabled ? "default" : "secondary"}>
+                      {profile.isEmailNotificationEnabled ? "ON" : "OFF"}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-3 pt-4 border-t">
+                  <Button variant="outline" onClick={() => navigate("/settings/password")}>
+                    비밀번호 변경
+                  </Button>
                 </div>
               </div>
             )}
