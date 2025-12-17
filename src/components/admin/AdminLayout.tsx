@@ -6,12 +6,14 @@ import api from "@/apis/api";
 
 export default function AdminLayout() {
   const navigate = useNavigate();
-  const [adminName, setAdminName] = useState<string>("관리자");
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+
+  // ❌ 기본값 제거 (보여주지 않기 위함)
+  const [adminName, setAdminName] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.add("admin-sidebar-theme");
-    return () => document.documentElement.classList.remove("admin-sidebar-theme");
+    return () =>
+      document.documentElement.classList.remove("admin-sidebar-theme");
   }, []);
 
   useEffect(() => {
@@ -19,18 +21,15 @@ export default function AdminLayout() {
 
     const fetchAdmin = async () => {
       try {
-        setIsLoadingProfile(true);
-        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const response = await api.get("/api/users/me", {
+          signal: controller.signal,
+        });
         const data = response.data?.data;
         if (data?.name) {
           setAdminName(data.name);
         }
       } catch {
-        // ignore error, keep fallback name
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingProfile(false);
-        }
+        // 조용히 실패 (아무 것도 표시 안 함)
       }
     };
 
@@ -52,10 +51,17 @@ export default function AdminLayout() {
             <div className="flex items-center gap-4">
               <SidebarTrigger />
             </div>
+
             <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">
-                {isLoadingProfile ? "관리자 정보를 불러오는 중..." : `${adminName}님`}
+              {/* 👇 자리 유지 + 무음 처리 */}
+              <span
+                className={`text-sm font-medium ${
+                  adminName ? "visible" : "invisible"
+                }`}
+              >
+                {adminName ? `${adminName}님` : "placeholder"}
               </span>
+
               <button
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 onClick={handleLogout}
@@ -64,6 +70,7 @@ export default function AdminLayout() {
               </button>
             </div>
           </header>
+
           <div className="p-6">
             <Outlet />
           </div>
