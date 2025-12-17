@@ -241,12 +241,16 @@ export default function Notifications() {
                   </Button>
                 ))}
               </div>
-              {hasUnread && readFilter !== "READ" && (
-                <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
-                  <MailOpen className="mr-1 h-4 w-4" />
-                  모두 읽음
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMarkAllAsRead}
+                className={!hasUnread || readFilter === "READ" ? "invisible" : ""}
+                disabled={!hasUnread || readFilter === "READ"}
+              >
+                <MailOpen className="mr-1 h-4 w-4" />
+                모두 읽음
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
