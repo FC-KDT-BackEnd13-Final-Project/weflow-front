@@ -1,11 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Building2, FolderKanban, UserPlus, Building, FileText, Bell } from "lucide-react";
+import {
+  Users,
+  Building2,
+  FolderKanban,
+  UserPlus,
+  Building,
+  FileText,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import api from "@/apis/api";
-import { ActionType, TargetTable, actionTypeLabels, targetTableLabels } from "@/constants/logs";
+import {
+  ActionType,
+  TargetTable,
+  actionTypeLabels,
+  targetTableLabels,
+} from "@/constants/logs";
 
 interface DashboardResponse {
   totalUsers: number;
@@ -27,70 +45,108 @@ interface DashboardResponse {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalCompanies: 0,
-    totalProjects: 0,
-  });
-  const [recentLogs, setRecentLogs] = useState<DashboardResponse["recentLogs"]>([]);
-  const [adminName, setAdminName] = useState<string>("");
+
+  const [stats, setStats] = useState<{
+    totalUsers?: number;
+    totalCompanies?: number;
+    totalProjects?: number;
+  }>({});
+
+  const [recentLogs, setRecentLogs] =
+    useState<DashboardResponse["recentLogs"] | null>(null);
+
+  const [adminName, setAdminName] = useState<string | null>(null);
+
+  /* =========================
+     대시보드 데이터
+  ========================= */
 
   useEffect(() => {
     const controller = new AbortController();
+
     const fetchDashboard = async () => {
       try {
         const response = await api.get("/api/admin/dashboard", {
           signal: controller.signal,
         });
-        const data: DashboardResponse = response.data?.data;
+        const data: DashboardResponse | undefined =
+          response.data?.data;
+
+        if (!data) return;
+
         setStats({
-          totalUsers: data?.totalUsers ?? 0,
-          totalCompanies: data?.totalCompanies ?? 0,
-          totalProjects: data?.totalProjects ?? 0,
+          totalUsers: data.totalUsers,
+          totalCompanies: data.totalCompanies,
+          totalProjects: data.totalProjects,
         });
-        setRecentLogs(data?.recentLogs ?? []);
+
+        setRecentLogs(data.recentLogs);
       } catch {
-        // ignore errors for now
+        // 의도적으로 무시
       }
     };
+
     fetchDashboard();
     return () => controller.abort();
   }, []);
 
+  /* =========================
+     관리자 프로필
+  ========================= */
+
   useEffect(() => {
     const controller = new AbortController();
+
     const fetchProfile = async () => {
       try {
-        const response = await api.get("/api/users/me", { signal: controller.signal });
+        const response = await api.get("/api/users/me", {
+          signal: controller.signal,
+        });
         const name = response.data?.data?.name;
-        if (typeof name === "string") setAdminName(name);
+        if (typeof name === "string") {
+          setAdminName(name);
+        }
       } catch {
         // ignore
       }
     };
+
     fetchProfile();
     return () => controller.abort();
   }, []);
+
+  /* =========================
+     통계 카드
+  ========================= */
 
   const statsCards = useMemo(
     () => [
       {
         title: "전체 회원 수",
-        value: `${stats.totalUsers.toLocaleString()}명`,
+        value:
+          typeof stats.totalUsers === "number"
+            ? `${stats.totalUsers.toLocaleString()}명`
+            : null,
         icon: Users,
         color: "bg-purple-100 text-purple-600",
         link: "/admin/members",
       },
       {
         title: "등록된 회사 수",
-        value: `${stats.totalCompanies.toLocaleString()}개`,
+        value:
+          typeof stats.totalCompanies === "number"
+            ? `${stats.totalCompanies.toLocaleString()}개`
+            : null,
         icon: Building2,
         color: "bg-pink-100 text-pink-600",
         link: "/admin/companies",
       },
       {
         title: "전체 프로젝트",
-        value: `${stats.totalProjects.toLocaleString()}개`,
+        value:
+          typeof stats.totalProjects === "number"
+            ? `${stats.totalProjects.toLocaleString()}개`
+            : null,
         icon: FolderKanban,
         color: "bg-blue-100 text-blue-600",
         link: "/admin/projects",
@@ -111,11 +167,17 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* 헤더 (자리만 차지, 텍스트는 조건부) */}
+      <div className="flex items-center justify-between min-h-[56px]">
         <div>
-          <p className="text-sm text-muted-foreground">
-            {adminName ? `${adminName}님 환영합니다` : "관리자"}
+          <p
+            className={`text-sm text-muted-foreground ${
+              adminName ? "visible" : "invisible"
+            }`}
+          >
+            {adminName ? `${adminName}님 환영합니다` : "placeholder"}
           </p>
+
           <h1 className="text-3xl font-bold">관리자</h1>
         </div>
       </div>
@@ -137,7 +199,10 @@ const Dashboard = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{stat.value}</div>
+              {/* 값이 있을 때만 렌더, 없으면 공간만 유지 */}
+              <div className="text-3xl font-bold min-h-[36px]">
+                {stat.value}
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -146,12 +211,10 @@ const Dashboard = () => {
       {/* 최근 활동 로그 */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
-              최근 활동 로그
-            </CardTitle>
-          </div>
+          <CardTitle className="flex items-center gap-2">
+            <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
+            최근 활동 로그
+          </CardTitle>
           <Button
             variant="ghost"
             size="sm"
@@ -161,28 +224,44 @@ const Dashboard = () => {
             + 전체 로그 보기
           </Button>
         </CardHeader>
+
         <CardContent>
-          <div className="space-y-3">
-            {recentLogs.length === 0 && (
-              <div className="text-sm text-muted-foreground py-4 text-center">
-                최근 로그가 없습니다.
-              </div>
-            )}
-            {recentLogs.map((log) => (
-              <div key={log.logId} className="flex items-start gap-3 py-2">
-                <Badge variant="outline" className="text-xs shrink-0">
-                  {formatTime(log.createdAt)}
-                </Badge>
-                <p className="text-sm">
-                  <span className="font-medium">{log.userName ?? "알 수 없음"}님이 </span>
-                  <span className="font-medium">
-                    {targetTableLabels[log.targetTable] ?? log.targetTable}
-                  </span>
-                  을/를 {actionTypeLabels[log.actionType] ?? log.actionType}하였습니다.
-                </p>
-              </div>
-            ))}
-          </div>
+          {recentLogs && recentLogs.length === 0 && (
+            <div className="py-4 text-center text-sm text-muted-foreground">
+              최근 로그가 없습니다.
+            </div>
+          )}
+
+          {recentLogs && recentLogs.length > 0 && (
+            <div className="space-y-3">
+              {recentLogs.map((log) => (
+                <div
+                  key={log.logId}
+                  className="flex items-start gap-3 py-2"
+                >
+                  <Badge
+                    variant="outline"
+                    className="text-xs shrink-0"
+                  >
+                    {formatTime(log.createdAt)}
+                  </Badge>
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {log.userName ?? "알 수 없음"}님이{" "}
+                    </span>
+                    <span className="font-medium">
+                      {targetTableLabels[log.targetTable] ??
+                        log.targetTable}
+                    </span>
+                    을/를{" "}
+                    {actionTypeLabels[log.actionType] ??
+                      log.actionType}
+                    하였습니다.
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -193,7 +272,9 @@ const Dashboard = () => {
             <div className="h-3 w-3 rounded-full bg-info" />
             빠른 작업
           </CardTitle>
-          <CardDescription>자주 사용하는 기능을 빠르게 실행하세요</CardDescription>
+          <CardDescription>
+            자주 사용하는 기능을 빠르게 실행하세요
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
