@@ -78,3 +78,18 @@ export async function reorderSteps(
     throw new Error(buildApiErrorMessage(error));
   }
 }
+
+export async function reorderStepsByPhase(
+  projectId: number,
+  payload: { phase: string; orderedStepIds: number[] }
+): Promise<StepApiResponse<StepListResponse>> {
+  try {
+    const response = await api.patch<StepApiResponse<StepListResponse>>(
+      `/api/admin/projects/${projectId}/steps/reorder`,
+      payload
+    );
+    return unwrapApiResponse(response.data);
+  } catch (error) {
+    throw new Error(buildApiErrorMessage(error));
+  }
+}

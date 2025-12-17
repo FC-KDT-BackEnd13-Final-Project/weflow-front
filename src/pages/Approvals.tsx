@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProjectSteps, createStep, updateStep, deleteStep } from "@/apis/step";
+import { getProjectSteps, createStep, updateStep, deleteStep, reorderStepsByPhase } from "@/apis/step";
 import { createStepRequest, getProjectStepRequests } from "@/apis/stepRequest";
 import { AttachmentInput, type UploadedAttachment } from "@/components/attachments/AttachmentInput";
 import { StepResponse, StepRequestSummaryResponse, StepPhase } from "@/lib/stepTypes";
@@ -68,13 +68,18 @@ const DraggableStepCard = ({
   children,
   isCrossPhaseBlocked,
   isDragging,
+  disabled,
 }: {
   step: StepResponse;
   children: ReactNode;
   isCrossPhaseBlocked: boolean;
   isDragging: boolean;
+  disabled: boolean;
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isSorting } = useSortable({ id: step.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isSorting } = useSortable({
+    id: step.id,
+    disabled,
+  });
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -88,7 +93,7 @@ const DraggableStepCard = ({
       {...listeners}
       className={cn(
         "flex flex-col",
-        isCrossPhaseBlocked && "cursor-not-allowed opacity-60",
+        (isCrossPhaseBlocked || disabled) && "cursor-not-allowed opacity-60",
         isSorting && "shadow-lg",
         isDragging && "ring-2 ring-primary/40",
         step.status === "APPROVED" && "bg-gray-50 border-gray-200 hover:bg-gray-50"
@@ -236,13 +241,63 @@ export default function Approvals() {
     const activeStepData = orderedSteps.find((s) => s.id === active.id);
     const overStepData = orderedSteps.find((s) => s.id === over.id);
     if (!activeStepData || !overStepData) return;
-    if (activeStepData.phase !== overStepData.phase) return;
-    setOrderedSteps((prev) => {
-      const oldIndex = prev.findIndex((s) => s.id === active.id);
-      const newIndex = prev.findIndex((s) => s.id === over.id);
-      if (oldIndex < 0 || newIndex < 0) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
+    if (activeStepData.phase !== overStepData.phase) {
+      toast({
+        title: "순서 변경 불가",
+        description: "다른 단계(Phase)로는 순서를 변경할 수 없습니다. 같은 단계 내에서만 순서 변경이 가능합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const previousSteps = [...orderedSteps];
+    const phase = activeStepData.phase;
+    const phaseSteps = orderedSteps.filter((s) => s.phase === phase);
+    const pendingSteps = phaseSteps.filter((s) => s.status === "PENDING");
+    const oldPendingIndex = pendingSteps.findIndex((s) => s.id === active.id);
+    if (oldPendingIndex < 0) return;
+
+    let newPendingIndex = pendingSteps.length - 1;
+    let pendingSeen = 0;
+    for (const step of phaseSteps) {
+      if (step.id === over.id) {
+        newPendingIndex = pendingSeen;
+        break;
+      }
+      if (step.status === "PENDING") pendingSeen += 1;
+    }
+
+    const reorderedPending = arrayMove(pendingSteps, oldPendingIndex, newPendingIndex);
+    const pendingQueue = [...reorderedPending];
+
+    const rebuiltPhase = phaseSteps.map((step) =>
+      step.status === "PENDING" ? pendingQueue.shift() ?? step : step
+    );
+
+    const nextSteps = orderedSteps.map((step) =>
+      step.phase === phase ? rebuiltPhase.shift() ?? step : step
+    );
+
+    setOrderedSteps(nextSteps);
+
+    const orderedIdsByPhase = reorderedPending.map((s) => s.id);
+
+    reorderStepsByPhase(projectId, { phase, orderedStepIds: orderedIdsByPhase })
+      .then((response) => {
+        const responseSteps = response.steps ?? [];
+        if (!responseSteps.length) return;
+        setOrderedSteps((current) => {
+          const phaseQueue = [...responseSteps];
+          return current.map((step) => (step.phase === phase ? phaseQueue.shift() ?? step : step));
+        });
+      })
+      .catch(() => {
+        setOrderedSteps(previousSteps);
+        toast({
+          title: "순서 변경 실패",
+          description: "진행 중이거나 완료된 단계는 순서를 변경할 수 없습니다.",
+          variant: "destructive",
+        });
+      });
   };
 
   const handleDragCancel = () => {
@@ -484,12 +539,14 @@ export default function Approvals() {
                     : undefined;
                 const isCrossPhaseBlocked = Boolean(isCrossPhase && overStep && overStep.id === step.id);
                 const isDragging = activeId === step.id;
+                const isDraggable = step.status === "PENDING";
                 return (
                   <DraggableStepCard
                     key={step.id}
                     step={step}
                     isCrossPhaseBlocked={isCrossPhaseBlocked}
                     isDragging={isDragging}
+                    disabled={!isDraggable}
                   >
                     <CardHeader className={cn("border-b space-y-2 py-2", !canManageStep && "pt-4")}>
                       <div className="flex items-center justify-between gap-2">
