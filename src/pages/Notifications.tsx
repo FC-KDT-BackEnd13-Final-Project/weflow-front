@@ -241,9 +241,9 @@ export default function Notifications() {
                   </Button>
                 ))}
               </div>
-              {hasUnread && (
+              {hasUnread && readFilter !== "READ" && (
                 <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
-                  <MailOpen className="mr-2 h-4 w-4" />
+                  <MailOpen className="mr-1 h-4 w-4" />
                   모두 읽음
                 </Button>
               )}

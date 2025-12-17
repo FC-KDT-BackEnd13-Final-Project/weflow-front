@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Mail } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
 
@@ -76,6 +76,26 @@ export default function NotificationDetail() {
     fetchNotification();
   }, [id, navigate, toast]);
 
+  const handleMarkAsUnread = async () => {
+    if (!id) return;
+    try {
+      const response = await notificationsApi.markAsUnread(Number(id));
+      if (response.success) {
+        toast({
+          title: "안 읽음 처리 완료",
+          description: "알림을 읽지 않음 상태로 변경했습니다.",
+        });
+        navigate("/notifications");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "알림 처리 실패",
+        description: error.response?.data?.message || "작업을 수행할 수 없습니다.",
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <AppLayout>
@@ -134,10 +154,15 @@ export default function NotificationDetail() {
             </div>
 
             <div className="flex justify-end gap-2">
-              {/* 관련 링크로 이동하는 버튼 등을 추가할 수 있음 */}
               <Button variant="outline" onClick={() => navigate("/notifications")}>
                 목록으로 돌아가기
               </Button>
+              {notification.read && (
+                <Button variant="secondary" onClick={handleMarkAsUnread}>
+                  <Mail className="mr-1 h-4 w-4" />
+                  안 읽은 알림으로 변경
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

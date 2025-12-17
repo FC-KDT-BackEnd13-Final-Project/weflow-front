@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useDebounce } from "@/hooks/useDebounce";
 import {
   Card,
   CardContent,
@@ -41,12 +42,15 @@ const Members = () => {
   const [statusFilter, setStatusFilter] = useState("전체");
   const [searchInput, setSearchInput] = useState("");
 
+  // Debounce 적용 (500ms)
+  const debouncedSearchInput = useDebounce(searchInput, 500);
+
   /* =========================
-     검색어 변경 시 페이지 리셋
+     검색어/필터 변경 시 페이지 리셋
   ========================= */
   useEffect(() => {
     setCurrentPage(0);
-  }, [searchInput]);
+  }, [debouncedSearchInput, roleFilter, statusFilter]);
 
   /* =========================
      데이터 로딩
@@ -57,9 +61,9 @@ const Members = () => {
         const response = await adminApi.getUsers(
           currentPage,
           pageSize,
-          "",
-          roleFilter,
-          statusFilter
+          debouncedSearchInput || undefined,
+          roleFilter === "전체" ? undefined : roleFilter,
+          statusFilter === "전체" ? undefined : statusFilter
         );
 
         if (response.success) {
@@ -79,23 +83,7 @@ const Members = () => {
     };
 
     fetchMembers();
-  }, [currentPage, roleFilter, statusFilter, toast]);
-
-  /* =========================
-     실시간 검색 (프론트)
-  ========================= */
-  const filteredMembers = useMemo(() => {
-    if (!searchInput.trim()) return members;
-
-    const lower = searchInput.toLowerCase();
-    return members.filter(
-      (m) =>
-        m.name.toLowerCase().includes(lower) ||
-        m.email.toLowerCase().includes(lower)
-    );
-  }, [members, searchInput]);
-
-  const isSearching = searchInput.trim().length > 0;
+  }, [currentPage, roleFilter, statusFilter, debouncedSearchInput, toast]);
 
   return (
     <div className="space-y-6">
@@ -188,12 +176,12 @@ const Members = () => {
             </div>
 
             <div className="divide-y">
-              {filteredMembers.length === 0 ? (
+              {members.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   회원이 없습니다.
                 </div>
               ) : (
-                filteredMembers.map((member) => {
+                members.map((member) => {
                   const isDeleted = member.deletedAt != null;
 
                   return (
@@ -245,10 +233,8 @@ const Members = () => {
             </div>
           </div>
 
-          {/* 페이지네이션 (검색 중엔 숨김) */}
-          {!isSearching &&
-            typeof totalPages === "number" &&
-            totalPages > 1 && (
+          {/* 페이지네이션 */}
+          {typeof totalPages === "number" && totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 mt-4">
                 <Button
                   variant="outline"
