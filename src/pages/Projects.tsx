@@ -67,7 +67,7 @@ const projectPhaseBadgeMap: Record<ProjectPhase, string> = {
 export default function Projects() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const userRole = useUserStore((s) => s.user?.role);
+  const userRole = useUserStore((s) => s.user?.role)?.toUpperCase();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "ALL">(
     "ALL"
@@ -84,14 +84,11 @@ export default function Projects() {
   ): "joined" | "not-joined" | "unknown" => {
     if (userRole === "SYSTEM_ADMIN") return "joined";
     if (userRole === "CLIENT") return "joined";
-    if (userRole === "AGENCY") {
-      const isMemberValue = project.isMember ?? project.member;
-      if (isMemberValue === true) return "joined";
-      if (isMemberValue === false) return "not-joined";
-      if (project.projectRole) return "joined";
-      return "unknown";
-    }
+    const isMemberValue = project.member ?? project.isMember;
+    if (isMemberValue === true) return "joined";
+    if (isMemberValue === false) return "not-joined";
     if (project.projectRole) return "joined";
+    if (userRole === "AGENCY") return "unknown";
     return "not-joined";
   };
 
@@ -99,7 +96,7 @@ export default function Projects() {
     if (!userRole) return;
     const targets = items.filter((p) => {
       if (userRole === "AGENCY") {
-        const isMemberValue = p.isMember ?? p.member;
+        const isMemberValue = p.member ?? p.isMember;
         if (isMemberValue !== true) return false;
       }
       return (
