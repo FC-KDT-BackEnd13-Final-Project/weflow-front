@@ -33,6 +33,13 @@ interface ActivityLog {
   projectName: string | null;
 }
 
+interface CursorResponse {
+  items: ActivityLog[];
+  nextCursor: { createdAt: string; id: number } | null;
+  hasNext: boolean;
+  totalCount: number | null;
+}
+
 const actionTypeOptions = Object.keys(actionTypeLabels) as ActionType[];
 const targetTableOptions = Object.keys(targetTableLabels) as TargetTable[];
 
@@ -76,14 +83,12 @@ const actionBadgeClass = (action: string) => {
   return map[action] ?? "bg-gray-100 text-gray-700";
 };
 
-const uniqueValues = (values: Array<string | null>) =>
-  Array.from(new Set(values.filter(Boolean) as string[]));
-
 export default function Logs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(20);
+  const [nextCursor, setNextCursor] = useState<CursorResponse["nextCursor"]>(null);
+  const [hasNext, setHasNext] = useState(false);
+  const [limit, setLimit] = useState(20);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [targetFilter, setTargetFilter] = useState("all");
@@ -92,76 +97,125 @@ export default function Logs() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     const fetchLogs = async () => {
       try {
-        setIsLoading(true);
+        setIsFetching(true);
         setError(null);
-        const params: Record<string, string | number> = { page, size };
+        const params: Record<string, string | number | boolean> = {
+          limit,
+          includeTotal: true,
+        };
         if (actionFilter !== "all") params.actionType = actionFilter;
         if (targetFilter !== "all") params.targetTable = targetFilter;
+        if (userFilter !== "all") params.userId = Number(userFilter);
+        if (projectFilter !== "all") params.projectId = Number(projectFilter);
         if (startDate) params.startDate = `${startDate}T00:00:00`;
         if (endDate) params.endDate = `${endDate}T23:59:59`;
-        const response = await api.get("/api/admin/logs", {
+        const response = await api.get("/api/admin/logs/cursor", {
           params,
           signal: controller.signal,
         });
-        const data = response.data?.data;
-        setLogs(data?.logs ?? []);
-        setTotalCount(data?.totalCount ?? 0);
+        const data: CursorResponse = response.data?.data;
+        setLogs(data?.items ?? []);
+        setNextCursor(data?.nextCursor ?? null);
+        setHasNext(Boolean(data?.hasNext));
+        setTotalCount(
+          typeof data?.totalCount === "number" ? data.totalCount : null
+        );
       } catch (err) {
         if (!controller.signal.aborted) {
           setError("로그를 불러오는 중 오류가 발생했습니다.");
         }
       } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) setIsFetching(false);
       }
     };
+    setLogs([]);
+    setNextCursor(null);
+    setHasNext(false);
+    setTotalCount(null);
     fetchLogs();
     return () => controller.abort();
-  }, [actionFilter, targetFilter, page, size, startDate, endDate]);
+  }, [actionFilter, targetFilter, userFilter, projectFilter, startDate, endDate, limit]);
+
+  const loadMore = async () => {
+    if (!hasNext || !nextCursor || isFetching) return;
+    const controller = new AbortController();
+    try {
+      setIsFetching(true);
+      setError(null);
+      const params: Record<string, string | number> = {
+        limit,
+        cursorCreatedAt: nextCursor.createdAt,
+        cursorId: nextCursor.id,
+      };
+      if (actionFilter !== "all") params.actionType = actionFilter;
+      if (targetFilter !== "all") params.targetTable = targetFilter;
+      if (userFilter !== "all") params.userId = Number(userFilter);
+      if (projectFilter !== "all") params.projectId = Number(projectFilter);
+      if (startDate) params.startDate = `${startDate}T00:00:00`;
+      if (endDate) params.endDate = `${endDate}T23:59:59`;
+      const response = await api.get("/api/admin/logs/cursor", {
+        params,
+        signal: controller.signal,
+      });
+      const data: CursorResponse = response.data?.data;
+      setLogs((prev) => {
+        const existing = new Set(prev.map((log) => log.logId));
+        const nextItems = (data?.items ?? []).filter((log) => !existing.has(log.logId));
+        return [...prev, ...nextItems];
+      });
+      setNextCursor(data?.nextCursor ?? null);
+      setHasNext(Boolean(data?.hasNext));
+      if (typeof data?.totalCount === "number") {
+        setTotalCount(data.totalCount);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setError("로그를 불러오는 중 오류가 발생했습니다.");
+      }
+    } finally {
+      if (!controller.signal.aborted) setIsFetching(false);
+    }
+  };
 
   const filteredLogs = useMemo(() => {
     const lowerSearch = search.trim().toLowerCase();
-    const filtered = logs.filter((log) => {
-      const matchesAction = actionFilter === "all" || log.actionType === actionFilter;
-      const matchesTarget = targetFilter === "all" || log.targetTable === targetFilter;
-      const matchesUser = userFilter === "all" || log.userName === userFilter;
-      const matchesProject =
-        projectFilter === "all" || (log.projectName ?? "") === projectFilter;
-      const matchesSearch =
-        !lowerSearch ||
-        log.userName.toLowerCase().includes(lowerSearch) ||
-        (log.projectName ?? "").toLowerCase().includes(lowerSearch);
-      const logDate = new Date(log.createdAt);
-      const matchesStart = !startDate || logDate >= new Date(startDate);
-      const matchesEnd = !endDate || logDate <= new Date(endDate + "T23:59:59");
-      return (
-        matchesAction &&
-        matchesTarget &&
-        matchesUser &&
-        matchesProject &&
-        matchesSearch &&
-        matchesStart &&
-        matchesEnd
+    return logs
+      .filter((log) => {
+        const matchesAction = actionFilter === "all" || log.actionType === actionFilter;
+        const matchesTarget = targetFilter === "all" || log.targetTable === targetFilter;
+        const matchesUser = userFilter === "all" || String(log.userId) === userFilter;
+        const matchesProject =
+          projectFilter === "all" || String(log.projectId) === projectFilter;
+        const matchesSearch =
+          !lowerSearch ||
+          log.userName.toLowerCase().includes(lowerSearch) ||
+          (log.projectName ?? "").toLowerCase().includes(lowerSearch);
+        const logDate = new Date(log.createdAt);
+        const matchesStart = !startDate || logDate >= new Date(startDate);
+        const matchesEnd = !endDate || logDate <= new Date(endDate + "T23:59:59");
+        return (
+          matchesAction &&
+          matchesTarget &&
+          matchesUser &&
+          matchesProject &&
+          matchesSearch &&
+          matchesStart &&
+          matchesEnd
+        );
+      })
+      .sort((a, b) =>
+        sortOrder === "desc"
+          ? b.createdAt.localeCompare(a.createdAt)
+          : a.createdAt.localeCompare(b.createdAt)
       );
-    });
-
-    return filtered.sort((a, b) =>
-      sortOrder === "desc"
-        ? b.createdAt.localeCompare(a.createdAt)
-        : a.createdAt.localeCompare(b.createdAt)
-    );
   }, [logs, actionFilter, targetFilter, userFilter, projectFilter, search, startDate, endDate, sortOrder]);
-
-  useEffect(() => {
-    setPage(0);
-    setSize(20);
-  }, [actionFilter, targetFilter, userFilter, projectFilter, startDate, endDate]);
 
   const clearFilters = () => {
     setSearch("");
@@ -192,8 +246,18 @@ export default function Logs() {
       second: "2-digit",
     }).format(new Date(value));
 
-  const userOptions = uniqueValues(logs.map((log) => log.userName));
-  const projectOptions = uniqueValues(logs.map((log) => log.projectName));
+  const userOptions = useMemo(() => {
+    const entries = new Map<number, string>();
+    logs.forEach((log) => entries.set(log.userId, log.userName));
+    return Array.from(entries.entries()).map(([id, name]) => ({ id, name }));
+  }, [logs]);
+  const projectOptions = useMemo(() => {
+    const entries = new Map<number, string>();
+    logs.forEach((log) => {
+      if (log.projectId && log.projectName) entries.set(log.projectId, log.projectName);
+    });
+    return Array.from(entries.entries()).map(([id, name]) => ({ id, name }));
+  }, [logs]);
 
   return (
     <div className="space-y-6">
@@ -202,10 +266,13 @@ export default function Logs() {
           <h1 className="text-3xl font-bold">로그 / 활동 기록</h1>
           <p className="text-muted-foreground mt-1">시스템의 모든 활동을 추적합니다</p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={() => {
-          clearFilters();
-          setPage(0);
-        }}>
+        <Button
+          variant="outline"
+          className="gap-2"
+          onClick={() => {
+            clearFilters();
+          }}
+        >
           <Filter className="h-4 w-4" />
           초기화
         </Button>
@@ -260,8 +327,8 @@ export default function Logs() {
               <SelectContent>
                 <SelectItem value="all">전체</SelectItem>
                 {userOptions.map((user) => (
-                  <SelectItem key={user} value={user}>
-                    {user}
+                  <SelectItem key={user.id} value={String(user.id)}>
+                    {user.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -277,8 +344,8 @@ export default function Logs() {
               <SelectContent>
                 <SelectItem value="all">전체</SelectItem>
                 {projectOptions.map((project) => (
-                  <SelectItem key={project} value={project}>
-                    {project}
+                  <SelectItem key={project.id} value={String(project.id)}>
+                    {project.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -322,7 +389,14 @@ export default function Logs() {
             <Button variant="outline" size="sm" onClick={applyRecent24h}>
               최근 24시간
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { setStartDate(""); setEndDate(""); }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+              }}
+            >
               기간 초기화
             </Button>
           </div>
@@ -333,16 +407,22 @@ export default function Logs() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>로그 목록</CardTitle>
-          <CardDescription>총 {totalCount.toLocaleString()}건의 활동 기록</CardDescription>
-        </div>
-          {isLoading && <span className="text-xs text-muted-foreground">불러오는 중...</span>}
+            <CardDescription>
+              {typeof totalCount === "number"
+                ? `총 ${totalCount.toLocaleString()}건의 활동기록`
+                : hasNext
+                  ? `${logs.length.toLocaleString()}건 로드됨 (더보기 가능)`
+                  : `${logs.length.toLocaleString()}건 로드됨`}
+            </CardDescription>
+          </div>
+          {isFetching && <span className="text-xs text-muted-foreground">불러오는 중...</span>}
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
             <div className="text-sm text-destructive py-6 text-center">{error}</div>
           )}
 
-          {!isLoading && !error && filteredLogs.length === 0 && (
+          {!isFetching && !error && filteredLogs.length === 0 && (
             <div className="text-sm text-muted-foreground py-6 text-center">
               조건에 맞는 로그가 없습니다.
             </div>
@@ -383,13 +463,15 @@ export default function Logs() {
           ))}
         </CardContent>
         <CardContent className="flex items-center justify-between pt-0">
-          <div className="text-sm text-muted-foreground">
-            총 {totalCount.toLocaleString()}건 · {page + 1} / {Math.max(1, Math.ceil(totalCount / size))} 페이지
-          </div>
           <div className="flex items-center gap-2">
-            <Select value={String(size)} onValueChange={(value) => { setSize(Number(value)); setPage(0); }}>
+            <Select
+              value={String(limit)}
+              onValueChange={(value) => {
+                setLimit(Number(value));
+              }}
+            >
               <SelectTrigger className="w-24">
-                <SelectValue placeholder="페이지 크기" />
+                <SelectValue placeholder="limit" />
               </SelectTrigger>
               <SelectContent>
                 {[10, 20, 50, 100].map((option) => (
@@ -399,24 +481,9 @@ export default function Logs() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={page === 0}
-                onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-              >
-                ‹
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={(page + 1) * size >= totalCount}
-                onClick={() => setPage((prev) => prev + 1)}
-              >
-                ›
-              </Button>
-            </div>
+            <Button variant="outline" onClick={loadMore} disabled={!hasNext || isFetching}>
+              {hasNext ? "더 불러오기" : "마지막 페이지"}
+            </Button>
           </div>
         </CardContent>
       </Card>
