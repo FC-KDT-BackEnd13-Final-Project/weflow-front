@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,24 @@ import { useUserStore } from "@/stores/user";
 import { Plus, MoreHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DndContext,
+  type DragEndEvent,
+  type DragStartEvent,
+  type DragOverEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const getDefaultPhaseByTab = (tab: string): StepPhase => {
   if (tab === "IN_PROGRESS") return "IN_PROGRESS";
@@ -37,6 +55,49 @@ const getDefaultPhaseByTab = (tab: string): StepPhase => {
   return "CONTRACT";
 };
 const isRequestableStep = (step?: StepResponse) => Boolean(step && step.status !== "APPROVED" && step.status !== "CANCELED");
+
+const PHASE_LABEL_MAP: Record<StepPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
+
+const DraggableStepCard = ({
+  step,
+  children,
+  isCrossPhaseBlocked,
+  isDragging,
+}: {
+  step: StepResponse;
+  children: ReactNode;
+  isCrossPhaseBlocked: boolean;
+  isDragging: boolean;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isSorting } = useSortable({ id: step.id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "flex flex-col",
+        isCrossPhaseBlocked && "cursor-not-allowed opacity-60",
+        isSorting && "shadow-lg",
+        isDragging && "ring-2 ring-primary/40",
+        step.status === "APPROVED" && "bg-gray-50 border-gray-200 hover:bg-gray-50"
+      )}
+    >
+      {children}
+    </Card>
+  );
+};
 
 export default function Approvals() {
   const { id } = useParams();
@@ -66,18 +127,26 @@ export default function Approvals() {
   const [editingStepTitle, setEditingStepTitle] = useState("");
   const [editingStepDescription, setEditingStepDescription] = useState("");
   const [openMenuStepId, setOpenMenuStepId] = useState<number | null>(null);
+  const [orderedSteps, setOrderedSteps] = useState<StepResponse[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
     queryKey: ["project-steps", projectId],
     queryFn: () => getProjectSteps(projectId),
     enabled: !!projectId,
   });
+  const serverSteps = stepsData?.data.steps ?? [];
 
   const { data: requestData, isLoading: requestsLoading } = useQuery({
     queryKey: ["project-step-requests", projectId, page],
     queryFn: () => getProjectStepRequests(projectId, page, pageSize),
     enabled: !!projectId,
   });
+
+  useEffect(() => {
+    setOrderedSteps(serverSteps);
+  }, [serverSteps]);
 
   const createRequestMutation = useMutation({
     mutationFn: () => {
@@ -103,7 +172,6 @@ export default function Approvals() {
       }),
   });
 
-  const steps = stepsData?.data.steps ?? [];
   const {
     stepRequestSummaryResponses: stepRequestSummaries = [],
     totalCount = 0,
@@ -113,13 +181,6 @@ export default function Approvals() {
   const currentPage = currentPageFromApi ?? page;
   const pageSizeForCalc = pageSizeFromApi ?? pageSize;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSizeForCalc));
-
-  const phaseLabelMap: Record<string, string> = {
-    CONTRACT: "계약",
-    IN_PROGRESS: "진행",
-    DELIVERY: "납품",
-    MAINTENANCE: "유지보수",
-  };
 
   const phaseOptions = useMemo(
     () => [
@@ -132,22 +193,62 @@ export default function Approvals() {
     []
   );
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
   const filteredSteps = useMemo(() => {
-    if (currentPhase === "ALL") return steps;
-    return steps.filter(step => step.phase === currentPhase);
-  }, [steps, currentPhase]);
+    if (currentPhase === "ALL") return orderedSteps;
+    return orderedSteps.filter(step => step.phase === currentPhase);
+  }, [orderedSteps, currentPhase]);
+
+  const activeStep = activeId ? orderedSteps.find((s) => s.id === activeId) : null;
+  const overStep = overId ? orderedSteps.find((s) => s.id === overId) : null;
+  const isCrossPhase = Boolean(activeStep && overStep && activeStep.phase !== overStep.phase);
 
   const nextAvailableStepId = useMemo(() => {
-    if (!steps.length) return null;
-    for (let i = 0; i < steps.length; i += 1) {
-      const step = steps[i];
+    if (!orderedSteps.length) return null;
+    for (let i = 0; i < orderedSteps.length; i += 1) {
+      const step = orderedSteps[i];
       if (step.status === "APPROVED") continue;
-      const allPrevApproved = steps.slice(0, i).every((prev) => prev.status === "APPROVED");
+      const allPrevApproved = orderedSteps.slice(0, i).every((prev) => prev.status === "APPROVED");
       if (allPrevApproved) return step.id;
       break;
     }
     return null;
-  }, [steps]);
+  }, [orderedSteps]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(Number(event.active.id));
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const over = event.over;
+    setOverId(over ? Number(over.id) : null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+    if (!over || active.id === over.id) return;
+    const activeStepData = orderedSteps.find((s) => s.id === active.id);
+    const overStepData = orderedSteps.find((s) => s.id === over.id);
+    if (!activeStepData || !overStepData) return;
+    if (activeStepData.phase !== overStepData.phase) return;
+    setOrderedSteps((prev) => {
+      const oldIndex = prev.findIndex((s) => s.id === active.id);
+      const newIndex = prev.findIndex((s) => s.id === over.id);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverId(null);
+  };
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
     const isComplete = status === "APPROVED";
     const labelKey = isComplete ? "complete" : "progress";
@@ -181,7 +282,7 @@ export default function Approvals() {
   };
 
   const openRequestDialog = (stepId: number) => {
-    const targetStep = steps.find((s) => s.id === stepId);
+    const targetStep = orderedSteps.find((s) => s.id === stepId);
     if (!targetStep || targetStep.status === "APPROVED" || targetStep.status === "CANCELED") {
       toast({ title: "요청 생성 불가", description: "생성할 수 없는 단계입니다.", variant: "destructive" });
       return;
@@ -350,172 +451,184 @@ export default function Approvals() {
           })}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {stepsLoading && <p className="text-sm text-muted-foreground">단계 정보를 불러오는 중입니다...</p>}
-          {!stepsLoading && steps.length === 0 && (
-            <Card className="md:col-span-3">
-              <CardContent className="p-6 text-muted-foreground text-sm">표시할 단계가 없습니다.</CardContent>
-            </Card>
-          )}
-        {filteredSteps.map((step: StepResponse) => {
-            const requests = (stepRequestSummaries || []).filter((r) => r.stepId === step.id);
-            const status = stepStatusBadge(step.status, requests.length > 0);
-            const phaseLabel = phaseLabelMap[step.phase] || step.phase || "단계";
-            const isApproved = step.status === "APPROVED";
-            const isPending = step.status === "PENDING";
-            const isFirstStep = (step.orderIndex ?? 0) === 1;
-            const isNextAvailable = nextAvailableStepId === step.id;
-            const canShowCreateButton = isRequestableStep(step) && isNextAvailable;
-            const hasRequests = requests.length > 0;
-            const canEditStep = canManageStep && isPending;
-            const canDeleteStep = canManageStep && isPending && !hasRequests;
-            const deleteTooltip = !isPending
-              ? stepTooltipMessage.cannotDeleteStatus
-              : hasRequests
-                ? stepTooltipMessage.cannotDeleteRequests
-                : undefined;
-            return (
-              <Card
-                key={step.id}
-                className={cn("flex flex-col", isApproved && "bg-gray-50 border-gray-200 hover:bg-gray-50")}
-              >
-                  <CardHeader className={cn("border-b space-y-2 py-2", !canManageStep && "pt-4")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      {currentPhase === "ALL" && (
-                        <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground bg-muted/40">
-                          {phaseLabel}
-                        </span>
-                      )}
-                    </div>
-                    {canManageStep ? (
-                      <DropdownMenu
-                        open={openMenuStepId === step.id}
-                        onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
-                      >
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-transparent">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <TooltipProvider delayDuration={200}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <DropdownMenuItem
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    if (!canEditStep) return;
-                                    setEditingStepId(step.id);
-                                    setEditingStepTitle(step.title);
-                                    setEditingStepDescription(step.description || "");
-                                    setOpenMenuStepId(null);
-                                    setIsEditStepDialogOpen(true);
-                                  }}
-                                  className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
-                                >
-                                  단계 수정
-                                </DropdownMenuItem>
-                              </TooltipTrigger>
-                              {!canEditStep && <TooltipContent>{stepTooltipMessage.cannotEdit}</TooltipContent>}
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <DropdownMenuItem
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    if (!canDeleteStep) return;
-                                    if (window.confirm("단계를 삭제하시겠습니까?")) {
-                                      setOpenMenuStepId(null);
-                                      deleteStepMutation.mutate(step.id);
-                                    }
-                                  }}
-                                  className={cn(!canDeleteStep && "opacity-50 cursor-not-allowed")}
-                                >
-                                  단계 삭제
-                                </DropdownMenuItem>
-                              </TooltipTrigger>
-                              {!canDeleteStep && deleteTooltip && <TooltipContent>{deleteTooltip}</TooltipContent>}
-                            </Tooltip>
-                          </TooltipProvider>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-lg">{step.title}</CardTitle>
-                    <Badge className={cn(status.className, "pointer-events-none cursor-default")}>
-                      {status.label}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 pt-4 space-y-4 flex flex-col">
-                  <div className="space-y-2 flex-1">
-                    {requests.length > 0 ? (
-                      requests.map((approval) => {
-                        const badge = requestStatusBadge(approval.status);
-                        const showDecidedAt = approval.decidedAt && (approval.status === "APPROVED" || approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED");
-                        const createdLabel = formatDate(approval.createdAt);
-                        const decidedLabel = showDecidedAt ? formatDate(approval.decidedAt) : null;
-                        return (
-                          <button
-                            key={approval.id}
-                            onClick={() => navigate(`/project/${projectId}/approvals/${approval.id}?tab=${currentPhase}`)}
-                            className={cn(
-                              "w-full rounded-lg border-2 bg-white p-3 text-left transition-shadow",
-                              approval.status === "CANCELED"
-                                ? "border-gray-200 bg-gray-50 text-muted-foreground"
-                                : "border-gray-200 hover:border-gray-200 hover:shadow-md"
-                            )}
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <SortableContext items={filteredSteps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {stepsLoading && <p className="text-sm text-muted-foreground">단계 정보를 불러오는 중입니다...</p>}
+              {!stepsLoading && filteredSteps.length === 0 && (
+                <Card className="md:col-span-3">
+                  <CardContent className="p-6 text-muted-foreground text-sm">표시할 단계가 없습니다.</CardContent>
+                </Card>
+              )}
+              {filteredSteps.map((step: StepResponse) => {
+                const requests = (stepRequestSummaries || []).filter((r) => r.stepId === step.id);
+                const status = stepStatusBadge(step.status, requests.length > 0);
+                const phaseLabel = PHASE_LABEL_MAP[step.phase as StepPhase] || step.phase || "단계";
+                const isApproved = step.status === "APPROVED";
+                const isPending = step.status === "PENDING";
+                const isNextAvailable = nextAvailableStepId === step.id;
+                const canShowCreateButton = isRequestableStep(step) && isNextAvailable;
+                const hasRequests = requests.length > 0;
+                const canEditStep = canManageStep && isPending;
+                const canDeleteStep = canManageStep && isPending && !hasRequests;
+                const deleteTooltip = !isPending
+                  ? stepTooltipMessage.cannotDeleteStatus
+                  : hasRequests
+                    ? stepTooltipMessage.cannotDeleteRequests
+                    : undefined;
+                const isCrossPhaseBlocked = Boolean(isCrossPhase && overStep && overStep.id === step.id);
+                const isDragging = activeId === step.id;
+                return (
+                  <DraggableStepCard
+                    key={step.id}
+                    step={step}
+                    isCrossPhaseBlocked={isCrossPhaseBlocked}
+                    isDragging={isDragging}
+                  >
+                    <CardHeader className={cn("border-b space-y-2 py-2", !canManageStep && "pt-4")}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {currentPhase === "ALL" && (
+                            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs text-foreground bg-muted/40">
+                              {phaseLabel}
+                            </span>
+                          )}
+                        </div>
+                        {canManageStep ? (
+                          <DropdownMenu
+                            open={openMenuStepId === step.id}
+                            onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="font-medium text-sm line-clamp-2 flex-1 min-w-0">{approval.title}</div>
-                              <Badge className={cn(badge.className, "pointer-events-none cursor-default")}>
-                                {badge.label}
-                              </Badge>
-                            </div>
-                            <div className="flex flex-col text-xs text-muted-foreground mt-2">
-                              <span>
-                                {(approval.requestedByName || approval.requestedBy || "요청자") ?? "요청자"}
-                                {createdLabel && ` · ${createdLabel}`}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
-                        {/* <div>승인 요청이 없습니다.</div> */}
-                        {canShowCreateButton ? (
-                          <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
-                            승인 요청 생성
-                          </Button>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-transparent">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <TooltipProvider delayDuration={200}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <DropdownMenuItem
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        if (!canEditStep) return;
+                                        setEditingStepId(step.id);
+                                        setEditingStepTitle(step.title);
+                                        setEditingStepDescription(step.description || "");
+                                        setOpenMenuStepId(null);
+                                        setIsEditStepDialogOpen(true);
+                                      }}
+                                      className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
+                                    >
+                                      단계 수정
+                                    </DropdownMenuItem>
+                                  </TooltipTrigger>
+                                  {!canEditStep && <TooltipContent>{stepTooltipMessage.cannotEdit}</TooltipContent>}
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <DropdownMenuItem
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        if (!canDeleteStep) return;
+                                        if (window.confirm("단계를 삭제하시겠습니까?")) {
+                                          setOpenMenuStepId(null);
+                                          deleteStepMutation.mutate(step.id);
+                                        }
+                                      }}
+                                      className={cn(!canDeleteStep && "opacity-50 cursor-not-allowed")}
+                                    >
+                                      단계 삭제
+                                    </DropdownMenuItem>
+                                  </TooltipTrigger>
+                                  {!canDeleteStep && deleteTooltip && <TooltipContent>{deleteTooltip}</TooltipContent>}
+                                </Tooltip>
+                              </TooltipProvider>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-lg">{step.title}</CardTitle>
+                        <Badge className={cn(status.className, "pointer-events-none cursor-default")}>
+                          {status.label}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="flex-1 pt-4 space-y-4 flex flex-col">
+                      <div className="space-y-2 flex-1">
+                        {requests.length > 0 ? (
+                          requests.map((approval) => {
+                            const badge = requestStatusBadge(approval.status);
+                            const showDecidedAt = approval.decidedAt && (approval.status === "APPROVED" || approval.status === "REJECTED" || approval.status === "CHANGE_REQUESTED");
+                            const createdLabel = formatDate(approval.createdAt);
+                            const decidedLabel = showDecidedAt ? formatDate(approval.decidedAt) : null;
+                            return (
+                              <button
+                                key={approval.id}
+                                onClick={() => navigate(`/project/${projectId}/approvals/${approval.id}?tab=${currentPhase}`)}
+                                className={cn(
+                                  "w-full rounded-lg border-2 bg-white p-3 text-left transition-shadow",
+                                  approval.status === "CANCELED"
+                                    ? "border-gray-200 bg-gray-50 text-muted-foreground"
+                                    : "border-gray-200 hover:border-gray-200 hover:shadow-md"
+                                )}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="font-medium text-sm line-clamp-2 flex-1 min-w-0">{approval.title}</div>
+                                  <Badge className={cn(badge.className, "pointer-events-none cursor-default")}>
+                                    {badge.label}
+                                  </Badge>
+                                </div>
+                                <div className="flex flex-col text-xs text-muted-foreground mt-2">
+                                  <span>
+                                    {(approval.requestedByName || approval.requestedBy || "요청자") ?? "요청자"}
+                                    {createdLabel && ` · ${createdLabel}`}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
                         ) : (
-                          <div className="text-muted-foreground">이전 단계 완료 후 <br></br> 승인 요청이 가능합니다.</div>
+                          <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
+                            {canShowCreateButton ? (
+                              <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
+                                승인 요청 생성
+                              </Button>
+                            ) : (
+                              <div className="text-muted-foreground">이전 단계 완료 후 <br></br> 승인 요청이 가능합니다.</div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                  {canShowCreateButton && requests.length > 0 && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full"
-                      onClick={() => openRequestDialog(step.id)}
-                    >
-                      승인 요청 생성
-                    </Button>
-                  )}
-                  {!canShowCreateButton && !isApproved && requests.length > 0 && (
-                    <div className="w-full rounded-lg border border-dashed p-4 text-sm text-muted-foreground text-center flex items-center justify-center min-h-[140px]">
-                      이전 단계 완료 후 승인 요청이 가능합니다.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                      {canShowCreateButton && requests.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => openRequestDialog(step.id)}
+                        >
+                          승인 요청 생성
+                        </Button>
+                      )}
+                      {!canShowCreateButton && !isApproved && requests.length > 0 && (
+                        <div className="w-full rounded-lg border border-dashed p-4 text-sm text-muted-foreground text-center flex items-center justify-center min-h-[140px]">
+                          이전 단계 완료 후 승인 요청이 가능합니다.
+                        </div>
+                      )}
+                    </CardContent>
+                  </DraggableStepCard>
+                );
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
 
       <Dialog open={isRequestDialogOpen} onOpenChange={handleRequestDialogChange}>
@@ -535,7 +648,7 @@ export default function Approvals() {
                   <SelectValue placeholder="단계를 선택해주세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  {steps.map(step => (
+                  {orderedSteps.map((step) => (
                     <SelectItem
                       key={step.id}
                       value={String(step.id)}
