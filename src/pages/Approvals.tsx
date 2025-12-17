@@ -135,6 +135,8 @@ export default function Approvals() {
   const [orderedSteps, setOrderedSteps] = useState<StepResponse[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [overId, setOverId] = useState<number | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
     queryKey: ["project-steps", projectId],
@@ -150,8 +152,26 @@ export default function Approvals() {
   });
 
   useEffect(() => {
-    setOrderedSteps(serverSteps);
-  }, [serverSteps]);
+    if (!serverSteps.length) return;
+    if (isDirty) return;
+    const sameLength = serverSteps.length === orderedSteps.length;
+    const isSameOrder =
+      sameLength &&
+      serverSteps.every((step, index) => {
+        const current = orderedSteps[index];
+        return (
+          current &&
+          current.id === step.id &&
+          current.orderIndex === step.orderIndex &&
+          current.status === step.status &&
+          current.phase === step.phase
+        );
+      });
+    if (!isSameOrder || !isInitialized) {
+      setOrderedSteps(serverSteps);
+      setIsInitialized(true);
+    }
+  }, [serverSteps, orderedSteps, isDirty, isInitialized]);
 
   const createRequestMutation = useMutation({
     mutationFn: () => {
@@ -226,6 +246,7 @@ export default function Approvals() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(Number(event.active.id));
+    setIsDirty(true);
   };
 
   const handleDragOver = (event: DragOverEvent) => {
@@ -242,6 +263,7 @@ export default function Approvals() {
     const overStepData = orderedSteps.find((s) => s.id === over.id);
     if (!activeStepData || !overStepData) return;
     if (activeStepData.phase !== overStepData.phase) {
+      setIsDirty(false);
       toast({
         title: "순서 변경 불가",
         description: "다른 단계(Phase)로는 순서를 변경할 수 없습니다. 같은 단계 내에서만 순서 변경이 가능합니다.",
@@ -289,9 +311,11 @@ export default function Approvals() {
           const phaseQueue = [...responseSteps];
           return current.map((step) => (step.phase === phase ? phaseQueue.shift() ?? step : step));
         });
+        setIsDirty(false);
       })
       .catch(() => {
         setOrderedSteps(previousSteps);
+        setIsDirty(false);
         toast({
           title: "순서 변경 실패",
           description: "진행 중이거나 완료된 단계는 순서를 변경할 수 없습니다.",
@@ -303,6 +327,7 @@ export default function Approvals() {
   const handleDragCancel = () => {
     setActiveId(null);
     setOverId(null);
+    setIsDirty(false);
   };
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
     const isComplete = status === "APPROVED";
