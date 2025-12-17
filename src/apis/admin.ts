@@ -232,6 +232,11 @@ export const adminApi = {
     return response.data;
   },
 
+  resetPassword: async (userId: number, data: ResetPasswordRequest): Promise<ResetPasswordResponse> => {
+    const response = await api.patch<ResetPasswordResponse>(`/api/admin/users/${userId}/reset-password`, data);
+    return response.data;
+  },
+
   getCompanies: async (
     page: number = 0,
     size: number = 10,

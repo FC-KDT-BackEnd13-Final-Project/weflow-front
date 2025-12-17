@@ -245,7 +245,7 @@ export default function Settings() {
                       중요 알림 이메일 수신
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      승인 요청, 멘션 등 중요한 알림을 이메일로 받습니다.
+                      승인 요청, 비밀번호 변경 등 중요한 알림을 이메일로 받습니다.
                     </p>
                   </div>
                   <Switch

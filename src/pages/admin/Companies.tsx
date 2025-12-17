@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useDebounce } from "@/hooks/useDebounce";
 import {
   Card,
   CardContent,
@@ -35,12 +36,15 @@ const Companies = () => {
 
   const [searchInput, setSearchInput] = useState("");
 
+  // Debounce 적용 (500ms)
+  const debouncedSearchInput = useDebounce(searchInput, 500);
+
   /* =========================
-     검색어 변경 시 페이지 리셋
+     검색어/필터 변경 시 페이지 리셋
   ========================= */
   useEffect(() => {
     setCurrentPage(0);
-  }, [searchInput]);
+  }, [debouncedSearchInput, statusFilter]);
 
   /* =========================
      데이터 로딩 (조용히)
@@ -51,8 +55,8 @@ const Companies = () => {
         const response = await adminApi.getCompanies(
           currentPage,
           pageSize,
-          "", // 서버 검색 미사용
-          statusFilter
+          debouncedSearchInput || undefined,
+          statusFilter === "전체" ? undefined : statusFilter
         );
 
         if (response.success) {
@@ -72,25 +76,7 @@ const Companies = () => {
     };
 
     fetchCompanies();
-  }, [currentPage, statusFilter, toast]);
-
-  /* =========================
-     실시간 검색 (프론트)
-  ========================= */
-  const filteredCompanies = useMemo(() => {
-    if (!searchInput.trim()) return companies;
-
-    const lower = searchInput.toLowerCase();
-
-    return companies.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(lower) ||
-        c.representative?.toLowerCase().includes(lower) ||
-        c.businessNumber?.toLowerCase().includes(lower)
-    );
-  }, [companies, searchInput]);
-
-  const isSearching = searchInput.trim().length > 0;
+  }, [currentPage, statusFilter, debouncedSearchInput, toast]);
 
   /* =========================
      상태 뱃지
@@ -195,12 +181,12 @@ const Companies = () => {
             </div>
 
             <div className="divide-y">
-              {filteredCompanies.length === 0 ? (
+              {companies.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   회사가 없습니다.
                 </div>
               ) : (
-                filteredCompanies.map((company) => {
+                companies.map((company) => {
                   const isDeleted =
                     company.deletedAt != null;
 
@@ -261,9 +247,8 @@ const Companies = () => {
             </div>
           </div>
 
-          {/* 페이지네이션 (검색 중엔 숨김) */}
-          {!isSearching &&
-            typeof totalPages === "number" &&
+          {/* 페이지네이션 */}
+          {typeof totalPages === "number" &&
             totalPages > 1 &&
             typeof totalElements === "number" && (
               <div className="flex items-center justify-center gap-2 mt-4">
