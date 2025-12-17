@@ -103,16 +103,7 @@ export default function Approvals() {
       }),
   });
 
-  const steps = useMemo(() => {
-    const raw = stepsData?.data.steps ?? [];
-    if (!raw.length) return raw;
-    return [...raw].sort((a, b) => {
-      const orderA = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
-      const orderB = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
-      if (orderA !== orderB) return orderA - orderB;
-      return a.id - b.id;
-    });
-  }, [stepsData]);
+  const steps = stepsData?.data.steps ?? [];
   const {
     stepRequestSummaryResponses: stepRequestSummaries = [],
     totalCount = 0,
