@@ -159,10 +159,14 @@ export default function Projects() {
       setLoading(true);
       setError(null);
       const data = await fetchMyProjects();
-      setProjects(data.projects ?? []);
+      const items = data.projects ?? [];
+      setProjects(items);
       setTotalCount(data.totalCount ?? 0);
       setPage(data.page);
       setSize(data.size);
+      if (userRole) {
+        await enrichProjects(items);
+      }
     } catch (err) {
       setError("프로젝트 목록을 불러오지 못했습니다.");
     } finally {
@@ -173,10 +177,6 @@ export default function Projects() {
   useEffect(() => {
     loadProjects();
   }, []);
-  useEffect(() => {
-    if (!userRole || projects.length === 0) return;
-    void enrichProjects(projects);
-  }, [projects, userRole]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -234,7 +234,7 @@ export default function Projects() {
     }
 
     if (userRole === "AGENCY") {
-      if (membershipState !== "joined") {
+      if (membershipState === "not-joined" || membershipState === "unknown") {
         toast({
           title: "접근 불가",
           description: "참여 중인 프로젝트만 볼 수 있습니다.",
