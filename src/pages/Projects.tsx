@@ -76,9 +76,6 @@ export default function Projects() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
-  const [membershipStatus, setMembershipStatus] = useState<
-    Record<number, "joined" | "not-joined" | "unknown">
-  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,20 +83,35 @@ export default function Projects() {
     project: ProjectSummaryResponse
   ): "joined" | "not-joined" | "unknown" => {
     if (userRole === "SYSTEM_ADMIN") return "joined";
-    if (project.projectRole) return "joined";
     if (userRole === "CLIENT") return "joined";
     if (userRole === "AGENCY") {
-      const state = membershipStatus[project.projectId];
-      if (state === "joined" || state === "not-joined") return state;
+      const isMemberValue = project.isMember ?? project.member;
+      if (isMemberValue === true) return "joined";
+      if (isMemberValue === false) return "not-joined";
+      if (project.projectRole) return "joined";
       return "unknown";
     }
+    if (project.projectRole) return "joined";
     return "not-joined";
   };
 
   const enrichProjects = async (items: ProjectSummaryResponse[]) => {
-    const targets = items.filter(
-      (p) => !(p.endDateExpected ?? p.endDate) || !(p.projectPhase ?? p.phase)
-    );
+    if (!userRole) return;
+    const targets = items.filter((p) => {
+      if (userRole === "AGENCY") {
+        const isMemberValue = p.isMember ?? p.member;
+        if (isMemberValue !== true) return false;
+      }
+      return (
+        !(
+          p.endDateExpected ??
+          p.expectedEndDate ??
+          p.expirationDate ??
+          p.endDate
+        ) ||
+        !(p.projectPhase ?? p.phase)
+      );
+    });
     if (targets.length === 0) return;
 
     const results = await Promise.allSettled(
@@ -116,6 +128,11 @@ export default function Projects() {
           (res.value as any)?.expectedEndDate ??
           null,
         expectedEndDate:
+          (res.value as any)?.expectedEndDate ??
+          res.value.endDateExpected ??
+          null,
+        expirationDate:
+          (res.value as any)?.expirationDate ??
           (res.value as any)?.expectedEndDate ??
           res.value.endDateExpected ??
           null,
@@ -146,7 +163,6 @@ export default function Projects() {
       setTotalCount(data.totalCount ?? 0);
       setPage(data.page);
       setSize(data.size);
-      void enrichProjects(data.projects ?? []);
     } catch (err) {
       setError("프로젝트 목록을 불러오지 못했습니다.");
     } finally {
@@ -157,39 +173,9 @@ export default function Projects() {
   useEffect(() => {
     loadProjects();
   }, []);
-
-  // AGENCY: backend 목록에서 projectRole이 비어있는 경우 멤버십을 미리 검증해 표시
   useEffect(() => {
-    if (userRole !== "AGENCY") return;
-    const unknownProjects = projects.filter(
-      (p) => p.projectRole === null || p.projectRole === undefined
-    );
-    if (unknownProjects.length === 0) return;
-
-    const checkMembership = async () => {
-      const results = await Promise.allSettled(
-        unknownProjects.map((p) =>
-          fetchProjectDetail(p.projectId).then(
-            () => ({ projectId: p.projectId, joined: true }),
-            () => ({ projectId: p.projectId, joined: false })
-          )
-        )
-      );
-
-      setMembershipStatus((prev) => {
-        const next = { ...prev };
-        results.forEach((res) => {
-          if (res.status === "fulfilled") {
-            next[res.value.projectId] = res.value.joined
-              ? "joined"
-              : "not-joined";
-          }
-        });
-        return next;
-      });
-    };
-
-    void checkMembership();
+    if (!userRole || projects.length === 0) return;
+    void enrichProjects(projects);
   }, [projects, userRole]);
 
   const filteredProjects = useMemo(() => {
@@ -216,7 +202,7 @@ export default function Projects() {
       (a, b) =>
         priority[getMembershipState(a)] - priority[getMembershipState(b)]
     );
-  }, [filteredProjects, userRole, membershipStatus]);
+  }, [filteredProjects, userRole]);
 
   // 필터 변경 시 첫 페이지로 이동
   useEffect(() => {
@@ -248,31 +234,14 @@ export default function Projects() {
     }
 
     if (userRole === "AGENCY") {
-      if (membershipState === "not-joined") {
+      if (membershipState !== "joined") {
         toast({
           title: "접근 불가",
           description: "참여 중인 프로젝트만 볼 수 있습니다.",
         });
         return;
       }
-
-      try {
-        await fetchProjectDetail(project.projectId);
-        setMembershipStatus((prev) => ({
-          ...prev,
-          [project.projectId]: "joined",
-        }));
-        navigate(`/project/${project.projectId}/dashboard`);
-      } catch (err) {
-        setMembershipStatus((prev) => ({
-          ...prev,
-          [project.projectId]: "not-joined",
-        }));
-        toast({
-          title: "접근 불가",
-          description: "참여 중인 프로젝트만 볼 수 있습니다.",
-        });
-      }
+      navigate(`/project/${project.projectId}/dashboard`);
       return;
     }
 
@@ -348,14 +317,12 @@ export default function Projects() {
                   (() => {
                     const membershipState = getMembershipState(project);
                     const isDisabled =
-                      userRole === "AGENCY" && membershipState === "not-joined";
+                      userRole === "AGENCY" && membershipState !== "joined";
                     if (isDisabled) return "cursor-not-allowed opacity-50";
                     if (
                       membershipState === "joined" ||
                       userRole === "SYSTEM_ADMIN" ||
-                      userRole === "CLIENT" ||
-                      (userRole === "AGENCY" &&
-                        membershipState !== "not-joined")
+                      userRole === "CLIENT"
                     ) {
                       return "cursor-pointer";
                     }
@@ -382,7 +349,7 @@ export default function Projects() {
                           const membershipState = getMembershipState(project);
                           if (membershipState === "joined") return "참여중";
                           if (userRole === "AGENCY") {
-                            if (membershipState === "unknown") return "확인 중…";
+                            if (membershipState === "unknown") return "";
                             return "참여하지 않음";
                           }
                           if (userRole === "CLIENT") return "참여중";
@@ -427,7 +394,7 @@ export default function Projects() {
                   </div>
                   {(() => {
                     const membershipState = getMembershipState(project);
-                    const showDeadline = membershipState !== "not-joined";
+                    const showDeadline = membershipState === "joined";
                     if (!showDeadline) return null;
                     return (
                       <div className="flex items-center justify-between text-sm">
@@ -436,6 +403,7 @@ export default function Projects() {
                           {formatDate(
                             project.endDateExpected ??
                               project.expectedEndDate ??
+                              project.expirationDate ??
                               project.endDate
                           )}
                         </span>
