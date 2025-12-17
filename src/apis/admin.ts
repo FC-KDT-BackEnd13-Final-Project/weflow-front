@@ -100,6 +100,7 @@ export interface Company {
   address: string | null;
   memo: string | null;
   status: string;
+  companyType: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -127,6 +128,7 @@ interface CreateCompanyRequest {
   address: string;
   memo: string;
   status: string;
+  companyType: string;
 }
 
 interface CreateCompanyResponse {
@@ -152,6 +154,7 @@ interface UpdateCompanyRequest {
   address?: string;
   memo?: string;
   status?: string;
+  companyType?: string | null;
 }
 
 interface UpdateCompanyResponse {
