@@ -268,7 +268,7 @@ export default function Approvals() {
       setIsDirty(false);
       toast({
         title: "순서 변경 불가",
-        description: "다른 단계(Phase)로는 순서를 변경할 수 없습니다. 같은 단계 내에서만 순서 변경이 가능합니다.",
+        description: "다른 단계로는 순서를 변경할 수 없습니다. 같은 단계 내에서만 순서 변경이 가능합니다.",
         variant: "destructive",
       });
       return;
@@ -277,7 +277,7 @@ export default function Approvals() {
       setIsDirty(false);
       toast({
         title: "순서 변경 불가",
-        description: "진행 중이거나 완료된 단계 위로는 이동할 수 없습니다.",
+        description: "잔행 전인 단계만 순서를 변경할 수 있습니다.",
         variant: "destructive",
       });
       return;
