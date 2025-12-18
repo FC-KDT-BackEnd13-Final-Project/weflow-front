@@ -93,10 +93,10 @@ const DraggableStepCard = ({
       {...listeners}
       className={cn(
         "flex flex-col",
-        (isCrossPhaseBlocked || disabled) && "cursor-not-allowed opacity-60",
+        step.status === "APPROVED" && "bg-muted",
+        (isCrossPhaseBlocked || disabled) && "cursor-not-allowed",
         isSorting && "shadow-lg",
-        isDragging && "ring-2 ring-primary/40",
-        step.status === "APPROVED" && "bg-gray-50 border-gray-200 hover:bg-gray-50"
+        isDragging && "ring-2 ring-primary/40"
       )}
     >
       {children}

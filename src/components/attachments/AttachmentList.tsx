@@ -25,6 +25,15 @@ const formatFileSize = (size?: number) => {
   return `${size} B`;
 };
 
+const getHostname = (url?: string) => {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
 const normalizeAttachments = (items: AttachmentInputItem[]) => {
   const seen = new Set<string>();
   const mapped = items
@@ -101,11 +110,14 @@ export function AttachmentList({
                 <div
                   key={file.id}
                   className="flex items-center justify-between rounded-lg border bg-background px-3 py-2 text-sm"
+                  title={file.name}
                 >
                   <div className="flex items-center gap-3">
                     <Paperclip className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium break-all">{file.name}</p>
+                      <p className="font-medium truncate" title={file.name}>
+                        {file.name}
+                      </p>
                       {sizeText && <p className="text-xs text-muted-foreground">{sizeText}</p>}
                     </div>
                   </div>
@@ -130,19 +142,23 @@ export function AttachmentList({
             {linkLabel}
           </Label>
           <div className="space-y-2">
-            {links.map((link) => (
-              <a
-                key={link.id}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
-              >
-                <div className="text-xs text-muted-foreground break-all line-clamp-1 mt-1">
-                  {link.url || link.name}
-                </div>
-              </a>
-            ))}
+            {links.map((link) => {
+              const href = link.url || link.name || "";
+              const hostLabel = getHostname(href) || link.name;
+              const tooltip = href || hostLabel;
+              return (
+                <a
+                  key={link.id}
+                  href={href || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                  title={tooltip}
+                >
+                  <div className="text-xs text-muted-foreground truncate mt-1">{hostLabel}</div>
+                </a>
+              );
+            })}
           </div>
         </div>
       )}
