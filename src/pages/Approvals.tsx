@@ -273,6 +273,15 @@ export default function Approvals() {
       });
       return;
     }
+    if (overStepData.status !== "PENDING") {
+      setIsDirty(false);
+      toast({
+        title: "순서 변경 불가",
+        description: "진행 중이거나 완료된 단계 위로는 이동할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const previousSteps = [...orderedSteps];
     const phase = activeStepData.phase;
     const phaseSteps = orderedSteps.filter((s) => s.phase === phase);
@@ -291,6 +300,10 @@ export default function Approvals() {
     }
 
     const reorderedPending = arrayMove(pendingSteps, oldPendingIndex, newPendingIndex);
+    if (oldPendingIndex === newPendingIndex) {
+      setIsDirty(false);
+      return;
+    }
     const pendingQueue = [...reorderedPending];
 
     const rebuiltPhase = phaseSteps.map((step) =>
