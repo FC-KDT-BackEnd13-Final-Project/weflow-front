@@ -11,6 +11,7 @@ type Stage = {
 
 const DEFAULT_SINGLE: Record<ProjectPhase, string> = {
   CONTRACT: "계약",
+  IN_PROGRESS: "요구사항 정의",
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
 };
