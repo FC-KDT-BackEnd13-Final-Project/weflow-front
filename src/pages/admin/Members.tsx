@@ -157,7 +157,7 @@ const Members = () => {
             <div className="flex items-center gap-2 flex-1">
               <label className="text-sm font-medium">검색</label>
               <Input
-                placeholder="이름 / 이메일"
+                placeholder="이름 / 이메일 / 회사명"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 className="max-w-sm"
@@ -167,7 +167,7 @@ const Members = () => {
 
           {/* 테이블 */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
+            <div className="grid gap-4 bg-muted p-4 font-medium text-sm" style={{ gridTemplateColumns: '1fr 2fr 120px 1fr 100px' }}>
               <div>이름</div>
               <div>이메일</div>
               <div>역할</div>
@@ -187,9 +187,10 @@ const Members = () => {
                   return (
                     <div
                       key={member.id}
-                      className={`grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
+                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
                         isDeleted ? "opacity-60" : ""
                       }`}
+                      style={{ gridTemplateColumns: '1fr 2fr 120px 1fr 100px' }}
                       onClick={() =>
                         navigate(`/admin/members/${member.id}`, {
                           state: { member },

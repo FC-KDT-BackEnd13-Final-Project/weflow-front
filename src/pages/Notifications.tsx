@@ -53,8 +53,10 @@ export default function Notifications() {
 
   useEffect(() => {
     const fetchNotifications = async () => {
+      setIsLoading(true);
       try {
-        const response = await notificationsApi.getNotifications(0, pageSize);
+        const isRead = readFilter === "ALL" ? undefined : readFilter === "READ";
+        const response = await notificationsApi.getNotifications(0, pageSize, isRead);
         if (response.success) {
           setNotifications(response.data.content);
           setHasMore(!response.data.last);
@@ -83,7 +85,7 @@ export default function Notifications() {
     };
 
     fetchNotifications();
-  }, [toast]);
+  }, [toast, readFilter]);
 
   const loadMore = async () => {
     if (isLoadingMore || !hasMore) return;
@@ -91,7 +93,8 @@ export default function Notifications() {
     setIsLoadingMore(true);
     try {
       const nextPage = page + 1;
-      const response = await notificationsApi.getNotifications(nextPage, pageSize);
+      const isRead = readFilter === "ALL" ? undefined : readFilter === "READ";
+      const response = await notificationsApi.getNotifications(nextPage, pageSize, isRead);
       if (response.success) {
         setNotifications((prev) => [...prev, ...response.data.content]);
         setHasMore(!response.data.last);
@@ -108,15 +111,6 @@ export default function Notifications() {
     }
   };
 
-  const filteredNotifications = useMemo(() => {
-    return notifications.filter((notification) => {
-      const matchRead =
-        readFilter === "ALL" ||
-        (readFilter === "READ" && notification.read) ||
-        (readFilter === "UNREAD" && !notification.read);
-      return matchRead;
-    });
-  }, [notifications, readFilter]);
 
   const hasUnread = useMemo(() => {
     return notifications.some((n) => !n.read);
@@ -256,12 +250,12 @@ export default function Notifications() {
           <CardContent className="space-y-4">
             {isLoading ? (
               <div className="py-12 text-center text-sm text-muted-foreground">알림을 불러오는 중...</div>
-            ) : filteredNotifications.length === 0 ? (
+            ) : notifications.length === 0 ? (
               <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">
-                {notifications.length === 0 ? "알림이 없습니다." : "선택한 조건에 해당하는 알림이 없습니다."}
+                알림이 없습니다.
               </div>
             ) : (
-              filteredNotifications.map((notification) => (
+              notifications.map((notification) => (
                   <div
                     key={notification.id}
                     className={`rounded border p-4 space-y-3 cursor-pointer transition-colors ${
@@ -324,7 +318,7 @@ export default function Notifications() {
                 </div>
               ))
             )}
-            {hasMore && filteredNotifications.length > 0 && (
+            {hasMore && notifications.length > 0 && (
               <div className="flex justify-center pt-4">
                 <Button
                   variant="outline"

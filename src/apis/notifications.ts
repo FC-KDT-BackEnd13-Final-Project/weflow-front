@@ -52,9 +52,13 @@ interface NotificationDetailResponse {
 }
 
 export const notificationsApi = {
-  getNotifications: async (page: number = 0, size: number = 10): Promise<NotificationsResponse> => {
+  getNotifications: async (page: number = 0, size: number = 10, isRead?: boolean): Promise<NotificationsResponse> => {
+    const params: any = { page, size };
+    if (isRead !== undefined) {
+      params.isRead = isRead;
+    }
     const response = await api.get<NotificationsResponse>("/api/notifications", {
-      params: { page, size }
+      params
     });
     return response.data;
   },

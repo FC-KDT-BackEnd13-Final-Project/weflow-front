@@ -172,7 +172,7 @@ const Companies = () => {
 
           {/* 테이블 */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-5 gap-4 bg-muted p-4 font-medium text-sm">
+            <div className="grid gap-4 bg-muted p-4 font-medium text-sm" style={{ gridTemplateColumns: '1fr 1fr 120px 2fr 100px' }}>
               <div>회사명</div>
               <div>대표자</div>
               <div>회사 유형</div>
@@ -193,9 +193,10 @@ const Companies = () => {
                   return (
                     <div
                       key={company.id}
-                      className={`grid grid-cols-5 gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
+                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
                         isDeleted ? "opacity-60" : ""
                       }`}
+                      style={{ gridTemplateColumns: '1fr 1fr 120px 2fr 100px' }}
                       onClick={() =>
                         navigate(
                           `/admin/companies/${company.id}/edit`
