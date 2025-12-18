@@ -36,6 +36,15 @@ interface AttachmentInputProps {
 
 const DEFAULT_ALLOWED_EXT = ["jpg", "jpeg", "png", "webp", "pdf", "docx", "zip"];
 
+const getHostname = (url?: string) => {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
 export function AttachmentInput({
   targetType,
   attachments,
@@ -164,19 +173,22 @@ export function AttachmentInput({
               const originalIndex = attachments.findIndex((item) => item.id === file.id);
               const sizeLabel =
                 typeof file.fileSize === "number" ? `${(file.fileSize / 1024).toFixed(1)} KB` : undefined;
-              return (
-                <div
-                  key={`${file.id}-${file.name}`}
-                  className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <FileText className="h-4 w-4 flex-shrink-0 text-blue-500" />
-                    <span className="text-sm truncate">{file.name}</span>
-                    {sizeLabel && (
-                      <Badge variant="secondary" className="text-xs flex-shrink-0">
-                        {sizeLabel}
-                      </Badge>
-                    )}
+                return (
+                  <div
+                    key={`${file.id}-${file.name}`}
+                    className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
+                    title={file.name}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <FileText className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                      <span className="text-sm truncate" title={file.name}>
+                        {file.name}
+                      </span>
+                      {sizeLabel && (
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          {sizeLabel}
+                        </Badge>
+                      )}
                   </div>
                   {controlsVisible && (
                     <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => originalIndex >= 0 && handleRemove(originalIndex)}>
@@ -207,11 +219,13 @@ export function AttachmentInput({
               .filter((a) => a.isLink)
               .map((link) => {
                 const originalIndex = attachments.findIndex((item) => item.id === link.id);
-                const href = link.url || link.name;
+                const href = link.url || link.name || "";
+                const hostLabel = getHostname(href) || link.name;
                 return (
                   <div
                     key={`${link.id}-${link.name}`}
                     className="flex items-center justify-between p-2 border rounded-md bg-muted/30"
+                    title={href}
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <LinkIcon className="h-4 w-4 text-blue-500" />
@@ -221,11 +235,14 @@ export function AttachmentInput({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm underline-offset-2 hover:underline flex-1 min-w-0 truncate"
+                          title={href}
                         >
-                          {link.name}
+                          {hostLabel}
                         </a>
                       ) : (
-                        <span className="text-sm truncate">{link.name}</span>
+                        <span className="text-sm truncate" title={href || link.name}>
+                          {hostLabel}
+                        </span>
                       )}
                     </div>
                     {controlsVisible && (
