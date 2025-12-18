@@ -31,14 +31,8 @@ import {
   removeAdminProjectMember,
 } from "@/apis/adminProjects";
 
-import {
-  fetchProjectSteps,
-  createStep,
-  updateStep,
-  deleteStep,
-  reorderSteps,
-  StepResponse,
-} from "@/apis/steps";
+import { fetchAdminProjectSteps } from "@/apis/steps";
+import { normalizeStages } from "@/utils/normalizeStages";
 
 import { fetchAllUsers } from "@/apis/adminUsers";
 import MemberSelectDialog, {
@@ -92,7 +86,13 @@ import { TargetType } from "@/types/attachment";
 // SortableStage (ProjectCreate와 동일)
 // ----------------------------------------------
 type StagePhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
-type Stage = { id?: number; name: string; order: number; phase: StagePhase };
+type Stage = {
+  key: string;
+  id?: number;
+  name: string;
+  order: number;
+  phase: StagePhase;
+};
 
 const phaseOptions: { value: StagePhase; label: string }[] = [
   { value: "CONTRACT", label: "계약" },
@@ -101,16 +101,16 @@ const phaseOptions: { value: StagePhase; label: string }[] = [
   { value: "MAINTENANCE", label: "유지보수" },
 ];
 
-const stageKey = (s: Stage) => s.id ?? s.order;
+const stageKey = (s: Stage) => s.key;
 
 const SortableStage = ({
   stage,
   onDelete,
 }: {
   stage: Stage;
-  onDelete: (id: number | string) => void;
+  onDelete: (id: string) => void;
 }) => {
-  const sortableId = stage.id ?? stage.order;
+  const sortableId = stage.key;
 
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
@@ -129,10 +129,8 @@ const SortableStage = ({
                  px-4 py-3 rounded-xl border bg-white shadow-sm
                  hover:bg-accent cursor-grab transition"
     >
-      {/* 단계명 */}
       <span className="font-medium text-sm">{stage.name}</span>
 
-      {/* 삭제 버튼 */}
       <button
         type="button"
         onClick={(e) => {
@@ -194,7 +192,6 @@ const AdminProjectEdit = () => {
   // 단계
   // -------------------------------
   const [stages, setStages] = useState<Stage[]>([]);
-  const [deletedStageIds, setDeletedStageIds] = useState<number[]>([]);
   const [newStageName, setNewStageName] = useState("");
   const [newStagePhase, setNewStagePhase] = useState<StagePhase>("CONTRACT");
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
@@ -224,18 +221,10 @@ const AdminProjectEdit = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      if (u.companyType === "agency") return true;
+      if (u.companyType === "AGENCY") return true;
       return selectedCompany ? u.companyId === selectedCompany.id : false;
     });
   }, [users, selectedCompany]);
-
-  const mapPhaseFromTitle = (title: string): StagePhase => {
-    const lower = title.toLowerCase();
-    if (lower.includes("계약")) return "CONTRACT";
-    if (lower.includes("납품")) return "DELIVERY";
-    if (lower.includes("유지") || lower.includes("보수")) return "MAINTENANCE";
-    return "IN_PROGRESS";
-  };
 
   // -------------------------------
   // 초기 로딩
@@ -245,18 +234,11 @@ const AdminProjectEdit = () => {
       try {
         setLoading(true);
 
-        const [usersRes, companiesRes] = await Promise.all([
-          fetchAllUsers(),
+        const [companiesRes, detail] = await Promise.all([
           adminApi.getCompanies(),
-        ]);
-        setUsers(usersRes);
-        setCompanies(companiesRes.data.content ?? []);
-
-        const [detail, memberRes, stepRes] = await Promise.all([
           fetchAdminProjectDetail(projectId),
-          fetchAdminProjectMembers(projectId),
-          fetchProjectSteps(projectId),
         ]);
+        setCompanies(companiesRes.data.content ?? []);
 
         // 프로젝트 정보
         setName(detail.name);
@@ -288,13 +270,24 @@ const AdminProjectEdit = () => {
         );
         setActualEndDate(detail.endDate ? new Date(detail.endDate) : null);
 
+        // 멤버 조회: 개발사 전체 + 해당 고객사만
+        const usersRes = await fetchAllUsers({
+          customerCompanyId: detail.customerCompanyId,
+        });
+        setUsers(usersRes);
+
+        const [memberRes, stepRes] = await Promise.all([
+          fetchAdminProjectMembers(projectId),
+          fetchAdminProjectSteps(projectId),
+        ]);
+
         // 멤버 (삭제된 멤버 제외)
         const mappedMembers = memberRes.members
           .filter((m) => !m.removedAt)
           .map((m) => {
             const u = usersRes.find((x) => x.id === String(m.userId));
             const companyType =
-              u?.companyType ?? (m.userRole === "CLIENT" ? "client" : "agency");
+              u?.companyType ?? (m.userRole === "CLIENT" ? "CLIENT" : "AGENCY");
             return {
               id: String(m.userId),
               name: m.username,
@@ -308,17 +301,7 @@ const AdminProjectEdit = () => {
         setMembers(mappedMembers);
         initialMemberIds.current = new Set(mappedMembers.map((m) => m.id));
 
-        // 단계: 제목 기반으로 phase 추론(백엔드에 phase 없을 때용)
-        setStages(
-          stepRes
-            .sort((a, b) => a.orderIndex - b.orderIndex)
-            .map((s: StepResponse) => ({
-              id: s.id,
-              name: s.title,
-              order: s.orderIndex,
-              phase: mapPhaseFromTitle(s.title),
-            }))
-        );
+        setStages(normalizeStages(stepRes));
       } finally {
         setLoading(false);
       }
@@ -330,27 +313,25 @@ const AdminProjectEdit = () => {
   // -------------------------------
   // 단계 추가/삭제/드래그
   // -------------------------------
-  const handleAddStage = () => {
-    if (!newStageName.trim()) return;
+const handleAddStage = () => {
+  if (!newStageName.trim()) return;
 
-    setStages([
-      ...stages,
-      {
-        name: newStageName,
-        order: stages.length + 1,
-        phase: newStagePhase,
-      },
-    ]);
+  setStages([
+    ...stages,
+    {
+      key: `stage-${Date.now()}-${Math.random()}`,
+      name: newStageName,
+      order: stages.length + 1,
+      phase: newStagePhase,
+    },
+  ]);
 
     setNewStageName("");
     setNewStagePhase("CONTRACT");
     setIsStageDialogOpen(false);
   };
 
-  const handleDeleteStage = (key: number | string) => {
-    const target = stages.find((s) => stageKey(s) === key);
-    if (target?.id) deletedStageIds.push(target.id);
-
+  const handleDeleteStage = (key: string) => {
     const filtered = stages.filter((s) => stageKey(s) !== key);
     setStages(filtered.map((s, i) => ({ ...s, order: i + 1 })));
   };
@@ -448,6 +429,8 @@ const AdminProjectEdit = () => {
   const handleSubmit = async () => {
     if (!validateRequired()) return;
     try {
+      const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+
       await updateAdminProject(projectId, {
         name,
         description,
@@ -459,34 +442,11 @@ const AdminProjectEdit = () => {
         startDate: toLocal(startDate),
         endDateExpected: toLocal(endDate),
         endDate: toLocal(actualEndDate),
-      });
-
-      for (const del of deletedStageIds) {
-        await deleteStep(projectId, del);
-      }
-
-      const newStages = [...stages];
-
-      for (let i = 0; i < newStages.length; i++) {
-        const s = newStages[i];
-
-        if (!s.id) {
-          const created = await createStep(projectId, { title: s.name });
-          newStages[i] = { ...s, id: created.id };
-        } else {
-          await updateStep(projectId, s.id, { title: s.name });
-        }
-      }
-
-      setStages(newStages);
-
-      await reorderSteps(projectId, {
-        steps: newStages
-          .sort((a, b) => a.order - b.order)
-          .map((s, idx) => ({
-            stepId: s.id!,
-            orderIndex: idx + 1,
-          })),
+        steps: orderedStages.map((s, idx) => ({
+          title: s.name,
+          phase: s.phase,
+          orderIndex: idx + 1,
+        })),
       });
 
       const current = new Set(members.map((m) => m.id));
@@ -784,7 +744,7 @@ const AdminProjectEdit = () => {
         onOpenChange={setIsMemberDialogOpen}
         onConfirm={handleAddMembers}
         existingMemberIds={members.map((m) => m.id)}
-        existingAdminId={null}
+        existingAdminId={members.find((m) => m.role === "최고권한")?.id ?? null}
         users={filteredUsers}
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
@@ -944,13 +904,13 @@ const StageSection = ({
               <h3 className="text-lg font-semibold">{group.label}</h3>
 
               <SortableContext
-                items={group.items.map((s) => s.id ?? s.order)}
+                items={group.items.map((s) => s.key)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="grid grid-cols-1 gap-3">
                   {group.items.map((stage) => (
                     <SortableStage
-                      key={stage.id ?? stage.order}
+                      key={stage.key}
                       stage={stage}
                       onDelete={handleDeleteStage}
                     />
@@ -1029,8 +989,8 @@ const MemberSection = ({
   members: SelectedMember[];
   handleDeleteMember: (idx: number) => void;
 }) => {
-  const agency = members.filter((m) => m.companyType === "agency");
-  const client = members.filter((m) => m.companyType === "client");
+  const agency = members.filter((m) => m.companyType === "AGENCY");
+  const client = members.filter((m) => m.companyType === "CLIENT");
 
   const renderTable = (title: string, list: SelectedMember[]) => (
     <div className="border rounded-lg overflow-hidden">

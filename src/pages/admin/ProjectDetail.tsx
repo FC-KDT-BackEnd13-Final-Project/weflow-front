@@ -182,7 +182,7 @@ const ProjectDetail = () => {
                     <Badge variant="outline" className="text-sm font-medium">
                       설명
                     </Badge>
-                    <span className="text-muted-foreground">
+                    <span>
                       {detail.description || "-"}
                     </span>
                   </div>
@@ -205,7 +205,7 @@ const ProjectDetail = () => {
                     <Badge variant="outline" className="text-sm font-medium">
                       회사
                     </Badge>
-                    <span className="text-muted-foreground">
+                    <span>
                       {customerCompanyName ??
                         detail.customerCompanyName ??
                         detail.customerCompanyId ??

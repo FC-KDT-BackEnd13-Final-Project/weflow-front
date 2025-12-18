@@ -20,7 +20,7 @@ export interface MemberData {
   id: string;
   name: string;
   company: string;
-  companyType: "agency" | "client";
+  companyType: "AGENCY" | "CLIENT";
   position: string;
   companyId?: number;
 }
@@ -29,7 +29,7 @@ export interface SelectedMember {
   id: string;
   name: string;
   company: string;
-  companyType: "agency" | "client";
+  companyType: "AGENCY" | "CLIENT";
   role: string;
   canDelete: boolean;
 }
@@ -60,11 +60,17 @@ const MemberSelectDialog = ({
   setSelectedClientCompany,
   users,
 }: MemberSelectDialogProps) => {
-  // users undefined 방지
-  const safeUsers = users ?? [];
+  // users undefined 방지 + companyType 대문자 정규화
+  const normalizedUsers: MemberData[] = useMemo(() => {
+    const list = users ?? [];
+    return list.map((u) => ({
+      ...u,
+      companyType: u.companyType === "CLIENT" ? "CLIENT" : "AGENCY",
+    }));
+  }, [users]);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"agency" | "client">("agency");
+  const [activeTab, setActiveTab] = useState<"AGENCY" | "CLIENT">("AGENCY");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [adminMemberId, setAdminMemberId] = useState<string | null>(null);
   const [expandedCompanies, setExpandedCompanies] = useState<string[]>([]);
@@ -75,9 +81,9 @@ const MemberSelectDialog = ({
   // id → member 매핑
   const memberById = useMemo(() => {
     const map = new Map<string, MemberData>();
-    safeUsers.forEach((m) => map.set(m.id, m));
+    normalizedUsers.forEach((m) => map.set(m.id, m));
     return map;
-  }, [safeUsers]);
+  }, [normalizedUsers]);
 
   const companiesFromIds = (ids: string[]) =>
     ids
@@ -98,13 +104,13 @@ const MemberSelectDialog = ({
       const defaultExpanded = new Set(["DevCorp", ...companies]);
       setExpandedCompanies(Array.from(defaultExpanded));
     }
-  }, [open, existingMemberIds, existingAdminId, safeUsers]);
+  }, [open, existingMemberIds, existingAdminId, normalizedUsers]);
 
   // 고객사는 **1개 회사만 선택 가능**
   useEffect(() => {
     const client = selectedIds
       .map((id) => memberById.get(id))
-      .find((m) => m?.companyType === "client");
+      .find((m) => m?.companyType === "CLIENT");
 
     setLocalClientCompany(client?.company ?? null);
   }, [selectedIds, memberById]);
@@ -113,7 +119,7 @@ const MemberSelectDialog = ({
   // 필터링
   // ------------------------------------------
   const filteredMembers = useMemo(() => {
-    return safeUsers.filter((m) => {
+    return normalizedUsers.filter((m) => {
       const matchTab = m.companyType === activeTab;
       const matchSearch =
         searchQuery === "" ||
@@ -122,7 +128,7 @@ const MemberSelectDialog = ({
 
       return matchTab && matchSearch;
     });
-  }, [safeUsers, activeTab, searchQuery]);
+  }, [normalizedUsers, activeTab, searchQuery]);
 
   const groupedByCompany = useMemo(() => {
     const groups: Record<string, MemberData[]> = {};
@@ -136,8 +142,8 @@ const MemberSelectDialog = ({
   // ---------------------------
   // 고객사 단일 선택 로직
   // ---------------------------
-  const isCompanySelectable = (company: string, type: "agency" | "client") => {
-    if (type === "agency") return true;
+  const isCompanySelectable = (company: string, type: "AGENCY" | "CLIENT") => {
+    if (type === "AGENCY") return true;
     if (!localClientCompany) return true;
     return localClientCompany === company;
   };
@@ -161,7 +167,7 @@ const MemberSelectDialog = ({
 
       if (!allSelected) {
         // 체크 활성화
-        if (companyType === "client") {
+        if (companyType === "CLIENT") {
           setLocalClientCompany(company);
         }
         return Array.from(new Set([...prev, ...ids]));
@@ -170,7 +176,7 @@ const MemberSelectDialog = ({
       // 체크 해제
       const updated = prev.filter((id) => !ids.includes(id));
 
-      if (companyType === "client") {
+      if (companyType === "CLIENT") {
         const stillSelected = updated.some(
           (id) => memberById.get(id)?.company === company
         );
@@ -190,7 +196,7 @@ const MemberSelectDialog = ({
 
       // 체크
       if (checked && !already) {
-        if (member.companyType === "client") {
+        if (member.companyType === "CLIENT") {
           setLocalClientCompany(member.company);
         }
         return [...prev, member.id];
@@ -199,7 +205,7 @@ const MemberSelectDialog = ({
       // 체크 해제
       const updated = prev.filter((id) => id !== member.id);
 
-      if (member.companyType === "client") {
+      if (member.companyType === "CLIENT") {
         const stillExist = updated.some(
           (id) => memberById.get(id)?.company === member.company
         );
@@ -240,7 +246,11 @@ const MemberSelectDialog = ({
     const allSelected = isAllCompanySelected(members);
     const partial = isCompanyPartiallySelected(members);
 
-    const checkboxState = allSelected ? true : partial ? "indeterminate" : false;
+    const checkboxState = allSelected
+      ? true
+      : partial
+      ? "indeterminate"
+      : false;
     const isExpanded = expandedCompanies.includes(company);
 
     return (
@@ -291,9 +301,7 @@ const MemberSelectDialog = ({
                     <Checkbox
                       checked={isChecked}
                       disabled={!selectable}
-                      onCheckedChange={(v) =>
-                        handleToggleMember(m, v === true)
-                      }
+                      onCheckedChange={(v) => handleToggleMember(m, v === true)}
                     />
 
                     <div>
@@ -310,10 +318,7 @@ const MemberSelectDialog = ({
                       onValueChange={handleSelectAdmin}
                     >
                       <div className="flex items-center gap-2">
-                        <RadioGroupItem
-                          value={m.id}
-                          disabled={!isChecked}
-                        />
+                        <RadioGroupItem value={m.id} disabled={!isChecked} />
                         <Label>최고권한</Label>
                       </div>
                     </RadioGroup>
@@ -370,21 +375,21 @@ const MemberSelectDialog = ({
 
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as "agency" | "client")}
+          onValueChange={(v) => setActiveTab(v as "AGENCY" | "CLIENT")}
           className="flex-1 flex flex-col overflow-hidden"
         >
           <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="agency">개발사</TabsTrigger>
-            <TabsTrigger value="client">고객사</TabsTrigger>
+            <TabsTrigger value="AGENCY">개발사</TabsTrigger>
+            <TabsTrigger value="CLIENT">고객사</TabsTrigger>
           </TabsList>
 
           {/* 개발사 */}
           <TabsContent
-            value="agency"
+            value="AGENCY"
             className="flex-1 overflow-y-auto border rounded-md mt-2"
           >
             {Object.entries(groupedByCompany)
-              .filter(([_, mem]) => mem[0].companyType === "agency")
+              .filter(([_, mem]) => mem[0].companyType === "AGENCY")
               .map(([company, members]) =>
                 renderCompanyGroup(company, members, true)
               )}
@@ -392,11 +397,11 @@ const MemberSelectDialog = ({
 
           {/* 고객사 */}
           <TabsContent
-            value="client"
+            value="CLIENT"
             className="flex-1 overflow-y-auto border rounded-md mt-2"
           >
             {Object.entries(groupedByCompany)
-              .filter(([_, mem]) => mem[0].companyType === "client")
+              .filter(([_, mem]) => mem[0].companyType === "CLIENT")
               .map(([company, members]) =>
                 renderCompanyGroup(company, members, false)
               )}
