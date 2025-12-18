@@ -138,8 +138,10 @@ export default function Approvals() {
   const [isDirty, setIsDirty] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  const stepsQueryKey = useMemo(() => ["project-steps", projectId], [projectId]);
+
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
-    queryKey: ["project-steps", projectId],
+    queryKey: stepsQueryKey,
     queryFn: () => getProjectSteps(projectId),
     enabled: !!projectId,
   });
@@ -304,12 +306,13 @@ export default function Approvals() {
     const orderedIdsByPhase = reorderedPending.map((s) => s.id);
 
     reorderStepsByPhase(projectId, { phase, orderedStepIds: orderedIdsByPhase })
-      .then((response) => {
-        const responseSteps = response.steps ?? [];
+      .then((data) => {
+        const responseSteps = data.steps ?? [];
         if (!responseSteps.length) return;
-        setOrderedSteps((current) => {
-          const phaseQueue = [...responseSteps];
-          return current.map((step) => (step.phase === phase ? phaseQueue.shift() ?? step : step));
+        setOrderedSteps(responseSteps);
+        queryClient.setQueryData(stepsQueryKey, (prev: any) => {
+          if (!prev) return { data: { steps: responseSteps } };
+          return { ...prev, data: { ...(prev.data ?? {}), steps: responseSteps } };
         });
         setIsDirty(false);
       })

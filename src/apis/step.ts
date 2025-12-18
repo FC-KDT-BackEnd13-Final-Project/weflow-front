@@ -1,5 +1,5 @@
 import api from "@/apis/api";
-import { unwrapApiResponse, buildApiErrorMessage } from "@/lib/apiUtils";
+import { unwrapApiResponse, buildApiErrorMessage, unwrapData } from "@/lib/apiUtils";
 import { StepApiResponse, StepListResponse, StepResponse } from "@/lib/stepTypes";
 
 export async function getProjectSteps(projectId: number, phase?: string): Promise<StepApiResponse<StepListResponse>> {
@@ -82,13 +82,13 @@ export async function reorderSteps(
 export async function reorderStepsByPhase(
   projectId: number,
   payload: { phase: string; orderedStepIds: number[] }
-): Promise<StepApiResponse<StepListResponse>> {
+): Promise<StepListResponse> {
   try {
     const response = await api.patch<StepApiResponse<StepListResponse>>(
       `/api/admin/projects/${projectId}/steps/reorder`,
       payload
     );
-    return unwrapApiResponse(response.data);
+    return unwrapData(response.data);
   } catch (error) {
     throw new Error(buildApiErrorMessage(error));
   }
