@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { X, Mail, MailOpen } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 const typeLabels: Record<string, string> = {
   STEP_REQUEST: "단계 요청",
@@ -38,6 +39,26 @@ const formatDateTime = (value: string) =>
     minute: "2-digit",
     hour12: false,
   });
+
+// 알림 항목 스켈레톤 컴포넌트 정의
+const NotificationItemSkeleton = () => (
+  <div className="rounded border p-4 space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-6 w-20 rounded-full" />
+      </div>
+      <div className="flex items-center gap-3 text-xs">
+        <Skeleton className="h-4 w-10" />
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-4" />
+      </div>
+    </div>
+    <div className="space-y-1">
+      <Skeleton className="h-5 w-3/4" />
+      <Skeleton className="h-4 w-full" />
+    </div>
+  </div>
+);
 
 export default function Notifications() {
   const navigate = useNavigate();
@@ -121,6 +142,7 @@ export default function Notifications() {
     if (!window.confirm("알림을 삭제하시겠습니까?")) return;
 
     try {
+      setIsDeleting((prev) => ({ ...prev, [id]: true }));
       const response = await notificationsApi.deleteNotification(id);
       if (response.success) {
         setNotifications((prev) => prev.filter((notification) => notification.id !== id));
@@ -135,6 +157,8 @@ export default function Notifications() {
         title: "알림 삭제 실패",
         description: error.response?.data?.message || "알림을 삭제할 수 없습니다.",
       });
+    } finally {
+      setIsDeleting((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -230,6 +254,7 @@ export default function Notifications() {
                     variant={readFilter === option.value ? "default" : "outline"}
                     size="sm"
                     onClick={() => setReadFilter(option.value as typeof readFilter)}
+                    disabled={isLoading}
                   >
                     {option.label}
                   </Button>
@@ -240,7 +265,7 @@ export default function Notifications() {
                 size="sm"
                 onClick={handleMarkAllAsRead}
                 className={!hasUnread || readFilter === "READ" ? "invisible" : ""}
-                disabled={!hasUnread || readFilter === "READ"}
+                disabled={!hasUnread || readFilter === "READ" || isLoading}
               >
                 <MailOpen className="mr-1 h-4 w-4" />
                 모두 읽음
@@ -249,26 +274,28 @@ export default function Notifications() {
           </CardHeader>
           <CardContent className="space-y-4">
             {isLoading ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">알림을 불러오는 중...</div>
+              // 로딩 중 스켈레톤 표시 (pageSize 만큼)
+              Array.from({ length: pageSize }).map((_, i) => (
+                <NotificationItemSkeleton key={i} />
+              ))
             ) : notifications.length === 0 ? (
               <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">
                 알림이 없습니다.
               </div>
             ) : (
               notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`rounded border p-4 space-y-3 cursor-pointer transition-colors ${
-                      notification.read ? "bg-white" : "bg-blue-50/50 hover:bg-blue-50"
-                    }`}
-                    onClick={async () => {
-                      if (!notification.read) {
-                        await handleMarkAsRead(notification.id);
-                      }
-                      // 상세 페이지로 이동
-                      navigate(`/notifications/${notification.id}`);
-                    }}
-                  >
+                <div
+                  key={notification.id}
+                  className={`rounded border p-4 space-y-3 cursor-pointer transition-colors ${notification.read ? "bg-white" : "bg-blue-50/50 hover:bg-blue-50"
+                    } ${isDeleting[notification.id] ? "opacity-50 pointer-events-none" : ""}`}
+                  onClick={async () => {
+                    if (!notification.read) {
+                      await handleMarkAsRead(notification.id);
+                    }
+                    // 상세 페이지로 이동
+                    navigate(`/notifications/${notification.id}`);
+                  }}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Badge
@@ -277,8 +304,8 @@ export default function Notifications() {
                           notification.priority === "IMPORTANT"
                             ? "bg-red-100 text-red-700 border border-red-200"
                             : !notification.read
-                            ? "bg-blue-100 text-blue-700 border border-blue-200"
-                            : "bg-slate-100 text-slate-700"
+                              ? "bg-blue-100 text-blue-700 border border-blue-200"
+                              : "bg-slate-100 text-slate-700"
                         }
                       >
                         {typeLabels[notification.type] || notification.type}
@@ -300,8 +327,9 @@ export default function Notifications() {
                       )}
                       <button
                         type="button"
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-destructive"
                         onClick={(e) => handleDismiss(e, notification.id)}
+                        disabled={isDeleting[notification.id]}
                         aria-label="알림 삭제"
                         title="알림 삭제"
                       >

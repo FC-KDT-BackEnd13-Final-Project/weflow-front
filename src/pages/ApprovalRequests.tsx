@@ -13,6 +13,30 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getMyInfo, MeResponse } from "@/apis/user";
 import { fetchMyProjects, type ProjectSummaryResponse } from "@/apis/projects";
 import { fetchAdminProjects } from "@/apis/adminProjects";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
+
+// 승인 요청 항목 스켈레톤 컴포넌트 정의
+const ApprovalRequestItemSkeleton = () => (
+  <div className="rounded-xl border p-4 sm:p-5 space-y-3">
+    <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+      <Skeleton className="h-6 w-24 rounded-full" />
+      <Skeleton className="h-6 w-16 rounded-full" />
+    </div>
+
+    <div className="flex items-start justify-between gap-3">
+      <Skeleton className="h-6 w-3/4" />
+      <Skeleton className="h-6 w-16" />
+    </div>
+
+    <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm">
+      <Skeleton className="h-4 w-12" />
+      <span className="text-muted-foreground">·</span>
+      <Skeleton className="h-4 w-16" />
+      <span className="text-muted-foreground">·</span>
+      <Skeleton className="h-4 w-28" />
+    </div>
+  </div>
+);
 
 export default function ApprovalRequests() {
   const navigate = useNavigate();
@@ -152,96 +176,99 @@ export default function ApprovalRequests() {
           <p className="text-sm text-muted-foreground mt-1">조직 내 모든 프로젝트의 승인 요청 상태를 확인하세요.</p>
         </div>
         <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <CardTitle>최근 요청</CardTitle>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3 w-full md:w-auto">
-                <Select
-                  value={projectFilter}
-                  onValueChange={(value) => {
-                    setProjectFilter(value);
-                    setSearchParams({
-                      status: statusFilter,
-                      projectId: value,
-                      page: "0",
-                      pending: pendingOnly ? "true" : "false",
-                    });
-                  }}
-                >
-                  <SelectTrigger className="w-full md:w-[220px]">
-                    <SelectValue placeholder="프로젝트 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">{primaryProjectLabel}</SelectItem>
-                    {projectOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <CardTitle>최근 요청</CardTitle>
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3 w-full md:w-auto">
+              <Select
+                value={projectFilter}
+                onValueChange={(value) => {
+                  setProjectFilter(value);
+                  setSearchParams({
+                    status: statusFilter,
+                    projectId: value,
+                    page: "0",
+                    pending: pendingOnly ? "true" : "false",
+                  });
+                }}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="w-full md:w-[220px]">
+                  <SelectValue placeholder="프로젝트 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{primaryProjectLabel}</SelectItem>
+                  {projectOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-                <Select
-                  value={statusFilter}
-                  onValueChange={(value) => {
-                    const nextStatus = value as MyApprovalStatus;
-                    setSavedStatus(nextStatus);
-                    setSearchParams({
-                      status: nextStatus,
-                      projectId: projectFilter,
-                      page: "0",
-                      pending: pendingOnly ? "true" : "false",
-                    });
-                  }}
-                  disabled={pendingOnly}
-                >
-                  <SelectTrigger className="w-full md:w-[180px]">
-                    <SelectValue placeholder="상태 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">전체</SelectItem>
-                    <SelectItem value="REQUESTED">승인 요청</SelectItem>
-                    <SelectItem value="CHANGE_REQUESTED">수정 요청</SelectItem>
-                    <SelectItem value="APPROVED">승인 완료</SelectItem>
-                    <SelectItem value="REJECTED">반려</SelectItem>
-                    <SelectItem value="CANCELED">요청 취소</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => {
+                  const nextStatus = value as MyApprovalStatus;
+                  setSavedStatus(nextStatus);
+                  setSearchParams({
+                    status: nextStatus,
+                    projectId: projectFilter,
+                    page: "0",
+                    pending: pendingOnly ? "true" : "false",
+                  });
+                }}
+                disabled={pendingOnly || isLoading}
+              >
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="상태 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">전체</SelectItem>
+                  <SelectItem value="REQUESTED">승인 요청</SelectItem>
+                  <SelectItem value="CHANGE_REQUESTED">수정 요청</SelectItem>
+                  <SelectItem value="APPROVED">승인 완료</SelectItem>
+                  <SelectItem value="REJECTED">반려</SelectItem>
+                  <SelectItem value="CANCELED">요청 취소</SelectItem>
+                </SelectContent>
+              </Select>
 
-                <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  <Checkbox
-                    checked={pendingOnly}
-                    onCheckedChange={(checked) => {
-                      const next = Boolean(checked);
-                      if (next) {
-                        setSavedStatus(statusFilter);
-                        setPendingOnly(true);
-                        setSearchParams({
-                          status: "ALL",
-                          projectId: projectFilter,
-                          page: "0",
-                          pending: "true",
-                        });
-                      } else {
-                        setPendingOnly(false);
-                        const restoreStatus = savedStatus || "ALL";
-                        setSearchParams({
-                          status: restoreStatus,
-                          projectId: projectFilter,
-                          page: "0",
-                          pending: "false",
-                        });
-                      }
-                    }}
-                  />
-                  미처리만
-                </label>
-              </div>
-            </CardHeader>
+              <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={pendingOnly}
+                  onCheckedChange={(checked) => {
+                    const next = Boolean(checked);
+                    if (next) {
+                      setSavedStatus(statusFilter);
+                      setPendingOnly(true);
+                      setSearchParams({
+                        status: "ALL",
+                        projectId: projectFilter,
+                        page: "0",
+                        pending: "true",
+                      });
+                    } else {
+                      setPendingOnly(false);
+                      const restoreStatus = savedStatus || "ALL";
+                      setSearchParams({
+                        status: restoreStatus,
+                        projectId: projectFilter,
+                        page: "0",
+                        pending: "false",
+                      });
+                    }
+                  }}
+                  disabled={isLoading}
+                />
+                미처리만
+              </label>
+            </div>
+          </CardHeader>
           <CardContent className="space-y-4">
             {isLoading || isFetching ? (
-              <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">
-                승인 요청을 불러오는 중입니다...
-              </div>
+              // 로딩/패칭 중 스켈레톤 표시 (pageSize 만큼)
+              Array.from({ length: pageSize }).map((_, i) => (
+                <ApprovalRequestItemSkeleton key={i} />
+              ))
             ) : isError ? (
               <div className="rounded border border-dashed py-12 text-center text-sm text-muted-foreground">
                 승인 요청을 불러오지 못했습니다.
@@ -327,7 +354,7 @@ export default function ApprovalRequests() {
               <button
                 type="button"
                 className="text-sm text-muted-foreground disabled:opacity-50"
-                onClick={() => setSearchParams({ status: statusFilter, page: String(Math.max(0, page - 1)) })}
+                onClick={() => setSearchParams({ status: statusFilter, page: String(Math.max(0, page - 1)), projectId: projectFilter, pending: pendingOnly ? "true" : "false" })}
                 disabled={currentPage === 0 || isLoading || isFetching}
               >
                 이전
@@ -342,6 +369,8 @@ export default function ApprovalRequests() {
                   setSearchParams({
                     status: statusFilter,
                     page: String(currentPage + 1 < totalPages ? currentPage + 1 : currentPage),
+                    projectId: projectFilter,
+                    pending: pendingOnly ? "true" : "false",
                   })
                 }
                 disabled={currentPage + 1 >= totalPages || isLoading || isFetching}

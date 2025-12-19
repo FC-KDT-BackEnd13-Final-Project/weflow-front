@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "@/apis/auth";
 import { companiesApi } from "@/apis/companies";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 유지
 
 const roleOptions = [
   { value: "CLIENT", label: "고객사 담당자" },
@@ -27,6 +28,71 @@ const formatDateTime = (value: string) =>
     minute: "2-digit",
     hour12: false,
   });
+
+// 설정 페이지 전체 스켈레톤 컴포넌트 정의 (제목/설명 부분 제외)
+const SettingsSkeleton = () => (
+  <AppLayout>
+    <div className="space-y-6">
+      {/* Header는 고정 텍스트로 남겨두고, 이 부분은 제외합니다. */}
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">설정</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          회원 정보를 확인하고 필요한 내용을 수정하세요.
+        </p>
+      </div>
+
+      {/* User Info Card Skeleton */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-9 w-16" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="space-y-1">
+                  <Skeleton className="h-4 w-1/4" />
+                  <Skeleton className="h-6 w-3/4" />
+                </div>
+              ))}
+            </div>
+            <div className="pt-4 border-t">
+              <Skeleton className="h-4 w-1/3" />
+            </div>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t">
+              <Skeleton className="h-9 w-32" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Company Info Card Skeleton (옵션) */}
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="space-y-1">
+              <Skeleton className="h-4 w-1/4" />
+              <Skeleton className="h-6 w-2/3" />
+            </div>
+          ))}
+          <div className="md:col-span-2 space-y-1">
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-6 w-full" />
+          </div>
+          <div className="space-y-1">
+            <Skeleton className="h-4 w-1/4" />
+            <Skeleton className="h-6 w-16" />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  </AppLayout>
+);
+
 
 export default function Settings() {
   const { toast } = useToast();
@@ -155,13 +221,8 @@ export default function Settings() {
   };
 
   if (isLoading) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">로딩 중...</p>
-        </div>
-      </AppLayout>
-    );
+    // 로딩 중일 때 스켈레톤 표시 (헤더 텍스트는 SettingsSkeleton 내부에 포함되어 있으나, AppLayout 바깥에 정의된 경우를 고려하여 SettingsSkeleton을 호출)
+    return <SettingsSkeleton />;
   }
 
   if (!userData) {
@@ -177,6 +238,7 @@ export default function Settings() {
   return (
     <AppLayout>
       <div className="space-y-6">
+        {/* 요청에 따라 이 부분은 고정된 텍스트로 즉시 렌더링됩니다. */}
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">설정</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -208,6 +270,7 @@ export default function Settings() {
                       value={formData.name}
                       onChange={handleChange("name")}
                       placeholder="이름을 입력하세요"
+                      disabled={isSaving}
                     />
                   </div>
                   <div className="space-y-2">
@@ -217,6 +280,7 @@ export default function Settings() {
                       value={formData.phone}
                       onChange={handleChange("phone")}
                       placeholder="010-0000-0000"
+                      disabled={isSaving}
                     />
                   </div>
                   <div className="space-y-2">
@@ -252,6 +316,7 @@ export default function Settings() {
                     id="email-notification"
                     checked={formData.isEmailNotificationEnabled}
                     onCheckedChange={handleEmailNotificationChange}
+                    disabled={isSaving}
                   />
                 </div>
 
