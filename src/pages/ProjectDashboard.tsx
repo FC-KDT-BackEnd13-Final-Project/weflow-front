@@ -4,7 +4,15 @@ import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, AlertCircle, Calendar, User, Layers3, ArrowRight } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Calendar,
+  User,
+  Layers3,
+  ArrowRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/apis/api";
 
@@ -55,7 +63,10 @@ interface ProjectDashboardData {
 
 const requestStatusMap: Record<string, { label: string; className: string }> = {
   REQUESTED: { label: "승인 대기", className: "bg-blue-100 text-blue-700" },
-  APPROVED: { label: "승인 완료", className: "bg-emerald-100 text-emerald-700" },
+  APPROVED: {
+    label: "승인 완료",
+    className: "bg-emerald-100 text-emerald-700",
+  },
   REJECTED: { label: "반려", className: "bg-red-100 text-red-700" },
   CANCELED: { label: "취소", className: "bg-slate-100 text-slate-600" },
 };
@@ -66,7 +77,7 @@ const formatRequestDate = (dateString: string) =>
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false
+    hour12: false,
   });
 
 const actionTypeLabels: Record<string, string> = {
@@ -116,7 +127,9 @@ export default function ProjectDashboard() {
       try {
         setIsLoading(true);
         setFetchError(null);
-        const response = await api.get(`/api/projects/${id}/dashboard`, { signal: controller.signal });
+        const response = await api.get(`/api/projects/${id}/dashboard`, {
+          signal: controller.signal,
+        });
         setDashboard(response.data?.data ?? null);
       } catch {
         if (!controller.signal.aborted) {
@@ -182,11 +195,17 @@ export default function ProjectDashboard() {
           <CardHeader className="space-y-4">
             <div className="flex items-center justify-between gap-6">
               <div>
-                <p className="text-sm uppercase tracking-wider text-slate-500">프로젝트 #{id}</p>
+                <p className="text-sm uppercase tracking-wider text-slate-500">
+                  프로젝트 #{id}
+                </p>
                 <h1 className="text-3xl font-semibold mt-2">
-                  {isLoading ? "데이터 불러오는 중..." : projectInfo.name || "프로젝트 정보 없음"}
+                  {isLoading
+                    ? "데이터 불러오는 중..."
+                    : projectInfo.name || "프로젝트 정보 없음"}
                 </h1>
-                <p className="text-sm text-slate-600 mt-1">{projectInfo.plan}</p>
+                <p className="text-sm text-slate-600 mt-1">
+                  {projectInfo.plan}
+                </p>
               </div>
               <Badge className="bg-sky-100 text-sky-700 text-xs px-3 py-1 rounded-full">
                 현재 단계 · {projectInfo.currentStage || "종료"}
@@ -197,9 +216,7 @@ export default function ProjectDashboard() {
                 <Calendar className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs text-slate-500">종료일</p>
-                  <p className="font-medium">
-                    {projectInfo.dueDate || "-"}
-                  </p>
+                  <p className="font-medium">{projectInfo.dueDate || "-"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-slate-700">
@@ -220,14 +237,19 @@ export default function ProjectDashboard() {
                 <CheckCircle2 className="h-4 w-4 text-slate-500" />
                 <div>
                   <p className="text-xs text-slate-500">다음 승인 대상</p>
-                  <p className="font-medium">{projectInfo.nextApproval || "없음"}</p>
+                  <p className="font-medium">
+                    {projectInfo.nextApproval || "없음"}
+                  </p>
                 </div>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-slate-600 mb-2">전체 진행률</p>
-            <Progress value={projectInfo.progress} className="h-2 bg-slate-200" />
+            <Progress
+              value={projectInfo.progress}
+              className="h-2 bg-slate-200"
+            />
             <div className="flex justify-between text-xs text-slate-500 mt-2">
               <span>{projectInfo.progress}% 완료</span>
               <span>업무 안정 권장 80%</span>
@@ -259,7 +281,9 @@ export default function ProjectDashboard() {
                 {dashboard?.completedSteps ?? 0} / {dashboard?.totalSteps ?? 0}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {projectInfo.currentStage ? `${projectInfo.currentStage} 단계 진행중` : "단계 정보를 확인하세요"}
+                {projectInfo.currentStage
+                  ? `${projectInfo.currentStage} 단계 진행중`
+                  : "단계 정보를 확인하세요"}
               </p>
             </CardContent>
           </Card>
@@ -273,7 +297,9 @@ export default function ProjectDashboard() {
                 {projectInfo.daysLeft ? `${projectInfo.daysLeft}일` : "0일"}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {projectInfo.dueDate ? `${projectInfo.dueDate} 마감` : "마감일 미정"}
+                {projectInfo.dueDate
+                  ? `${projectInfo.dueDate} 마감`
+                  : "마감일 미정"}
               </p>
             </CardContent>
           </Card>
@@ -292,15 +318,22 @@ export default function ProjectDashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             {recentApprovals.map((request) => {
-              const status = requestStatusMap[request.status] || requestStatusMap.REQUESTED;
-              const requesterName = request.requestedBy?.name ?? request.requestedByName ?? "담당자";
-              const requesterRole = request.requestedBy?.role ?? request.requestedByRole ?? "";
+              const status =
+                requestStatusMap[request.status] || requestStatusMap.REQUESTED;
+              const requesterName =
+                request.requestedBy?.name ??
+                request.requestedByName ??
+                "담당자";
+              const requesterRole =
+                request.requestedBy?.role ?? request.requestedByRole ?? "";
               return (
                 <div
                   key={request.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/project/${id}/approvals/${request.id}`)}
+                  onClick={() =>
+                    navigate(`/project/${id}/approvals/${request.id}`)
+                  }
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -313,14 +346,24 @@ export default function ProjectDashboard() {
                     <div>
                       <p className="font-semibold">{request.title}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {requesterName} {requesterRole && `(${requesterRole})`} ·{" "}
-                        {request.createdAt ? formatRequestDate(request.createdAt) : "-"}
+                        {requesterName} {requesterRole && `(${requesterRole})`}{" "}
+                        ·{" "}
+                        {request.createdAt
+                          ? formatRequestDate(request.createdAt)
+                          : "-"}
                       </p>
                       {request.stepTitle && (
-                        <p className="text-xs text-muted-foreground">단계: {request.stepTitle}</p>
+                        <p className="text-xs text-muted-foreground">
+                          단계: {request.stepTitle}
+                        </p>
                       )}
                     </div>
-                    <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", status.className)}>
+                    <span
+                      className={cn(
+                        "text-xs font-semibold px-3 py-1 rounded-full",
+                        status.className
+                      )}
+                    >
                       {status.label}
                     </span>
                   </div>
@@ -345,14 +388,14 @@ export default function ProjectDashboard() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base">최근 활동</CardTitle>
-              <p className="text-sm text-muted-foreground">프로젝트 구성원 소식</p>
+              <p className="text-sm text-muted-foreground">
+                프로젝트 구성원 소식
+              </p>
             </div>
             <button
               className="text-sm text-primary flex items-center gap-1"
               onClick={() => navigate(`/project/${id}/history`)}
-            >
-              더보기 <ArrowRight className="h-4 w-4" />
-            </button>
+            ></button>
           </CardHeader>
           <CardContent className="space-y-4">
             {activities.length === 0 && !isLoading && (
@@ -367,9 +410,16 @@ export default function ProjectDashboard() {
                   className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3"
                 >
                   <p className="text-sm">
-                    <span className="font-medium">{activity.userName ?? "사용자"}</span>님이{" "}
-                    {targetTableLabels[activity.targetTable] ?? activity.targetTable}을/를{" "}
-                    {actionTypeLabels[activity.actionType] ?? activity.actionType}했습니다.
+                    <span className="font-medium">
+                      {activity.userName ?? "사용자"}
+                    </span>
+                    님이{" "}
+                    {targetTableLabels[activity.targetTable] ??
+                      activity.targetTable}
+                    을/를{" "}
+                    {actionTypeLabels[activity.actionType] ??
+                      activity.actionType}
+                    했습니다.
                   </p>
                   <span className="text-xs text-muted-foreground">
                     {formatActivityTime(activity.createdAt)}
