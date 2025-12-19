@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import api from "@/apis/api";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useUserStore } from "@/stores/user";
 
 declare global {
   interface Window {
@@ -159,9 +161,66 @@ const formatDateLabel = (value: string) =>
     hour12: false,
   });
 
+const SummarySkeleton = () => (
+  <div className="flex flex-col items-center gap-4 w-full">
+    <Skeleton className="mx-auto w-[280px] h-[150px] rounded-full" />
+    <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="rounded-md border p-3">
+          <Skeleton className="h-3 w-3/4 mb-1" />
+          <Skeleton className="h-5 w-1/3" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ProjectItemSkeleton = () => (
+  <div className="flex flex-col gap-3 rounded-lg border p-4">
+    <div className="flex justify-between items-center">
+      <Skeleton className="h-5 w-3/5" />
+      <Skeleton className="h-5 w-1/6" />
+    </div>
+    <Skeleton className="h-2 w-full" />
+    <Skeleton className="h-3 w-1/4" />
+  </div>
+);
+
+const ApprovalItemSkeleton = () => (
+  <div className="rounded border p-3 text-sm">
+    <Skeleton className="h-5 w-full mb-1" />
+    <Skeleton className="h-4 w-1/2 mt-1" />
+    <div className="mt-2 flex items-center justify-between text-xs">
+      <Skeleton className="h-3 w-1/4" />
+      <Skeleton className="h-3 w-1/4" />
+    </div>
+  </div>
+);
+
+const NotificationItemSkeleton = () => (
+  <div className="rounded border p-3">
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3.5 w-3.5" />
+          <Skeleton className="h-4 w-2/5" />
+        </div>
+        <Skeleton className="h-4 w-full mt-1" />
+        <Skeleton className="h-3 w-1/5 mt-2" />
+      </div>
+      <div className="flex flex-col items-end gap-2">
+        <Skeleton className="h-5 w-10" />
+        <Skeleton className="h-4 w-4" />
+      </div>
+    </div>
+  </div>
+);
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const userRole = useUserStore((s) => s.user?.role);
+
   const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -169,6 +228,15 @@ export default function Dashboard() {
   const [mutatingNotificationIds, setMutatingNotificationIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
+    if (userRole === "SYSTEM_ADMIN") {
+      navigate("/admin/dashboard", { replace: true });
+      return;
+    }
+  }, [userRole, navigate]);
+
+  useEffect(() => {
+    if (userRole === "SYSTEM_ADMIN") return;
+
     const controller = new AbortController();
 
     const fetchDashboard = async () => {
@@ -186,36 +254,36 @@ export default function Dashboard() {
           pendingApprovalCount: data.pendingApprovalCount ?? 0,
           importantProjects: Array.isArray(data.importantProjects)
             ? data.importantProjects.map((project: any) => ({
-                projectId: project.projectId,
-                name: project.name,
-                status: project.status,
-                progress:
-                  typeof project.progress === "number"
-                    ? project.progress
-                    : statusProgressMap[project.status] ?? undefined,
-              }))
+              projectId: project.projectId,
+              name: project.name,
+              status: project.status,
+              progress:
+                typeof project.progress === "number"
+                  ? project.progress
+                  : statusProgressMap[project.status] ?? undefined,
+            }))
             : [],
           upcomingApprovals: Array.isArray(data.upcomingApprovals)
             ? data.upcomingApprovals.map((approval: any) => ({
-                id: approval.id,
-                title: approval.title,
-                projectId: approval.projectId ?? approval.project?.id,
-                projectName: approval.projectName ?? approval.project?.name,
-                stepTitle: approval.stepTitle,
-                stepId: approval.stepId,
-                phase: approval.phase,
-                createdAt: approval.createdAt ?? approval.requestedAt ?? approval.created_at,
-              }))
+              id: approval.id,
+              title: approval.title,
+              projectId: approval.projectId ?? approval.project?.id,
+              projectName: approval.projectName ?? approval.project?.name,
+              stepTitle: approval.stepTitle,
+              stepId: approval.stepId,
+              phase: approval.phase,
+              createdAt: approval.createdAt ?? approval.requestedAt ?? approval.created_at,
+            }))
             : [],
           recentNotifications: Array.isArray(data.recentNotifications)
             ? data.recentNotifications.map((notice: any) => ({
-                id: notice.id,
-                title: notice.title,
-                message: notice.message ?? notice.content ?? "",
-                createdAt: notice.createdAt,
-                read: Boolean(notice.read),
-                targetUrl: notice.target?.url,
-              }))
+              id: notice.id,
+              title: notice.title,
+              message: notice.message ?? notice.content ?? "",
+              createdAt: notice.createdAt,
+              read: Boolean(notice.read),
+              targetUrl: notice.target?.url,
+            }))
             : [],
         };
         setDashboardData(formatted);
@@ -233,7 +301,7 @@ export default function Dashboard() {
 
     fetchDashboard();
     return () => controller.abort();
-  }, []);
+  }, [userRole]);
 
   const stats = useMemo(
     () => [
@@ -370,6 +438,10 @@ export default function Dashboard() {
     navigate(`/notifications/${notification.id}`);
   };
 
+  if (userRole === "SYSTEM_ADMIN") {
+    return null;
+  }
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -385,21 +457,27 @@ export default function Dashboard() {
             <CardTitle>업무 현황 요약</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
-            <SummaryChart labels={chartDataset.labels} values={chartDataset.values} />
-            <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
-              <div className="rounded-md border p-3">
-                <p className="text-muted-foreground text-xs">진행 중 프로젝트</p>
-                <p className="text-lg font-semibold">{chartDataset.values[0]}</p>
-              </div>
-              <div className="rounded-md border p-3">
-                <p className="text-muted-foreground text-xs">읽지 않은 알림</p>
-                <p className="text-lg font-semibold">{chartDataset.values[1]}</p>
-              </div>
-              <div className="rounded-md border p-3">
-                <p className="text-muted-foreground text-xs">승인 대기</p>
-                <p className="text-lg font-semibold">{chartDataset.values[2]}</p>
-              </div>
-            </div>
+            {isLoadingDashboard ? (
+              <SummarySkeleton />
+            ) : (
+              <>
+                <SummaryChart labels={chartDataset.labels} values={chartDataset.values} />
+                <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">진행 중 프로젝트</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[0]}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">읽지 않은 알림</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[1]}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">승인 대기</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[2]}</p>
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -413,7 +491,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isLoadingDashboard ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">중요 프로젝트를 불러오는 중...</div>
+                Array.from({ length: 3 }).map((_, i) => <ProjectItemSkeleton key={i} />)
               ) : dashboardError ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">{dashboardError}</div>
               ) : importantProjects.length === 0 ? (
@@ -462,7 +540,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-4">
               {isLoadingDashboard ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">승인 정보를 불러오는 중...</div>
+                Array.from({ length: 2 }).map((_, i) => <ApprovalItemSkeleton key={i} />)
               ) : dashboardError ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">{dashboardError}</div>
               ) : approvals.length === 0 ? (
@@ -502,7 +580,9 @@ export default function Dashboard() {
               <CardTitle>최근 알림</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              {notifications.length === 0 ? (
+              {isLoadingDashboard ? (
+                Array.from({ length: 4 }).map((_, i) => <NotificationItemSkeleton key={i} />)
+              ) : notifications.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8 border rounded">
                   새로운 알림이 없습니다.
                 </div>
@@ -519,9 +599,8 @@ export default function Dashboard() {
                         handleNotificationClick(notice);
                       }
                     }}
-                    className={`rounded border p-3 cursor-pointer transition hover:border-primary/40 hover:bg-muted/50 ${
-                      notice.read ? "bg-muted/40" : ""
-                    }`}
+                    className={`rounded border p-3 cursor-pointer transition hover:border-primary/40 hover:bg-muted/50 ${notice.read ? "bg-muted/40" : ""
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">

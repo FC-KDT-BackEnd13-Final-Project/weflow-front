@@ -3,12 +3,14 @@ import { Outlet, useNavigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminAppSidebar } from "@/components/admin/AdminAppSidebar";
 import api from "@/apis/api";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 export default function AdminLayout() {
   const navigate = useNavigate();
 
-  // ❌ 기본값 제거 (보여주지 않기 위함)
+  // 사용자 이름과 로딩 상태를 관리
   const [adminName, setAdminName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // 로딩 상태 추가
 
   useEffect(() => {
     document.documentElement.classList.add("admin-sidebar-theme");
@@ -20,6 +22,7 @@ export default function AdminLayout() {
     const controller = new AbortController();
 
     const fetchAdmin = async () => {
+      setIsLoading(true); // 로딩 시작
       try {
         const response = await api.get("/api/users/me", {
           signal: controller.signal,
@@ -29,7 +32,9 @@ export default function AdminLayout() {
           setAdminName(data.name);
         }
       } catch {
-        // 조용히 실패 (아무 것도 표시 안 함)
+        // 조용히 실패
+      } finally {
+        setIsLoading(false); // 로딩 종료
       }
     };
 
@@ -53,18 +58,20 @@ export default function AdminLayout() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* 👇 자리 유지 + 무음 처리 */}
-              <span
-                className={`text-sm font-medium ${
-                  adminName ? "visible" : "invisible"
-                }`}
-              >
-                {adminName ? `${adminName}님` : "placeholder"}
-              </span>
+              {isLoading ? (
+                // 로딩 중일 때 이름 스켈레톤 표시
+                <Skeleton className="h-5 w-24" />
+              ) : (
+                // 로딩 완료 후 이름 표시
+                <span className="text-sm font-medium">
+                  {adminName ? `${adminName}님` : "관리자"}
+                </span>
+              )}
 
               <button
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 onClick={handleLogout}
+                disabled={isLoading} // 로딩 중 로그아웃 비활성화
               >
                 로그아웃
               </button>

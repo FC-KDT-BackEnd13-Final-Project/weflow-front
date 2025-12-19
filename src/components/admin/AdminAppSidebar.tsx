@@ -34,7 +34,7 @@ const items = [
   },
   { title: "로그 / 활동 기록", url: "/admin/logs", icon: Activity },
   { title: "관리자 계정 관리", url: "/admin/admin-users", icon: Settings },
-  { title: "메인으로 이동", url: "/dashboard", icon: Home },
+  { title: "메인으로 이동", url: "/projects", icon: Home },
 ];
 
 export function AdminAppSidebar() {

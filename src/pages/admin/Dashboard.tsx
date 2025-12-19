@@ -25,6 +25,10 @@ import {
   targetTableLabels,
 } from "@/constants/logs";
 
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
 interface DashboardResponse {
   totalUsers: number;
   totalCompanies: number;
@@ -52,14 +56,16 @@ const Dashboard = () => {
     totalProjects?: number;
   }>({});
 
+  // 초기 상태를 null로 설정하여 로딩 중임을 명확히 표시
   const [recentLogs, setRecentLogs] =
     useState<DashboardResponse["recentLogs"] | null>(null);
 
+  // 초기 상태를 null로 설정하여 로딩 중임을 명확히 표시
   const [adminName, setAdminName] = useState<string | null>(null);
 
-  /* =========================
-     대시보드 데이터
-  ========================= */
+
+  const isStatsLoading = stats.totalUsers === undefined;
+  const isLogsLoading = recentLogs === null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -90,9 +96,6 @@ const Dashboard = () => {
     return () => controller.abort();
   }, []);
 
-  /* =========================
-     관리자 프로필
-  ========================= */
 
   useEffect(() => {
     const controller = new AbortController();
@@ -114,10 +117,6 @@ const Dashboard = () => {
     fetchProfile();
     return () => controller.abort();
   }, []);
-
-  /* =========================
-     통계 카드
-  ========================= */
 
   const statsCards = useMemo(
     () => [
@@ -167,15 +166,16 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* 헤더 (자리만 차지, 텍스트는 조건부) */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between min-h-[56px]">
         <div>
-          <p
-            className={`text-sm text-muted-foreground ${
-              adminName ? "visible" : "invisible"
-            }`}
-          >
-            {adminName ? `${adminName}님 환영합니다` : "placeholder"}
+          <p className="text-sm text-muted-foreground">
+            {/* 1. Admin Name Skeleton */}
+            {adminName === null ? (
+              <Skeleton className="h-4 w-32" />
+            ) : (
+              `${adminName}님 환영합니다`
+            )}
           </p>
 
           <h1 className="text-3xl font-bold">관리자</h1>
@@ -192,16 +192,20 @@ const Dashboard = () => {
           >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.title}
+                {stat.title} {/* 제목은 로딩 없이 바로 표시 */}
               </CardTitle>
               <div className={`p-2 rounded-lg ${stat.color}`}>
-                <stat.icon className="h-4 w-4" />
+                <stat.icon className="h-4 w-4" /> {/* 아이콘도 로딩 없이 바로 표시 */}
               </div>
             </CardHeader>
             <CardContent>
-              {/* 값이 있을 때만 렌더, 없으면 공간만 유지 */}
+              {/* 수치 데이터는 로딩 중일 때 스켈레톤, 아니면 값 표시 */}
               <div className="text-3xl font-bold min-h-[36px]">
-                {stat.value}
+                {isStatsLoading ? (
+                  <Skeleton className="h-9 w-1/2" />
+                ) : (
+                  stat.value
+                )}
               </div>
             </CardContent>
           </Card>
@@ -226,13 +230,27 @@ const Dashboard = () => {
         </CardHeader>
 
         <CardContent>
-          {recentLogs && recentLogs.length === 0 && (
+          {/* 3. Recent Logs Skeleton */}
+          {isLogsLoading && (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="flex items-start gap-3 py-2">
+                  <Skeleton className="h-5 w-24 shrink-0" />
+                  <Skeleton className="h-5 w-full" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 데이터 로드 완료 후 (로그 없음) */}
+          {!isLogsLoading && recentLogs.length === 0 && (
             <div className="py-4 text-center text-sm text-muted-foreground">
               최근 로그가 없습니다.
             </div>
           )}
 
-          {recentLogs && recentLogs.length > 0 && (
+          {/* 데이터 로드 완료 후 (로그 있음) */}
+          {!isLogsLoading && recentLogs.length > 0 && (
             <div className="space-y-3">
               {recentLogs.map((log) => (
                 <div
@@ -265,7 +283,7 @@ const Dashboard = () => {
         </CardContent>
       </Card>
 
-      {/* 빠른 작업 */}
+      {/* 빠른 작업 (이 섹션은 정적 데이터이므로 스켈레톤 불필요) */}
       <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

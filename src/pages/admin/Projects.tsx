@@ -22,6 +22,33 @@ import {
 } from "@/apis/adminProjects";
 import { cn } from "@/lib/utils";
 
+// =========================================================================
+// [스켈레톤 컴포넌트 정의]
+// =========================================================================
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
+// 프로젝트 목록 테이블 행 스켈레톤
+const ProjectSkeletonRow = () => (
+  // 테이블의 grid-cols-[120px_1fr_1fr_1fr_1fr_100px]와 동일한 스타일 적용
+  <div className="grid grid-cols-[120px_1fr_1fr_1fr_1fr_100px] gap-4 p-4">
+    {/* 상태 */}
+    <Skeleton className="h-5 w-20" />
+    {/* 프로젝트명 */}
+    <Skeleton className="h-5 w-full" />
+    {/* 단계 */}
+    <Skeleton className="h-5 w-24" />
+    {/* 고객사 */}
+    <Skeleton className="h-5 w-full" />
+    {/* 생성자 */}
+    <Skeleton className="h-5 w-full" />
+    {/* 삭제 여부 */}
+    <Skeleton className="h-5 w-16" />
+  </div>
+);
+
+
 // 프로젝트 상태 라벨
 const statusLabels: Record<ProjectStatus, string> = {
   OPEN: "진행",
@@ -120,6 +147,7 @@ const AdminProjects = () => {
 
   useEffect(() => {
     fetchList(page, size);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     page,
     size,
@@ -162,7 +190,10 @@ const AdminProjects = () => {
           </p>
         </div>
 
-        <Button onClick={() => navigate("/admin/projects/create")}>
+        <Button
+          onClick={() => navigate("/admin/projects/create")}
+          disabled={loading} // 로딩 중 버튼 비활성화
+        >
           <Plus className="h-4 w-4 mr-2" />
           프로젝트 생성
         </Button>
@@ -174,7 +205,7 @@ const AdminProjects = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* 필터 영역 */}
+          {/* 필터 영역 (필터는 로딩 중에도 상호작용 가능하도록 유지) */}
           <div className="flex flex-wrap gap-4 items-end">
             {/* 상태 필터 */}
             <div className="flex items-center gap-2">
@@ -287,22 +318,26 @@ const AdminProjects = () => {
             </div>
 
             <div className="divide-y">
+              {/* 1. 로딩 중 스켈레톤 표시 */}
               {loading && (
-                <div className="p-4 text-center text-muted-foreground">
-                  불러오는 중...
-                </div>
+                Array.from({ length: size }).map((_, index) => (
+                  <ProjectSkeletonRow key={index} />
+                ))
               )}
 
+              {/* 2. 에러 표시 */}
               {error && !loading && (
                 <div className="p-4 text-center text-destructive">{error}</div>
               )}
 
+              {/* 3. 데이터 없음 */}
               {!loading && !error && projects.length === 0 && (
                 <div className="p-4 text-center text-muted-foreground">
                   등록된 프로젝트가 없습니다.
                 </div>
               )}
 
+              {/* 4. 실제 데이터 */}
               {!loading &&
                 !error &&
                 projects.map((project) => (
@@ -316,7 +351,7 @@ const AdminProjects = () => {
                         className={cn(
                           "border pointer-events-none select-none",
                           statusBadgeClass[project.status] ??
-                            "bg-muted text-foreground border-muted"
+                          "bg-muted text-foreground border-muted"
                         )}
                       >
                         {statusLabels[project.status] || project.status}
@@ -331,7 +366,7 @@ const AdminProjects = () => {
                           className={cn(
                             "border pointer-events-none select-none",
                             phaseBadgeClass[project.phase] ??
-                              "bg-muted text-foreground border-muted"
+                            "bg-muted text-foreground border-muted"
                           )}
                         >
                           {phaseLabels[project.phase] || project.phase}
@@ -364,11 +399,20 @@ const AdminProjects = () => {
           </div>
 
           <div className="flex items-center justify-between pt-0">
+            {/* 총 개수/페이지 정보 */}
             <div className="text-sm text-muted-foreground">
-              총 {totalCount.toLocaleString()}건 · {page + 1} /{" "}
-              {Math.max(1, Math.ceil((totalCount || 0) / size))} 페이지
+              {loading ? (
+                <Skeleton className="h-5 w-40" />
+              ) : (
+                <>
+                  총 {totalCount.toLocaleString()}건 · {page + 1} /{" "}
+                  {Math.max(1, Math.ceil((totalCount || 0) / size))} 페이지
+                </>
+              )}
             </div>
+
             <div className="flex items-center gap-2">
+              {/* 페이지 크기 선택 */}
               <Select
                 value={String(size)}
                 onValueChange={(value) => {
@@ -376,6 +420,7 @@ const AdminProjects = () => {
                   setSize(newSize);
                   setPage(0);
                 }}
+                disabled={loading} // 로딩 중 비활성화
               >
                 <SelectTrigger className="w-24">
                   <SelectValue placeholder="페이지 크기" />
@@ -388,11 +433,12 @@ const AdminProjects = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {/* 페이지 이동 버튼 */}
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
-                  disabled={page === 0}
+                  disabled={loading || page === 0} // 로딩 중 비활성화
                   onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                 >
                   ‹
@@ -400,7 +446,7 @@ const AdminProjects = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  disabled={(page + 1) * size >= totalCount}
+                  disabled={loading || (page + 1) * size >= totalCount} // 로딩 중 비활성화
                   onClick={() =>
                     setPage((prev) =>
                       Math.min(
