@@ -2,9 +2,9 @@
 
 // ===== Enums =====
 export enum PostApprovalStatus {
-  PENDING = "PENDING",
-  CONFIRMED = "CONFIRMED",
-  REJECTED = "REJECTED",
+  NORMAL = "NORMAL",              // 일반 게시글 (질문 없음)
+  WAITING_ANSWER = "WAITING_ANSWER",  // 답변 대기 중
+  ANSWERED = "ANSWERED",          // 답변 완료
 }
 
 export enum PostOpenStatus {

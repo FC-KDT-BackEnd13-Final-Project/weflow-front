@@ -11,13 +11,6 @@ import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download, Pencil, T
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -26,8 +19,7 @@ import {
 import {
   boardStatusLabels,
   boardStatusStyles,
-  BoardPostStatus,
-  BoardApprovalStatus,
+  BoardQuestionStatus,
 } from "@/constants/boardStatus";
 import { getPost, deletePost, answerQuestion, closePost } from "@/apis/postApi";
 import { getDownloadUrl } from "@/apis/attachmentApi";
@@ -35,7 +27,7 @@ import { getComments, createComment, createReply, deleteComment as deleteComment
 import { useUserStore } from "@/stores/user";
 import type { CommentResponse, ReplyDto } from "@/types/comment";
 
-type ApiPostApprovalStatus = "PENDING" | "CONFIRMED" | "REJECTED";
+type ApiPostApprovalStatus = "NORMAL" | "WAITING_ANSWER" | "ANSWERED";
 type ApiPostOpenStatus = "OPEN" | "CLOSED";
 type ApiProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 
@@ -112,11 +104,6 @@ interface BoardPostDetail {
   comments: CommentResponse[];
 }
 
-const apiApprovalStatusToBoardStatus: Record<ApiPostApprovalStatus, BoardApprovalStatus> = {
-  PENDING: "request",
-  CONFIRMED: "approved",
-  REJECTED: "rejected",
-};
 
 const projectPhaseLabels: Record<ApiProjectPhase, string> = {
   CONTRACT: "계약",
@@ -149,9 +136,6 @@ export default function BoardDetail() {
   const { toast } = useToast();
   const { user } = useUserStore();
   const [newComment, setNewComment] = useState("");
-  const [questionSelections, setQuestionSelections] = useState<Record<number, "confirm" | "reject">>({});
-  const [actionDialog, setActionDialog] = useState<{ questionId: number; action: "confirm" | "reject" } | null>(null);
-  const [actionComment, setActionComment] = useState("");
   const [replyInputs, setReplyInputs] = useState<Record<number, string>>({});
   const [visibleReplyForms, setVisibleReplyForms] = useState<Record<number, boolean>>({});
   const [post, setPost] = useState<BoardPostDetail | undefined>(undefined);
@@ -292,19 +276,6 @@ export default function BoardDetail() {
     fetchPostAndComments();
   }, [id, postId]);
 
-  useEffect(() => {
-    if (!post) return;
-    const initialSelections: Record<number, "confirm" | "reject"> = {};
-    post.questions.forEach((question) => {
-      const derivedAction = question.answerAction
-        ?? (question.answer ? "confirm" : undefined);
-      if (derivedAction) {
-        initialSelections[question.questionId] = derivedAction;
-      }
-    });
-    setQuestionSelections(initialSelections);
-  }, [post]);
-
   if (isLoading) {
     return (
       <ProjectLayout>
@@ -329,12 +300,14 @@ export default function BoardDetail() {
     );
   }
 
-  const approvalStatusVariant = apiApprovalStatusToBoardStatus[post.status] ?? "request";
   const projectPhaseLabelText = projectPhaseLabels[post.projectPhase];
   const postOpenStatusLabelText = postOpenStatusLabels[post.openStatus];
-  const overallQuestionStatus: BoardApprovalStatus = post.questions.every((q) => q.answer)
-    ? "approved"
-    : "request";
+
+  // 질문 답변 상태: 모든 질문에 답변이 있으면 answered, 아니면 waiting
+  const overallQuestionStatus: BoardQuestionStatus | null =
+    post.questions.length > 0
+      ? (post.questions.every((q) => q.answer) ? "answered" : "waiting")
+      : null;
 
   // 작성자의 role을 CLIENT/AGENCY/ADMIN으로 매핑
   const getAuthorUserRole = (authorRole: string): "CLIENT" | "AGENCY" | "ADMIN" => {
@@ -820,41 +793,6 @@ export default function BoardDetail() {
       </div>
     ));
 
-  const openQuestionAction = (questionId: number, action: "confirm" | "reject") => {
-    if (!post) return;
-    const question = post.questions.find((item) => item.questionId === questionId);
-    if (!question || question.answer) return;
-
-    setActionDialog({ questionId, action });
-    setActionComment("");
-  };
-
-  const handleSubmitQuestionAction = () => {
-    if (!actionDialog || !actionComment.trim()) return;
-    const trimmedComment = actionComment.trim();
-    setQuestionSelections((prev) => ({
-      ...prev,
-      [actionDialog.questionId]: actionDialog.action,
-    }));
-
-    toast({
-      title: `${actionDialogLabel} 처리 완료`,
-      description: trimmedComment,
-    });
-
-    setActionDialog(null);
-    setActionComment("");
-  };
-
-  const activeDialogQuestion = actionDialog
-    ? post.questions.find((question) => question.questionId === actionDialog.questionId)
-    : null;
-  const actionDialogLabel = actionDialog
-    ? actionDialog.action === "confirm"
-      ? "승인"
-      : "반려"
-    : "";
-
   const handleReply = () => {
     navigate(`/project/${id}/board/new`, {
       state: {
@@ -1023,7 +961,7 @@ export default function BoardDetail() {
                 <Badge variant="outline" className="bg-purple-50">
                   {post.step.stepName}
                 </Badge>
-                {post.questions.length > 0 && (
+                {post.questions.length > 0 && overallQuestionStatus && (
                   <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
                     {boardStatusLabels[overallQuestionStatus]}
                   </Badge>
@@ -1367,62 +1305,6 @@ export default function BoardDetail() {
           </CardContent>
         </Card>
       </div>
-
-      <Dialog
-        open={Boolean(actionDialog)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setActionDialog(null);
-            setActionComment("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
-              {actionDialogLabel || "처리 의견 작성"}
-            </DialogTitle>
-          </DialogHeader>
-          {activeDialogQuestion && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {activeDialogQuestion.content}
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="action-comment">
-                  의견 / 사유
-                </Label>
-                <Textarea
-                  id="action-comment"
-                  placeholder={`${actionDialog?.action === "confirm" ? "승인 의견" : "반려 사유"}를 입력하세요`}
-                  value={actionComment}
-                  onChange={(event) => setActionComment(event.target.value)}
-                  className="min-h-[120px]"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setActionDialog(null);
-                setActionComment("");
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSubmitQuestionAction}
-              disabled={!actionDialog || !actionComment.trim()}
-            >
-              제출
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ProjectLayout>
   );
 }

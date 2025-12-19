@@ -10,7 +10,7 @@ import {
   boardStatusLabels,
   boardStatusStyles,
   BoardPostStatus,
-  BoardApprovalStatus,
+  BoardQuestionStatus,
 } from "@/constants/boardStatus";
 import { getPosts } from "@/apis/postApi";
 import { ProjectPhase, type PageInfo, type PostItem } from "@/types/post";
@@ -27,7 +27,7 @@ interface BoardPost {
   projectStatus: string;
   stepId: number;
   openStatus: "OPEN" | "CLOSED";
-  questionStatus: BoardApprovalStatus;
+  questionStatus: BoardQuestionStatus | null;
   hasQuestions: boolean;
 }
 
@@ -149,21 +149,31 @@ export default function Board() {
         };
 
         // 백엔드 데이터를 프론트 형식으로 변환
-        const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => ({
-          id: post.postId,
-          title: post.title,
-          author: post.author.name,
-          date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
-          attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
-          comments: post.commentCount,
-          projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
-          stepId: post.stepId,
-          openStatus: post.openStatus || "OPEN", // 백엔드에서 openStatus 추가 전까지 기본값 OPEN
-          hasQuestions: post.hasQuestions,
-          questionStatus: post.hasQuestions
-            ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
-            : "request", // hasQuestions가 false여도 일단 request로 설정 (배지는 조건부 렌더링으로 숨김)
-        }));
+        const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => {
+          // 질문 상태 매핑: WAITING_ANSWER -> waiting, ANSWERED -> answered
+          let questionStatus: BoardQuestionStatus | null = null;
+          if (post.hasQuestions) {
+            if (post.status === "WAITING_ANSWER") {
+              questionStatus = "waiting";
+            } else if (post.status === "ANSWERED") {
+              questionStatus = "answered";
+            }
+          }
+
+          return {
+            id: post.postId,
+            title: post.title,
+            author: post.author.name,
+            date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
+            attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
+            comments: post.commentCount,
+            projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
+            stepId: post.stepId,
+            openStatus: post.openStatus || "OPEN",
+            hasQuestions: post.hasQuestions,
+            questionStatus,
+          };
+        });
 
         setPosts(convertedPosts);
         setPageInfo(response.pageInfo);
@@ -349,10 +359,10 @@ export default function Board() {
                         </div>
                       </div>
 
-                      {/* 승인 요청 / 승인 */}
+                      {/* 질문 답변 상태 */}
                       <div className="flex flex-col gap-2 items-end">
 
-                        {post.hasQuestions && (
+                        {post.hasQuestions && post.questionStatus && (
                           <div
                             className={cn(
                               "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
