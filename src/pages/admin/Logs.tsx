@@ -20,6 +20,38 @@ import {
   targetTableLabels,
 } from "@/constants/logs";
 
+// =========================================================================
+// [스켈레톤 컴포넌트 정의]
+// =========================================================================
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
+// 로그 항목 스켈레톤
+const LogSkeletonItem = () => (
+  <div className="rounded-lg border p-4 space-y-3">
+    {/* Row 1: Time and IP */}
+    <div className="flex flex-wrap items-center gap-2">
+      <Skeleton className="h-4 w-40" /> {/* Time */}
+      <Skeleton className="h-5 w-20" /> {/* IP Badge */}
+    </div>
+    {/* Row 2: Target and Action Badges + Project Name */}
+    <div className="flex flex-wrap items-center gap-3">
+      <Skeleton className="h-5 w-24" /> {/* Target Badge */}
+      <Skeleton className="h-5 w-24" /> {/* Action Badge */}
+      <Skeleton className="h-4 w-48" /> {/* Project Info */}
+    </div>
+    {/* Row 3: Description Text */}
+    <div className="text-sm">
+      <Skeleton className="h-4 w-full" />
+    </div>
+  </div>
+);
+
+// =========================================================================
+// [컴포넌트 본문]
+// =========================================================================
+
 interface ActivityLog {
   logId: number;
   actionType: ActionType;
@@ -185,21 +217,27 @@ export default function Logs() {
   };
 
   const filteredLogs = useMemo(() => {
+    if (isFetching && logs.length === 0) return []; // 초기 로딩 중에는 필터링하지 않음
+
     const lowerSearch = search.trim().toLowerCase();
     return logs
       .filter((log) => {
+        // 백엔드에서 필터링되지 않은 데이터를 프론트에서 필터링하는 로직 (API에 검색어가 포함되지 않았으므로 필요)
+        const matchesSearch =
+          !lowerSearch ||
+          log.userName.toLowerCase().includes(lowerSearch) ||
+          (log.projectName ?? "").toLowerCase().includes(lowerSearch);
+
         const matchesAction = actionFilter === "all" || log.actionType === actionFilter;
         const matchesTarget = targetFilter === "all" || log.targetTable === targetFilter;
         const matchesUser = userFilter === "all" || String(log.userId) === userFilter;
         const matchesProject =
           projectFilter === "all" || String(log.projectId) === projectFilter;
-        const matchesSearch =
-          !lowerSearch ||
-          log.userName.toLowerCase().includes(lowerSearch) ||
-          (log.projectName ?? "").toLowerCase().includes(lowerSearch);
         const logDate = new Date(log.createdAt);
+        // 날짜 필터링은 백엔드에서 수행되지만, 안전을 위해 클라이언트에서 한 번 더 확인
         const matchesStart = !startDate || logDate >= new Date(startDate);
         const matchesEnd = !endDate || logDate <= new Date(endDate + "T23:59:59");
+
         return (
           matchesAction &&
           matchesTarget &&
@@ -215,7 +253,7 @@ export default function Logs() {
           ? b.createdAt.localeCompare(a.createdAt)
           : a.createdAt.localeCompare(b.createdAt)
       );
-  }, [logs, actionFilter, targetFilter, userFilter, projectFilter, search, startDate, endDate, sortOrder]);
+  }, [logs, actionFilter, targetFilter, userFilter, projectFilter, search, startDate, endDate, sortOrder, isFetching]);
 
   const clearFilters = () => {
     setSearch("");
@@ -232,8 +270,9 @@ export default function Logs() {
     const end = new Date();
     const start = new Date();
     start.setDate(end.getDate() - 1);
-    setStartDate(start.toISOString().slice(0, 10));
-    setEndDate(end.toISOString().slice(0, 10));
+    const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+    setStartDate(formatDate(start));
+    setEndDate(formatDate(end));
   };
 
   const formatTime = (value: string) =>
@@ -272,6 +311,7 @@ export default function Logs() {
           onClick={() => {
             clearFilters();
           }}
+          disabled={isFetching} // 로딩 중 비활성화
         >
           <Filter className="h-4 w-4" />
           초기화
@@ -286,7 +326,7 @@ export default function Logs() {
         <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">행동 유형</p>
-            <Select value={actionFilter} onValueChange={setActionFilter}>
+            <Select value={actionFilter} onValueChange={setActionFilter} disabled={isFetching}>
               <SelectTrigger>
                 <SelectValue placeholder="행동 유형" />
               </SelectTrigger>
@@ -303,7 +343,7 @@ export default function Logs() {
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">대상 테이블</p>
-            <Select value={targetFilter} onValueChange={setTargetFilter}>
+            <Select value={targetFilter} onValueChange={setTargetFilter} disabled={isFetching}>
               <SelectTrigger>
                 <SelectValue placeholder="대상 테이블" />
               </SelectTrigger>
@@ -320,7 +360,7 @@ export default function Logs() {
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">행위자</p>
-            <Select value={userFilter} onValueChange={setUserFilter}>
+            <Select value={userFilter} onValueChange={setUserFilter} disabled={isFetching}>
               <SelectTrigger>
                 <SelectValue placeholder="행위자 선택" />
               </SelectTrigger>
@@ -337,7 +377,7 @@ export default function Logs() {
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">프로젝트</p>
-            <Select value={projectFilter} onValueChange={setProjectFilter}>
+            <Select value={projectFilter} onValueChange={setProjectFilter} disabled={isFetching}>
               <SelectTrigger>
                 <SelectValue placeholder="프로젝트 선택" />
               </SelectTrigger>
@@ -354,17 +394,17 @@ export default function Logs() {
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">시작일</p>
-            <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} disabled={isFetching} />
           </div>
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">종료일</p>
-            <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} disabled={isFetching} />
           </div>
 
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">정렬</p>
-            <Select value={sortOrder} onValueChange={(value: "desc" | "asc") => setSortOrder(value)}>
+            <Select value={sortOrder} onValueChange={(value: "desc" | "asc") => setSortOrder(value)} disabled={isFetching}>
               <SelectTrigger>
                 <SelectValue placeholder="정렬 순서" />
               </SelectTrigger>
@@ -381,12 +421,13 @@ export default function Logs() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="이름 또는 프로젝트명을 입력하세요"
+              disabled={isFetching}
             />
           </div>
         </CardContent>
         <CardContent className="pt-0">
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={applyRecent24h}>
+            <Button variant="outline" size="sm" onClick={applyRecent24h} disabled={isFetching}>
               최근 24시간
             </Button>
             <Button
@@ -396,6 +437,7 @@ export default function Logs() {
                 setStartDate("");
                 setEndDate("");
               }}
+              disabled={isFetching}
             >
               기간 초기화
             </Button>
@@ -408,59 +450,82 @@ export default function Logs() {
           <div>
             <CardTitle>로그 목록</CardTitle>
             <CardDescription>
-              {typeof totalCount === "number"
-                ? `총 ${totalCount.toLocaleString()}건의 활동기록`
-                : hasNext
-                  ? `${logs.length.toLocaleString()}건 로드됨 (더보기 가능)`
-                  : `${logs.length.toLocaleString()}건 로드됨`}
+              {isFetching && logs.length === 0 ? (
+                <Skeleton className="h-4 w-48" /> // 초기 로딩 시 스켈레톤
+              ) : (
+                typeof totalCount === "number"
+                  ? `총 ${totalCount.toLocaleString()}건의 활동기록`
+                  : hasNext
+                    ? `${logs.length.toLocaleString()}건 로드됨 (더보기 가능)`
+                    : `${logs.length.toLocaleString()}건 로드됨`
+              )}
             </CardDescription>
           </div>
           {isFetching && <span className="text-xs text-muted-foreground">불러오는 중...</span>}
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* 1. 에러 표시 */}
           {error && (
             <div className="text-sm text-destructive py-6 text-center">{error}</div>
           )}
 
+          {/* 2. 로딩 중 (초기 로딩 시 limit 개수만큼 표시) */}
+          {isFetching && logs.length === 0 && (
+            Array.from({ length: limit }).map((_, index) => (
+              <LogSkeletonItem key={index} />
+            ))
+          )}
+
+          {/* 3. 데이터 없음 (로딩 완료 후) */}
           {!isFetching && !error && filteredLogs.length === 0 && (
             <div className="text-sm text-muted-foreground py-6 text-center">
               조건에 맞는 로그가 없습니다.
             </div>
           )}
 
-          {filteredLogs.map((log) => (
-            <div key={log.logId} className="rounded-lg border p-4 space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>{formatTime(log.createdAt)}</span>
-                <Badge variant="secondary" className="text-xs">
-                  {log.ipAddress}
-                </Badge>
-              </div>
+          {/* 4. 실제 데이터 */}
+          {!error &&
+            (isFetching && logs.length > 0 ? logs : filteredLogs).map((log) => (
+              <div key={log.logId} className="rounded-lg border p-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>{formatTime(log.createdAt)}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {log.ipAddress}
+                  </Badge>
+                </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className={cn("text-xs hover:bg-inherit hover:opacity-100", targetBadgeClass(log.targetTable))}>
-                  {targetTableLabels[log.targetTable] ?? log.targetTable}
-                </Badge>
-                <Badge className={cn("text-xs hover:bg-inherit hover:opacity-100", actionBadgeClass(log.actionType))}>
-                  {actionTypeLabels[log.actionType] ?? log.actionType}
-                </Badge>
-                {log.projectName && (
-                  <span className="text-xs text-muted-foreground ">
-                    프로젝트 #{log.projectId} · {log.projectName}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Badge className={cn("text-xs hover:bg-inherit hover:opacity-100", targetBadgeClass(log.targetTable))}>
+                    {targetTableLabels[log.targetTable] ?? log.targetTable}
+                  </Badge>
+                  <Badge className={cn("text-xs hover:bg-inherit hover:opacity-100", actionBadgeClass(log.actionType))}>
+                    {actionTypeLabels[log.actionType] ?? log.actionType}
+                  </Badge>
+                  {log.projectName && (
+                    <span className="text-xs text-muted-foreground ">
+                      프로젝트 #{log.projectId} · {log.projectName}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-sm">
+                  <span className="font-semibold">{log.userName}</span>님이{" "}
+                  <span className="font-semibold">
+                    {targetTableLabels[log.targetTable] ?? log.targetTable}
                   </span>
-                )}
+                  {log.targetId ? ` #${log.targetId}` : ""}에{" "}
+                  {actionTypeLabels[log.actionType] ?? log.actionType} 작업을 수행했습니다.
+                </div>
               </div>
+            ))}
 
-              <div className="text-sm">
-                <span className="font-semibold">{log.userName}</span>님이{" "}
-                <span className="font-semibold">
-                  {targetTableLabels[log.targetTable] ?? log.targetTable}
-                </span>
-                {log.targetId ? ` #${log.targetId}` : ""}에{" "}
-                {actionTypeLabels[log.actionType] ?? log.actionType} 작업을 수행했습니다.
-              </div>
-            </div>
-          ))}
+          {/* 5. 로딩 중 (추가 로드 시 마지막에 스켈레톤 추가) */}
+          {isFetching && logs.length > 0 && hasNext && (
+            Array.from({ length: 3 }).map((_, index) => (
+              <LogSkeletonItem key={`loading-more-${index}`} />
+            ))
+          )}
+
         </CardContent>
         <CardContent className="flex items-center justify-between pt-0">
           <div className="flex items-center gap-2">
@@ -469,6 +534,7 @@ export default function Logs() {
               onValueChange={(value) => {
                 setLimit(Number(value));
               }}
+              disabled={isFetching} // 로딩 중 비활성화
             >
               <SelectTrigger className="w-24">
                 <SelectValue placeholder="limit" />

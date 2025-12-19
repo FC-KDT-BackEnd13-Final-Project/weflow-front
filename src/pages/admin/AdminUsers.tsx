@@ -11,6 +11,25 @@ import {
   type SystemAdmin,
 } from "@/apis/systemAdmins";
 
+// =========================================================================
+// [스켈레톤 컴포넌트 정의]
+// =========================================================================
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
+// 관리자 목록 아이템 스켈레톤
+const AdminSkeletonItem = () => (
+  <div className="flex items-center justify-between p-3 border rounded-md">
+    <div>
+      <Skeleton className="h-5 w-40 mb-1" />
+      <Skeleton className="h-4 w-64" />
+    </div>
+    {/* 버튼 스켈레톤 */}
+    <Skeleton className="h-9 w-16" />
+  </div>
+);
+
 const AdminUsers = () => {
   const navigate = useNavigate();
 
@@ -20,6 +39,9 @@ const AdminUsers = () => {
 
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [totalElements, setTotalElements] = useState<number | null>(null);
+
+  // 로딩 상태 추가
+  const [isLoading, setIsLoading] = useState(true);
 
   const [keyword, setKeyword] = useState("");
 
@@ -34,9 +56,12 @@ const AdminUsers = () => {
      데이터 로딩
   ========================= */
   const loadAdmins = async () => {
+    setIsLoading(true); // 데이터 로딩 시작
+
     try {
       const data = await getSystemAdmins({ page, size });
 
+      // 삭제된 계정을 하단에 배치하기 위한 정렬
       const sorted = [...data.content].sort((a, b) => {
         const aDeleted = a.deletedAt ? 1 : 0;
         const bDeleted = b.deletedAt ? 1 : 0;
@@ -48,6 +73,8 @@ const AdminUsers = () => {
       setTotalElements(data.totalElements);
     } catch (err) {
       console.error("관리자 목록 불러오기 실패:", err);
+    } finally {
+      setIsLoading(false); // 데이터 로딩 완료
     }
   };
 
@@ -56,7 +83,7 @@ const AdminUsers = () => {
   }, [page]);
 
   /* =========================
-     실시간 검색
+     실시간 검색 (클라이언트 측 필터링)
   ========================= */
   const filteredAdmins = useMemo(() => {
     if (!keyword.trim()) return admins;
@@ -117,13 +144,23 @@ const AdminUsers = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {filteredAdmins.length === 0 && (
+          {/* 1. 로딩 중 스켈레톤 표시 */}
+          {isLoading && (
+            // size만큼 스켈레톤 아이템을 표시
+            Array.from({ length: size }).map((_, index) => (
+              <AdminSkeletonItem key={index} />
+            ))
+          )}
+
+          {/* 2. 로딩 완료 및 데이터 없음 */}
+          {!isLoading && filteredAdmins.length === 0 && (
             <div className="text-muted-foreground">
               등록된 관리자가 없습니다.
             </div>
           )}
 
-          {filteredAdmins.map((admin) => {
+          {/* 3. 로딩 완료 및 데이터 있음 */}
+          {!isLoading && filteredAdmins.map((admin) => {
             const isDeleted = !!admin.deletedAt;
 
             return (
@@ -165,8 +202,9 @@ const AdminUsers = () => {
         </CardContent>
       </Card>
 
-      {/* 페이지네이션 (검색 중엔 숨김) */}
-      {!isSearching &&
+      {/* 페이지네이션 (검색 중이거나 로딩 중엔 숨김) */}
+      {!isLoading &&
+        !isSearching &&
         typeof totalPages === "number" &&
         totalPages > 1 && (
           <div className="flex gap-2 justify-center">
