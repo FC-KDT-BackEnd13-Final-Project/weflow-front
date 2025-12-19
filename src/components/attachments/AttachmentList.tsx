@@ -1,10 +1,14 @@
 import { cn } from "@/lib/utils";
-import { AttachmentResponse } from "@/lib/stepTypes";
+import type { AttachmentResponse as StepAttachmentResponse } from "@/lib/stepTypes";
+import type {
+  AttachmentResponse as CommonAttachmentResponse,
+  AttachmentType,
+} from "@/types/attachment";
 import { Button } from "@/components/ui/button";
 import { Download, Link2, Paperclip } from "lucide-react";
 import { Label } from "@/components/ui/label";
 
-type AttachmentInputItem = AttachmentResponse | string;
+type AttachmentInputItem = StepAttachmentResponse | CommonAttachmentResponse | string;
 
 interface AttachmentListProps {
   items: AttachmentInputItem[];
@@ -21,25 +25,44 @@ const formatFileSize = (size?: number) => {
   return `${size} B`;
 };
 
+const getHostname = (url?: string) => {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
 const normalizeAttachments = (items: AttachmentInputItem[]) => {
   const seen = new Set<string>();
   const mapped = items
     .map((item, idx) => {
-      const attachmentType = typeof item === "string" ? "LINK" : (item as { attachmentType?: string }).attachmentType;
-      const pathValue = typeof item === "string" ? undefined : item?.filePath || item?.path;
-      const url = typeof item === "string" ? item : item?.url || pathValue;
-      const baseName = typeof item === "string" ? url : item?.fileName || item?.name || item?.originalName || pathValue || item?.url;
-      const linkFlag = Boolean(
-        (item as { isLink?: boolean; link?: boolean }).isLink ||
-        (item as { link?: boolean }).link
-      );
-      const isLinkType = attachmentType === "LINK" || linkFlag;
+      const attachmentType: AttachmentType | "LINK" | undefined =
+        typeof item === "string" ? "LINK" : (item as CommonAttachmentResponse)?.attachmentType;
+      const pathValue = typeof item === "string" ? undefined : (item as StepAttachmentResponse | CommonAttachmentResponse)?.filePath || (item as StepAttachmentResponse)?.path;
+      const url = typeof item === "string" ? item : (item as StepAttachmentResponse | CommonAttachmentResponse)?.url || pathValue;
+      const baseName =
+        typeof item === "string"
+          ? url
+          : (item as StepAttachmentResponse | CommonAttachmentResponse)?.fileName ||
+            (item as StepAttachmentResponse)?.name ||
+            (item as StepAttachmentResponse)?.originalName ||
+            pathValue ||
+            (item as StepAttachmentResponse | CommonAttachmentResponse)?.url;
       const isLink =
-        typeof item === "string" ||
-        isLinkType;
-      const id = typeof item === "string" ? `link-${idx}` : item?.id ?? `${attachmentType ?? "att"}-${idx}`;
+        typeof item === "string"
+          ? true
+          : (item as { link?: boolean }).link ??
+            (item as { isLink?: boolean }).isLink ??
+            false;
+      const id = typeof item === "string" ? `link-${idx}` : (item as StepAttachmentResponse | CommonAttachmentResponse)?.id ?? `${attachmentType ?? "att"}-${idx}`;
       const key = isLink ? `link-${url || baseName}` : `file-${pathValue || url || baseName}`;
-      const size = typeof item === "string" ? undefined : (item as AttachmentResponse)?.fileSize ?? (item as { size?: number }).size;
+      const size =
+        typeof item === "string"
+          ? undefined
+          : (item as StepAttachmentResponse | CommonAttachmentResponse)?.fileSize ??
+            (item as { size?: number }).size;
       if (!baseName || seen.has(key)) return null;
       seen.add(key);
       return {
@@ -88,11 +111,14 @@ export function AttachmentList({
                 <div
                   key={file.id}
                   className="flex items-center justify-between rounded-lg border bg-background px-3 py-2 text-sm"
+                  title={file.name}
                 >
                   <div className="flex items-center gap-3">
                     <Paperclip className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium break-all">{file.name}</p>
+                      <p className="font-medium truncate" title={file.name}>
+                        {file.name}
+                      </p>
                       {sizeText && <p className="text-xs text-muted-foreground">{sizeText}</p>}
                     </div>
                   </div>
@@ -117,19 +143,23 @@ export function AttachmentList({
             {linkLabel}
           </Label>
           <div className="space-y-2">
-            {links.map((link) => (
-              <a
-                key={link.id}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
-              >
-                <div className="text-xs text-muted-foreground break-all line-clamp-1 mt-1">
-                  {link.url || link.name}
-                </div>
-              </a>
-            ))}
+            {links.map((link) => {
+              const href = link.url || link.name || "";
+              const hostLabel = getHostname(href) || link.name;
+              const tooltip = href || hostLabel;
+              return (
+                <a
+                  key={link.id}
+                  href={href || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                  title={tooltip}
+                >
+                  <div className="text-xs text-muted-foreground truncate mt-1">{hostLabel}</div>
+                </a>
+              );
+            })}
           </div>
         </div>
       )}

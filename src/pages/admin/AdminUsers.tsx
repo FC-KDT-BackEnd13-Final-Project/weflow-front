@@ -1,8 +1,7 @@
-// src/pages/admin/AdminUsers.tsx
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 
@@ -14,17 +13,30 @@ import {
 
 const AdminUsers = () => {
   const navigate = useNavigate();
-  const [admins, setAdmins] = useState<SystemAdmin[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const [size] = useState(10);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalElements, setTotalElements] = useState(0);
 
+  const [admins, setAdmins] = useState<SystemAdmin[]>([]);
+  const [page, setPage] = useState(0);
+  const size = 10;
+
+  const [totalPages, setTotalPages] = useState<number | null>(null);
+  const [totalElements, setTotalElements] = useState<number | null>(null);
+
+  const [keyword, setKeyword] = useState("");
+
+  /* =========================
+     검색어 변경 시 페이지 리셋
+  ========================= */
+  useEffect(() => {
+    setPage(0);
+  }, [keyword]);
+
+  /* =========================
+     데이터 로딩
+  ========================= */
   const loadAdmins = async () => {
     try {
-      setLoading(true);
       const data = await getSystemAdmins({ page, size });
+
       const sorted = [...data.content].sort((a, b) => {
         const aDeleted = a.deletedAt ? 1 : 0;
         const bDeleted = b.deletedAt ? 1 : 0;
@@ -36,15 +48,32 @@ const AdminUsers = () => {
       setTotalElements(data.totalElements);
     } catch (err) {
       console.error("관리자 목록 불러오기 실패:", err);
-    } finally {
-      setLoading(false);
     }
   };
 
   useEffect(() => {
     loadAdmins();
-  }, [page, size]);
+  }, [page]);
 
+  /* =========================
+     실시간 검색
+  ========================= */
+  const filteredAdmins = useMemo(() => {
+    if (!keyword.trim()) return admins;
+
+    const lower = keyword.toLowerCase();
+    return admins.filter(
+      (a) =>
+        a.name.toLowerCase().includes(lower) ||
+        a.email.toLowerCase().includes(lower)
+    );
+  }, [admins, keyword]);
+
+  const isSearching = keyword.trim().length > 0;
+
+  /* =========================
+     삭제
+  ========================= */
   const handleDelete = async (id: number) => {
     if (!confirm("정말 삭제하시겠습니까?")) return;
 
@@ -52,16 +81,12 @@ const AdminUsers = () => {
       await deleteSystemAdmin(id);
       loadAdmins();
     } catch (err) {
-      console.error("관리자 삭제 실패:", err);
       alert("삭제 중 오류가 발생했습니다.");
     }
   };
 
-  if (loading) return <div>로딩 중...</div>;
-
   return (
     <div className="space-y-6">
-      {/* 상단 헤더 */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">관리자 계정 관리</h1>
         <Button
@@ -74,6 +99,17 @@ const AdminUsers = () => {
         </Button>
       </div>
 
+      {/* 검색 */}
+      <Card>
+        <CardContent className="pt-6">
+          <Input
+            placeholder="이름 또는 이메일로 검색"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+        </CardContent>
+      </Card>
+
       {/* 목록 */}
       <Card>
         <CardHeader>
@@ -81,20 +117,22 @@ const AdminUsers = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {admins.length === 0 && (
+          {filteredAdmins.length === 0 && (
             <div className="text-muted-foreground">
               등록된 관리자가 없습니다.
             </div>
           )}
 
-          {admins.map((admin) => {
+          {filteredAdmins.map((admin) => {
             const isDeleted = !!admin.deletedAt;
 
             return (
               <div
                 key={admin.id}
-                className={`flex items-center justify-between p-3 border rounded-md transition-colors`}
-                onClick={() => navigate(`/admin/admin-users/${admin.id}`)}
+                className="flex items-center justify-between p-3 border rounded-md hover:bg-muted/50 cursor-pointer"
+                onClick={() =>
+                  navigate(`/admin/admin-users/${admin.id}`)
+                }
               >
                 <div>
                   <div className="font-medium">
@@ -105,7 +143,6 @@ const AdminUsers = () => {
                       </span>
                     )}
                   </div>
-
                   <div className="text-sm text-muted-foreground">
                     {admin.email}
                   </div>
@@ -115,7 +152,7 @@ const AdminUsers = () => {
                   <Button
                     variant="destructive"
                     onClick={(e) => {
-                      e.stopPropagation(); // ← 상세 페이지로 이동 방지
+                      e.stopPropagation();
                       handleDelete(admin.id);
                     }}
                   >
@@ -127,17 +164,17 @@ const AdminUsers = () => {
           })}
         </CardContent>
       </Card>
-      {totalElements > 0 && (
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm text-muted-foreground">
-            총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
-          </p>
-          <div className="flex gap-2">
+
+      {/* 페이지네이션 (검색 중엔 숨김) */}
+      {!isSearching &&
+        typeof totalPages === "number" &&
+        totalPages > 1 && (
+          <div className="flex gap-2 justify-center">
             <Button
               variant="outline"
               size="sm"
               disabled={page === 0}
-              onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
             >
               이전
             </Button>
@@ -145,13 +182,14 @@ const AdminUsers = () => {
               variant="outline"
               size="sm"
               disabled={page >= totalPages - 1}
-              onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+              onClick={() =>
+                setPage((p) => Math.min(totalPages - 1, p + 1))
+              }
             >
               다음
             </Button>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 };

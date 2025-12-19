@@ -65,20 +65,29 @@ export interface LinkDto {
   title: string;
 }
 
+export enum QuestionType {
+  SINGLE = "SINGLE",
+  MULTI = "MULTI",
+  TEXT = "TEXT",
+}
+
 export interface QuestionDto {
   questionId: number;
   content: string;
-  buttonLabels: ButtonLabelsDto;
+  questionType: QuestionType;
+  options: QuestionOptionDto[];
   answer: AnswerDto | null;
 }
 
-export interface ButtonLabelsDto {
-  yes: string;
-  no: string;
+export interface QuestionOptionDto {
+  optionId: number;
+  optionText: string;
+  hasInput: boolean;
 }
 
 export interface AnswerDto {
-  response: string;
+  selectedOptionIds: number[];
+  textInput: string;
   respondent: RespondentDto;
   respondedAt: string;
 }
@@ -156,6 +165,7 @@ export interface PostCreateRequest {
 }
 
 export interface FileRequest {
+  fileId?: number; // 수정 시 기존 파일 유지를 위한 ID (optional)
   fileName: string;
   fileSize: number;
   filePath: string;
@@ -163,13 +173,19 @@ export interface FileRequest {
 }
 
 export interface LinkRequest {
+  linkId?: number; // 수정 시 기존 링크 유지를 위한 ID (optional)
   url: string;
 }
 
 export interface QuestionRequest {
   questionText: string;
-  confirmLabel: string;
-  rejectLabel: string;
+  questionType: QuestionType;
+  options: QuestionOptionRequest[];
+}
+
+export interface QuestionOptionRequest {
+  optionText: string;
+  hasInput: boolean;
 }
 
 // 게시글 수정 요청
@@ -190,7 +206,8 @@ export interface PostStatusUpdateRequest {
 
 // 답변 등록 요청
 export interface PostAnswerRequest {
-  response: string; // "CONFIRM" 또는 "REJECT"
+  selectedOptionIds: number[];
+  textInput: string;
 }
 
 // ===== API Response Wrapper =====

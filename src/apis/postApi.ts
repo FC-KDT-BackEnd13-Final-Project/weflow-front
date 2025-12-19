@@ -15,6 +15,7 @@ import type {
 // ===== Query Parameters Interface =====
 export interface GetPostsParams {
   projectPhase?: ProjectPhase;
+  openStatus?: "OPEN" | "CLOSED";
   stepId?: number;
   page?: number;
   size?: number;

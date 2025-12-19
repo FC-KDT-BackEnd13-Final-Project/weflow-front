@@ -24,8 +24,8 @@ import {
   ProjectStatus,
   ProjectPhase,
 } from "@/apis/adminProjects";
-
 import { fetchAllUsers } from "@/apis/adminUsers";
+import { DEFAULT_STEPS } from "@/constants/stepDefaults";
 import MemberSelectDialog, {
   SelectedMember,
   MemberData,
@@ -74,7 +74,13 @@ import {
 import type { Company } from "@/apis/admin";
 
 type StagePhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
-type Stage = { id: string; name: string; phase: StagePhase; order: number };
+type Stage = {
+  key: string;
+  id: string;
+  name: string;
+  phase: StagePhase;
+  order: number;
+};
 const phaseOptions: { value: StagePhase; label: string }[] = [
   { value: "CONTRACT", label: "계약" },
   { value: "IN_PROGRESS", label: "진행" },
@@ -94,7 +100,7 @@ const SortableStage = ({
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
-      id: stage.id,
+      id: stage.key,
     });
 
   const style = { transform: CSS.Transform.toString(transform), transition };
@@ -117,7 +123,7 @@ const SortableStage = ({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onDelete(stage.id);
+          onDelete(stage.key);
         }}
         onMouseDown={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
@@ -214,14 +220,15 @@ const ProjectCreate = () => {
   // ---------------------------
   // STAGE STATE
   // ---------------------------
-  const [stages, setStages] = useState<Stage[]>([
-    { id: "s1", name: "요구사항 정의", order: 1, phase: "IN_PROGRESS" },
-    { id: "s2", name: "화면 설계", order: 2, phase: "IN_PROGRESS" },
-    { id: "s3", name: "디자인", order: 3, phase: "IN_PROGRESS" },
-    { id: "s4", name: "개발", order: 4, phase: "IN_PROGRESS" },
-    { id: "s5", name: "테스트", order: 5, phase: "IN_PROGRESS" },
-    { id: "s6", name: "납품", order: 6, phase: "DELIVERY" },
-  ]);
+  const [stages, setStages] = useState<Stage[]>(
+    DEFAULT_STEPS.map((s, idx) => ({
+      key: `default-${idx}`,
+      id: `default-${idx}`,
+      name: s.title,
+      order: idx + 1,
+      phase: s.phase as StagePhase,
+    }))
+  );
   const [newStageName, setNewStageName] = useState("");
   const [newStagePhase, setNewStagePhase] = useState<StagePhase>("CONTRACT");
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
@@ -235,12 +242,18 @@ const ProjectCreate = () => {
   const [selectedClientCompany, setSelectedClientCompany] = useState<
     string | null
   >(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const existingMemberIds = members.map((m) => m.id);
 
   useEffect(() => {
-    fetchAllUsers().then(setUsers);
-  }, []);
+    if (!selectedCompany) {
+      setUsers([]);
+      return;
+    }
+
+    fetchAllUsers({ customerCompanyId: selectedCompany.id }).then(setUsers);
+  }, [selectedCompany]);
 
   useEffect(() => {
     adminApi.getCompanies().then((res) => {
@@ -260,7 +273,7 @@ const ProjectCreate = () => {
   const filteredUsers = useMemo(() => {
     // 개발사(agency)는 항상 전체 표시, 고객사(client)는 선택된 고객사에 한정
     return users.filter((u) => {
-      if (u.companyType === "agency") return true;
+      if (u.companyType === "AGENCY") return true;
       return selectedCompany ? u.companyId === selectedCompany.id : false;
     });
   }, [users, selectedCompany]);
@@ -301,6 +314,7 @@ const ProjectCreate = () => {
     setStages((prev) => [
       ...prev,
       {
+        key: `stage-${Date.now()}-${Math.random()}`,
         id: `stage-${Date.now()}-${Math.random()}`,
         name: newStageName,
         order: prev.length + 1,
@@ -313,7 +327,7 @@ const ProjectCreate = () => {
   };
 
   const handleDeleteStage = (id: string) => {
-    const filtered = stages.filter((s) => s.id !== id);
+    const filtered = stages.filter((s) => s.key !== id);
     const reordered = filtered.map((s, i) => ({ ...s, order: i + 1 }));
     setStages(reordered);
   };
@@ -352,21 +366,23 @@ const ProjectCreate = () => {
     if (!validateRequired()) return;
 
     try {
+      setIsSaving(true);
+      const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+
       const payload = {
         name,
         description,
         status,
         phase,
-        customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
+        customerCompanyId: Number(customerCompanyId),
         startDate: toLocalDateTime(startDate),
         endDateExpected: toLocalDateTime(endDate),
         contractAmount: contractAmount ? Number(contractAmount) : null,
         contractFileUrl: contractFileUrl || null,
-
-        stages: stages.map((s) => ({
-          title: s.name,
-          orderIndex: s.order,
-          phase: s.phase,
+        steps: orderedStages.map((stage, idx) => ({
+          title: stage.name,
+          phase: stage.phase,
+          orderIndex: idx + 1,
         })),
       };
 
@@ -385,11 +401,13 @@ const ProjectCreate = () => {
       navigate(`/admin/projects/${projectId}`);
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const agencyMembers = members.filter((m) => m.companyType === "agency");
-  const clientMembers = members.filter((m) => m.companyType === "client");
+  const agencyMembers = members.filter((m) => m.companyType === "AGENCY");
+  const clientMembers = members.filter((m) => m.companyType === "CLIENT");
 
   return (
     <div className="space-y-6">
@@ -491,7 +509,10 @@ const ProjectCreate = () => {
 
             <div className="space-y-2">
               <Label>프로젝트 단계</Label>
-              <Select value={phase} onValueChange={(v) => setPhase(v as ProjectPhase)}>
+              <Select
+                value={phase}
+                onValueChange={(v) => setPhase(v as ProjectPhase)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -539,7 +560,11 @@ const ProjectCreate = () => {
               </Button>
 
               <span className="text-sm text-muted-foreground">
-                {contractFileName ? "업로드됨" : contractUploading ? "업로드 중..." : "선택된 파일 없음"}
+                {contractFileName
+                  ? "업로드됨"
+                  : contractUploading
+                  ? "업로드 중..."
+                  : "선택된 파일 없음"}
               </span>
 
               <div className="flex-1 flex items-center text-sm text-muted-foreground gap-2 min-w-0">
@@ -638,8 +663,8 @@ const ProjectCreate = () => {
             >
               취소
             </Button>
-            <Button type="button" onClick={handleSubmit}>
-              저장
+            <Button type="button" onClick={handleSubmit} disabled={isSaving}>
+              {isSaving ? "저장 중..." : "저장"}
             </Button>
           </div>
         </CardContent>
@@ -651,7 +676,7 @@ const ProjectCreate = () => {
         onOpenChange={setIsMemberDialogOpen}
         onConfirm={handleAddMembers}
         existingMemberIds={existingMemberIds}
-        existingAdminId={null}
+        existingAdminId={members.find((m) => m.role === "최고권한")?.id ?? null}
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
         users={filteredUsers}
@@ -819,14 +844,14 @@ const StageSection = ({
             >
               <h3 className="text-lg font-semibold">{group.label}</h3>
 
-              <SortableContext
-                items={group.items.map((s) => s.id)}
+      <SortableContext
+                items={group.items.map((s) => s.key)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="grid grid-cols-1 gap-3">
                   {group.items.map((stage) => (
                     <SortableStage
-                      key={stage.id}
+                      key={stage.key}
                       stage={stage}
                       onDelete={handleDeleteStage}
                     />

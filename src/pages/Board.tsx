@@ -13,7 +13,7 @@ import {
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
 import { getPosts } from "@/apis/postApi";
-import type { PostItem } from "@/types/post";
+import { ProjectPhase, type PageInfo, type PostItem } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
 
@@ -28,17 +28,18 @@ interface BoardPost {
   stepId: number;
   status: BoardPostStatus;
   questionStatus: BoardApprovalStatus;
+  hasQuestions: boolean;
 }
 
 const projectPhases = ["전체", "계약", "진행", "납품", "유지보수"];
 
 // ProjectPhase enum 값으로 매핑
-const projectPhaseEnumMap: Record<string, string> = {
+const projectPhaseEnumMap: Record<string, ProjectPhase | ""> = {
   "전체": "",
-  "계약": "CONTRACT",
-  "진행": "IN_PROGRESS",
-  "납품": "DELIVERY",
-  "유지보수": "MAINTENANCE",
+  "계약": ProjectPhase.CONTRACT,
+  "진행": ProjectPhase.IN_PROGRESS,
+  "납품": ProjectPhase.DELIVERY,
+  "유지보수": ProjectPhase.MAINTENANCE,
 };
 
 // Enum 값을 한글 라벨로 역매핑
@@ -53,14 +54,22 @@ export default function Board() {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
+  const pageSize = 5;
   const [activeProjectPhase, setActiveProjectPhase] = useState("전체");
   const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [posts, setPosts] = useState<BoardPost[]>([]);
+  const [pageInfo, setPageInfo] = useState<PageInfo>({
+    currentPage: 0,
+    pageSize,
+    totalElements: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrevious: false,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
   const [steps, setSteps] = useState<StepResponse[]>([]);
-  const pageSize = 5;
 
   // 선택된 phase에 해당하는 step만 필터링
   const activePhaseEnum = projectPhaseEnumMap[activeProjectPhase];
@@ -121,7 +130,14 @@ export default function Board() {
 
       setIsLoading(true);
       try {
-        const response = await getPosts(Number(id));
+        const response = await getPosts(Number(id), {
+          page: currentPage - 1,
+          size: pageSize,
+          stepId: selectedStepId ?? undefined,
+          projectPhase: activePhaseEnum || undefined,
+          sortBy: "createdAt",
+          direction: "DESC",
+        });
 
         // projectPhase 매핑
         const projectPhaseMap: Record<string, string> = {
@@ -142,12 +158,14 @@ export default function Board() {
           projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
           stepId: post.stepId,
           status: post.status === "CONFIRMED" ? "complete" : "progress",
+          hasQuestions: post.hasQuestions,
           questionStatus: post.hasQuestions
             ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
-            : "request",
+            : "request", // hasQuestions가 false여도 일단 request로 설정 (배지는 조건부 렌더링으로 숨김)
         }));
 
         setPosts(convertedPosts);
+        setPageInfo(response.pageInfo);
       } catch (error) {
         console.error("게시글 목록 조회 실패:", error);
         setPosts([]);
@@ -157,7 +175,7 @@ export default function Board() {
     };
 
     fetchPosts();
-  }, [id]);
+  }, [id, currentPage, activePhaseEnum, selectedStepId]);
 
   // phase 변경 시 선택된 step이 해당 phase에 속하지 않으면 초기화
   useEffect(() => {
@@ -182,28 +200,8 @@ export default function Board() {
     });
   };
 
-  const filteredPosts = posts.filter(post => {
-    // Phase 필터링
-    if (activeProjectPhase !== "전체" && post.projectStatus !== activeProjectPhase) {
-      return false;
-    }
-
-    // Step 필터링
-    if (selectedStepId !== null && post.stepId !== selectedStepId) {
-      return false;
-    }
-
-    // 게시글 상태 필터링
-    if (postStatusFilter === "진행중" && post.status !== "progress") return false;
-    if (postStatusFilter === "완료" && post.status !== "complete") return false;
-
-    return true;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(filteredPosts.length / pageSize));
-  const paginatedPosts = filteredPosts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
   const goToPage = (page: number) => {
+    const totalPages = pageInfo.totalPages || 1;
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
   };
@@ -307,7 +305,13 @@ export default function Board() {
                 </Card>
               )}
 
-              {!isLoading && paginatedPosts.map((post) => (
+              {!isLoading && posts
+                .filter((post) => {
+                  if (postStatusFilter === "진행중" && post.status !== "progress") return false;
+                  if (postStatusFilter === "완료" && post.status !== "complete") return false;
+                  return true;
+                })
+                .map((post) => (
                 <Card
                   key={post.id}
                   className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -351,14 +355,16 @@ export default function Board() {
                       {/* 승인 요청 / 승인 */}
                       <div className="flex flex-col gap-2 items-end">
 
-                        <div
-                          className={cn(
-                            "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                            boardStatusStyles[post.questionStatus]
-                          )}
-                        >
-                          {boardStatusLabels[post.questionStatus]}
-                        </div>
+                        {post.hasQuestions && (
+                          <div
+                            className={cn(
+                              "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
+                              boardStatusStyles[post.questionStatus]
+                            )}
+                          >
+                            {boardStatusLabels[post.questionStatus]}
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-3 text-muted-foreground">
                           <div className="flex items-center gap-1 text-xs">
@@ -377,7 +383,11 @@ export default function Board() {
                 </Card>
               ))}
 
-              {!isLoading && filteredPosts.length === 0 && (
+              {!isLoading && posts.filter((post) => {
+                if (postStatusFilter === "진행중" && post.status !== "progress") return false;
+                if (postStatusFilter === "완료" && post.status !== "complete") return false;
+                return true;
+              }).length === 0 && (
                 <Card>
                   <CardContent className="p-12 text-center">
                     <p className="text-muted-foreground">게시글이 없습니다.</p>
@@ -388,13 +398,15 @@ export default function Board() {
 
             {/* 페이지네이션 */}
             <div className="flex items-center justify-between pt-4 border-t">
-              <p className="text-sm text-muted-foreground">총 {filteredPosts.length}건 · {currentPage}/{totalPages} 페이지</p>
+              <p className="text-sm text-muted-foreground">
+                총 {pageInfo.totalElements}건 · {pageInfo.currentPage + 1}/{pageInfo.totalPages || 1} 페이지
+              </p>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1}
+                  disabled={!pageInfo.hasPrevious || currentPage === 1}
                 >
                   이전
                 </Button>
@@ -402,7 +414,7 @@ export default function Board() {
                   variant="outline"
                   size="sm"
                   onClick={() => goToPage(currentPage + 1)}
-                  disabled={currentPage === totalPages}
+                  disabled={!pageInfo.hasNext || currentPage >= (pageInfo.totalPages || 1)}
                 >
                   다음
                 </Button>

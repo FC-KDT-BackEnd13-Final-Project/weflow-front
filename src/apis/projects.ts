@@ -7,6 +7,8 @@ export type ProjectStatus =
   | "MAINTENANCE"
   | "CLOSED";
 
+export type ProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
+
 export type ProjectRole = "ADMIN" | "MEMBER";
 
 export interface ApiResponse<T> {
@@ -25,6 +27,14 @@ export interface ProjectSummaryResponse {
   status: ProjectStatus;
   projectRole?: ProjectRole | null;
   customerCompanyName?: string | null;
+  phase?: ProjectPhase | null;
+  projectPhase?: ProjectPhase | null;
+  endDateExpected?: string | null;
+  endDate?: string | null;
+  expectedEndDate?: string | null; // 백엔드 DTO 명이 다를 수 있어 여유 필드 추가
+  isMember?: boolean | null;
+  member?: boolean | null;
+  expirationDate?: string | null;
 }
 
 export interface ProjectDetailResponse {

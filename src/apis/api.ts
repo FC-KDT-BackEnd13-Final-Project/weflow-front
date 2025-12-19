@@ -2,7 +2,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,  // 백엔드 주소
-  withCredentials: true,  // 추후 쿠키 인증 사용 대비
+  withCredentials: false,  
 });
 
 // ------------ 요청 인터셉터 ------------

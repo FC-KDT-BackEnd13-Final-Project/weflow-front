@@ -67,7 +67,7 @@ const CompanyCreate = () => {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name">회사명</Label>
+              <Label htmlFor="name">회사명 *</Label>
               <Input
                 id="name"
                 value={formData.name}
@@ -88,7 +88,6 @@ const CompanyCreate = () => {
                   setFormData({ ...formData, representative: e.target.value })
                 }
                 placeholder="대표자명 입력"
-                required
               />
             </div>
 
@@ -102,7 +101,6 @@ const CompanyCreate = () => {
                   setFormData({ ...formData, email: e.target.value })
                 }
                 placeholder="example@company.com"
-                required
               />
             </div>
 

@@ -100,6 +100,7 @@ export interface Company {
   address: string | null;
   memo: string | null;
   status: string;
+  companyType: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -127,6 +128,7 @@ interface CreateCompanyRequest {
   address: string;
   memo: string;
   status: string;
+  companyType: string;
 }
 
 interface CreateCompanyResponse {
@@ -152,6 +154,7 @@ interface UpdateCompanyRequest {
   address?: string;
   memo?: string;
   status?: string;
+  companyType?: string | null;
 }
 
 interface UpdateCompanyResponse {
@@ -226,6 +229,11 @@ export const adminApi = {
 
   restoreUser: async (userId: number): Promise<UserDetailResponse> => {
     const response = await api.patch<UserDetailResponse>(`/api/admin/users/${userId}/restore`);
+    return response.data;
+  },
+
+  resetPassword: async (userId: number, data: ResetPasswordRequest): Promise<ResetPasswordResponse> => {
+    const response = await api.patch<ResetPasswordResponse>(`/api/admin/users/${userId}/reset-password`, data);
     return response.data;
   },
 

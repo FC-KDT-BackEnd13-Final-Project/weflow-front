@@ -5,14 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "@/apis/auth";
 import { companiesApi } from "@/apis/companies";
@@ -46,6 +40,7 @@ export default function Settings() {
     phone: "",
     role: "",
     email: "",
+    isEmailNotificationEnabled: false,
   });
   const [formData, setFormData] = useState(profile);
   const [isDirty, setIsDirty] = useState(false);
@@ -63,6 +58,7 @@ export default function Settings() {
             phone: userResponse.data.phoneNumber,
             role: userResponse.data.role,
             email: userResponse.data.email,
+            isEmailNotificationEnabled: userResponse.data.isEmailNotificationEnabled ?? false,
           };
           setProfile(initialProfile);
           setFormData(initialProfile);
@@ -100,8 +96,8 @@ export default function Settings() {
     setIsDirty(true);
   };
 
-  const handleRoleChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, role: value }));
+  const handleEmailNotificationChange = (checked: boolean) => {
+    setFormData((prev) => ({ ...prev, isEmailNotificationEnabled: checked }));
     setIsDirty(true);
   };
 
@@ -113,6 +109,7 @@ export default function Settings() {
       const response = await authApi.updateMe({
         name: formData.name,
         phoneNumber: formData.phone,
+        isEmailNotificationEnabled: formData.isEmailNotificationEnabled,
       });
 
       if (response.success) {
@@ -121,6 +118,7 @@ export default function Settings() {
           phone: response.data.phoneNumber,
           role: formData.role,
           email: response.data.email,
+          isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
         };
         setProfile(updatedProfile);
         setFormData(updatedProfile);
@@ -129,6 +127,7 @@ export default function Settings() {
           ...prev,
           name: response.data.name,
           phoneNumber: response.data.phoneNumber,
+          isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
         }));
 
         toast({
@@ -222,26 +221,38 @@ export default function Settings() {
                   </div>
                   <div className="space-y-2">
                     <Label>역할</Label>
-                    <Select value={formData.role} onValueChange={handleRoleChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="역할을 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roleOptions.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">이메일</Label>
-                    <Input id="email" type="email" value={formData.email} readOnly />
+                    <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {roleOptions.find((role) => role.value === formData.role)?.label ?? formData.role}
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      로그인 이메일은 관리자에게 요청하여 변경할 수 있습니다.
+                      ℹ️ 역할은 변경할 수 없습니다.
                     </p>
                   </div>
+                  <div className="space-y-2">
+                    <Label>이메일</Label>
+                    <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                      {formData.email}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      ℹ️ 로그인 이메일 변경은 관리자에게 문의하세요.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="email-notification" className="text-base">
+                      중요 알림 이메일 수신
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      승인 요청, 비밀번호 변경 등 중요한 알림을 이메일로 받습니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="email-notification"
+                    checked={formData.isEmailNotificationEnabled}
+                    onCheckedChange={handleEmailNotificationChange}
+                  />
                 </div>
 
                 <div className="flex items-center justify-end gap-3">
@@ -273,6 +284,14 @@ export default function Settings() {
                   <div>
                     <p className="text-sm text-muted-foreground">이메일</p>
                     <p className="text-base font-medium mt-1">{profile.email}</p>
+                  </div>
+                </div>
+                <div className="pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">중요 알림 이메일 수신</p>
+                    <Badge variant={profile.isEmailNotificationEnabled ? "default" : "secondary"}>
+                      {profile.isEmailNotificationEnabled ? "ON" : "OFF"}
+                    </Badge>
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-3 pt-4 border-t">
