@@ -264,7 +264,7 @@ export default function ApprovalRequests() {
                 const phaseLabel = phaseLabelMap[phaseCode] || phaseCode || "-";
                 const requesterLabel = request.requestedByName || "요청자";
                 const stepLabel = request.stepTitle || "단계";
-                const requestedDate = formatDateTime(request.createdAt);
+                const requestedDate = formatDateTime(request.updatedAt ?? request.createdAt);
                 const statusBadge = stepRequestStatusMap[request.status];
                 const projectId = (request as { projectId?: number }).projectId;
 

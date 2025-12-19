@@ -238,9 +238,6 @@ export default function ApprovalDetail() {
     () => ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]),
     [feedback]
   );
-  console.log("RAW attachments", requestAttachmentItems);
-  console.log("files", requestAttachmentItems.filter((a) => (a as { link?: boolean }).link === false));
-  console.log("links", requestAttachmentItems.filter((a) => (a as { link?: boolean }).link === true));
   const mapAttachmentToUploaded = (file: AttachmentResponse | string, index: number): UploadedAttachment => {
     const attachmentType = typeof file === "string" ? "LINK" : (file as { attachmentType?: string }).attachmentType;
     const pathValue = typeof file === "string" ? undefined : file?.filePath || file?.path;
@@ -525,6 +522,10 @@ export default function ApprovalDetail() {
     "";
   const decidedByDisplayCompany = decidedByCompany || "회사명"; // TODO: 결정자 회사 정보를 API로 수신하면 교체하세요.
   const metaDate = formatDateTime(approval.createdAt);
+  const updatedAtFormatted =
+    approval.updatedAt && approval.updatedAt !== approval.createdAt
+      ? formatDateTime(approval.updatedAt)
+      : null;
 
   return (
     <ProjectLayout>
@@ -556,14 +557,27 @@ export default function ApprovalDetail() {
               <span className="text-foreground font-medium">{requestedByLabel}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-foreground font-medium">{metaDate}</span>
+              {updatedAtFormatted && (
+                <>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-primary font-medium">수정</span>
+                  <span className="text-foreground font-medium">{updatedAtFormatted}</span>
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
               <Label>설명</Label>
-              <div className="text-sm text-muted-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
-                {approval.description || "설명이 없습니다."}
-              </div>
+              {approval.description ? (
+                <div className="text-sm text-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
+                  {approval.description}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
+                  설명이 없습니다.
+                </div>
+              )}
             </div>
 
             <Separator />
