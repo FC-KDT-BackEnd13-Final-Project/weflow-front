@@ -256,7 +256,6 @@ export default function ProjectDashboard() {
               <span>
                 {isLoading ? <Skeleton className="h-3 w-16" /> : `${projectInfo.progress}% 완료`}
               </span>
-              <span>업무 안정 권장 80%</span>
             </div>
             {fetchError && (
               <p className="text-xs text-destructive mt-2">{fetchError}</p>
@@ -292,10 +291,15 @@ export default function ProjectDashboard() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {projectInfo.currentStage
-                  ? `${projectInfo.currentStage} 단계 진행중`
-                  : "단계 정보를 확인하세요"}
+                {isLoading ? (
+                  <Skeleton className="h-3 w-32" />
+                ) : projectInfo.currentStage ? (
+                  `${projectInfo.currentStage} 단계 진행중`
+                ) : (
+                  "단계 정보를 확인하세요"
+                )}
               </p>
+
             </CardContent>
           </Card>
 
@@ -309,10 +313,15 @@ export default function ProjectDashboard() {
                 {isLoading ? <Skeleton className="h-8 w-16" /> : projectInfo.daysLeft ? `${projectInfo.daysLeft}일` : "0일"}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {projectInfo.dueDate
-                  ? `${projectInfo.dueDate} 마감`
-                  : "마감일 미정"}
+                {isLoading ? (
+                  <Skeleton className="h-3 w-28" />
+                ) : projectInfo.dueDate ? (
+                  `${projectInfo.dueDate} 마감`
+                ) : (
+                  "마감일 미정"
+                )}
               </p>
+
             </CardContent>
           </Card>
         </div>

@@ -24,18 +24,10 @@ import {
   actionTypeLabels,
   targetTableLabels,
 } from "@/constants/logs";
-
-// =========================================================================
-// [스켈레톤 컴포넌트 정의]
-// shadcn/ui 스타일을 모방한 간단한 Skeleton 컴포넌트입니다.
 // =========================================================================
 const Skeleton = ({ className }: { className?: string }) => (
   <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
 );
-
-// =========================================================================
-// [타입 정의]
-// =========================================================================
 
 interface DashboardResponse {
   totalUsers: number;
@@ -71,9 +63,6 @@ const Dashboard = () => {
   // 초기 상태를 null로 설정하여 로딩 중임을 명확히 표시
   const [adminName, setAdminName] = useState<string | null>(null);
 
-  /* =========================
-     대시보드 데이터 (stats, logs)
-  ========================= */
 
   const isStatsLoading = stats.totalUsers === undefined;
   const isLogsLoading = recentLogs === null;
@@ -107,9 +96,6 @@ const Dashboard = () => {
     return () => controller.abort();
   }, []);
 
-  /* =========================
-     관리자 프로필 (adminName)
-  ========================= */
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,10 +117,6 @@ const Dashboard = () => {
     fetchProfile();
     return () => controller.abort();
   }, []);
-
-  /* =========================
-     통계 카드 정의
-  ========================= */
 
   const statsCards = useMemo(
     () => [
@@ -182,10 +164,6 @@ const Dashboard = () => {
       second: "2-digit",
     }).format(new Date(value));
 
-  // =========================================================================
-  // [렌더링]
-  // =========================================================================
-
   return (
     <div className="space-y-6">
       {/* 헤더 */}
@@ -206,41 +184,32 @@ const Dashboard = () => {
 
       {/* 통계 카드 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* 2. Stats Cards Skeleton */}
-        {isStatsLoading
-          ? Array.from({ length: 3 }).map((_, index) => (
-            <Card key={index} className="border-2">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-8 w-8 rounded-lg" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-10 w-1/2" />
-              </CardContent>
-            </Card>
-          ))
-          : statsCards.map((stat, index) => (
-            <Card
-              key={index}
-              className="border-2 hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={() => navigate(stat.link)}
-            >
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {stat.title}
-                </CardTitle>
-                <div className={`p-2 rounded-lg ${stat.color}`}>
-                  <stat.icon className="h-4 w-4" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* 값이 없을 때도 공간 유지 */}
-                <div className="text-3xl font-bold min-h-[36px]">
-                  {stat.value}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        {statsCards.map((stat, index) => (
+          <Card
+            key={index}
+            className="border-2 hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate(stat.link)}
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {stat.title} {/* 제목은 로딩 없이 바로 표시 */}
+              </CardTitle>
+              <div className={`p-2 rounded-lg ${stat.color}`}>
+                <stat.icon className="h-4 w-4" /> {/* 아이콘도 로딩 없이 바로 표시 */}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* 수치 데이터는 로딩 중일 때 스켈레톤, 아니면 값 표시 */}
+              <div className="text-3xl font-bold min-h-[36px]">
+                {isStatsLoading ? (
+                  <Skeleton className="h-9 w-1/2" />
+                ) : (
+                  stat.value
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* 최근 활동 로그 */}
