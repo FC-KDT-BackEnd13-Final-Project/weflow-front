@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +62,7 @@ const PHASE_LABEL_MAP: Record<StepPhase, string> = {
   DELIVERY: "납품",
   MAINTENANCE: "유지보수",
 };
+const PHASE_ORDER: StepPhase[] = ["CONTRACT", "IN_PROGRESS", "DELIVERY", "MAINTENANCE"];
 
 const DraggableStepCard = ({
   step,
@@ -152,6 +153,22 @@ export default function Approvals() {
     queryFn: () => getProjectStepRequests(projectId, page, pageSize),
     enabled: !!projectId,
   });
+  const phaseCompletion = (stepsData?.data as { isPhaseCompleted?: Record<string, boolean> } | undefined)?.isPhaseCompleted ?? {};
+  const isPhaseCompleted = useCallback((phase: StepPhase) => Boolean(phaseCompletion?.[phase]), [phaseCompletion]);
+  const allPhasesCompleted = useMemo(() => PHASE_ORDER.every((phase) => isPhaseCompleted(phase)), [isPhaseCompleted]);
+  const firstAvailablePhase = useMemo(
+    () => PHASE_ORDER.find((phase) => !isPhaseCompleted(phase)) ?? PHASE_ORDER[0],
+    [isPhaseCompleted]
+  );
+  const defaultCreatePhase = useMemo(() => {
+    if (allPhasesCompleted) return firstAvailablePhase;
+    const currentPhaseValue = PHASE_ORDER.includes(currentPhase as StepPhase) ? (currentPhase as StepPhase) : null;
+    if (!currentPhaseValue || isPhaseCompleted(currentPhaseValue)) {
+      if (!isPhaseCompleted("IN_PROGRESS")) return "IN_PROGRESS";
+      return firstAvailablePhase;
+    }
+    return currentPhaseValue;
+  }, [allPhasesCompleted, currentPhase, firstAvailablePhase, isPhaseCompleted]);
 
   useEffect(() => {
     if (!serverSteps.length) return;
@@ -174,6 +191,14 @@ export default function Approvals() {
       setIsInitialized(true);
     }
   }, [serverSteps, orderedSteps, isDirty, isInitialized]);
+
+  useEffect(() => {
+    setNewStepPhase((prev) => {
+      if (allPhasesCompleted) return defaultCreatePhase;
+      if (isPhaseCompleted(prev)) return defaultCreatePhase;
+      return prev || defaultCreatePhase;
+    });
+  }, [allPhasesCompleted, defaultCreatePhase, isPhaseCompleted]);
 
   const createRequestMutation = useMutation({
     mutationFn: () => {
@@ -233,6 +258,7 @@ export default function Approvals() {
   const activeStep = activeId ? orderedSteps.find((s) => s.id === activeId) : null;
   const overStep = overId ? orderedSteps.find((s) => s.id === overId) : null;
   const isCrossPhase = Boolean(activeStep && overStep && activeStep.phase !== overStep.phase);
+  const selectedStep = selectedStepId ? orderedSteps.find((s) => s.id === selectedStepId) : null;
 
   const nextAvailableStepId = useMemo(() => {
     if (!orderedSteps.length) return null;
@@ -245,6 +271,7 @@ export default function Approvals() {
     }
     return null;
   }, [orderedSteps]);
+  const selectedPhaseCompleted = isPhaseCompleted(newStepPhase);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(Number(event.active.id));
@@ -406,7 +433,7 @@ export default function Approvals() {
   };
   const resetCreateStepDialog = () => {
     setIsCreateStepDialogOpen(false);
-    setNewStepPhase(getDefaultPhaseByTab(currentPhase));
+    setNewStepPhase(defaultCreatePhase);
     setNewStepTitle("");
     setNewStepDescription("");
   };
@@ -516,16 +543,22 @@ export default function Approvals() {
           {canManageStep && (
             <Button
               onClick={() => {
-                setNewStepPhase(getDefaultPhaseByTab(currentPhase));
+                setNewStepPhase(defaultCreatePhase);
                 setIsCreateStepDialogOpen(true);
               }}
               className="gap-2"
+              disabled={allPhasesCompleted || (currentPhase !== "ALL" && isPhaseCompleted(currentPhase as StepPhase))}
             >
               <Plus className="h-4 w-4" />
               단계 생성
             </Button>
           )}
         </div>
+        {(allPhasesCompleted || (currentPhase !== "ALL" && isPhaseCompleted(currentPhase as StepPhase))) && (
+          <p className="text-sm text-muted-foreground">
+            완료된 Phase에서는 단계를 추가할 수 없습니다.
+          </p>
+        )}
 
         <div className="w-full flex flex-wrap gap-2 items-center">
           {phaseOptions.map((phase) => {
@@ -732,32 +765,10 @@ export default function Approvals() {
       <Dialog open={isRequestDialogOpen} onOpenChange={handleRequestDialogChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>승인 요청 작성</DialogTitle>
+            <DialogTitle className="mb-1">승인 요청 작성</DialogTitle>
             <DialogDescription className="sr-only">승인 요청 내용을 입력하고 첨부를 추가하세요.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>프로젝트 단계</Label>
-              <Select
-                value={selectedStepId ? String(selectedStepId) : ""}
-                onValueChange={(value) => setSelectedStepId(Number(value))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="단계를 선택해주세요" />
-                </SelectTrigger>
-                <SelectContent>
-                  {orderedSteps.map((step) => (
-                    <SelectItem
-                      key={step.id}
-                      value={String(step.id)}
-                      disabled={!isRequestableStep(step) || nextAvailableStepId !== step.id}
-                    >
-                      {step.title} {step.status === "APPROVED" ? "(완료)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="space-y-4">
             <div className="space-y-2">
               <Label>제목</Label>
               <Input placeholder="승인 요청 제목을 입력하세요" value={requestTitle} onChange={(event) => setRequestTitle(event.target.value)} />
@@ -799,15 +810,6 @@ export default function Approvals() {
               <Label>단계명</Label>
               <Input value={editingStepTitle} onChange={(e) => setEditingStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
             </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={editingStepDescription}
-                onChange={(e) => setEditingStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={resetEditStepDialog}>
@@ -836,25 +838,29 @@ export default function Approvals() {
                   <SelectValue placeholder="Phase를 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CONTRACT">계약</SelectItem>
-                  <SelectItem value="IN_PROGRESS">진행</SelectItem>
-                  <SelectItem value="DELIVERY">납품</SelectItem>
-                  <SelectItem value="MAINTENANCE">유지보수</SelectItem>
+                  <SelectItem value="CONTRACT" disabled={isPhaseCompleted("CONTRACT")}>
+                    계약{isPhaseCompleted("CONTRACT") ? " (완료)" : ""}
+                  </SelectItem>
+                  <SelectItem value="IN_PROGRESS" disabled={isPhaseCompleted("IN_PROGRESS")}>
+                    진행{isPhaseCompleted("IN_PROGRESS") ? " (완료)" : ""}
+                  </SelectItem>
+                  <SelectItem value="DELIVERY" disabled={isPhaseCompleted("DELIVERY")}>
+                    납품{isPhaseCompleted("DELIVERY") ? " (완료)" : ""}
+                  </SelectItem>
+                  <SelectItem value="MAINTENANCE" disabled={isPhaseCompleted("MAINTENANCE")}>
+                    유지보수{isPhaseCompleted("MAINTENANCE") ? " (완료)" : ""}
+                  </SelectItem>
                 </SelectContent>
               </Select>
+              {(allPhasesCompleted || selectedPhaseCompleted) && (
+                <p className="text-xs text-muted-foreground">
+                  완료된 Phase에는 단계를 추가할 수 없습니다.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>단계명</Label>
               <Input value={newStepTitle} onChange={(e) => setNewStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
-            </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={newStepDescription}
-                onChange={(e) => setNewStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
             </div>
           </div>
           <DialogFooter>
@@ -863,7 +869,12 @@ export default function Approvals() {
             </Button>
             <Button
               onClick={() => createStepMutation.mutate()}
-              disabled={!newStepTitle.trim() || createStepMutation.isPending}
+              disabled={
+                !newStepTitle.trim() ||
+                createStepMutation.isPending ||
+                selectedPhaseCompleted ||
+                allPhasesCompleted
+              }
             >
               {createStepMutation.isPending ? "생성 중..." : "생성"}
             </Button>

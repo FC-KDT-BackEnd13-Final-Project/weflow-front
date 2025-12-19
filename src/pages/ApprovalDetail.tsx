@@ -456,7 +456,7 @@ export default function ApprovalDetail() {
     if (!value) return "-";
     const date = new Date(value);
     const pad = (num: number) => String(num).padStart(2, "0");
-    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
   const role = (me?.role || "").toUpperCase();
   const isRequester = Boolean(me?.id && approval.requestedBy === me.id);
