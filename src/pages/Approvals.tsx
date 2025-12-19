@@ -737,7 +737,7 @@ export default function Approvals() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">단계</Label>
+              <Label>프로젝트 단계</Label>
               <Select
                 value={selectedStepId ? String(selectedStepId) : ""}
                 onValueChange={(value) => setSelectedStepId(Number(value))}
