@@ -113,6 +113,7 @@ export interface PostItem {
   postId: number;
   title: string;
   status: PostApprovalStatus;
+  openStatus: PostOpenStatus;
   projectPhase: ProjectPhase;
   stepId: number;
   author: AuthorDto;

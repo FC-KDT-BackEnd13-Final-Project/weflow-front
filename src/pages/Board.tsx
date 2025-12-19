@@ -26,7 +26,7 @@ interface BoardPost {
   comments: number;
   projectStatus: string;
   stepId: number;
-  status: BoardPostStatus;
+  openStatus: "OPEN" | "CLOSED";
   questionStatus: BoardApprovalStatus;
   hasQuestions: boolean;
 }
@@ -68,7 +68,7 @@ export default function Board() {
     hasPrevious: false,
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
+  const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "Open" | "Closed">("전체");
   const [steps, setSteps] = useState<StepResponse[]>([]);
 
   // 선택된 phase에 해당하는 step만 필터링
@@ -135,6 +135,7 @@ export default function Board() {
           size: pageSize,
           stepId: selectedStepId ?? undefined,
           projectPhase: activePhaseEnum || undefined,
+          openStatus: postStatusFilter === "전체" ? undefined : (postStatusFilter === "Open" ? "OPEN" : "CLOSED"),
           sortBy: "createdAt",
           direction: "DESC",
         });
@@ -157,7 +158,7 @@ export default function Board() {
           comments: post.commentCount,
           projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
           stepId: post.stepId,
-          status: post.status === "CONFIRMED" ? "complete" : "progress",
+          openStatus: post.openStatus || "OPEN", // 백엔드에서 openStatus 추가 전까지 기본값 OPEN
           hasQuestions: post.hasQuestions,
           questionStatus: post.hasQuestions
             ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
@@ -175,7 +176,7 @@ export default function Board() {
     };
 
     fetchPosts();
-  }, [id, currentPage, activePhaseEnum, selectedStepId]);
+  }, [id, currentPage, activePhaseEnum, selectedStepId, postStatusFilter]);
 
   // phase 변경 시 선택된 step이 해당 phase에 속하지 않으면 초기화
   useEffect(() => {
@@ -279,7 +280,7 @@ export default function Board() {
               </div>
               <Select
                 value={postStatusFilter}
-                onValueChange={(value: "전체" | "진행중" | "완료") => {
+                onValueChange={(value: "전체" | "Open" | "Closed") => {
                   setPostStatusFilter(value);
                   setCurrentPage(1);
                 }}
@@ -289,8 +290,8 @@ export default function Board() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="진행중">진행중</SelectItem>
-                  <SelectItem value="완료">완료</SelectItem>
+                  <SelectItem value="Open">Open</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -305,13 +306,7 @@ export default function Board() {
                 </Card>
               )}
 
-              {!isLoading && posts
-                .filter((post) => {
-                  if (postStatusFilter === "진행중" && post.status !== "progress") return false;
-                  if (postStatusFilter === "완료" && post.status !== "complete") return false;
-                  return true;
-                })
-                .map((post) => (
+              {!isLoading && posts.map((post) => (
                 <Card
                   key={post.id}
                   className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -328,14 +323,16 @@ export default function Board() {
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
 
-                      {/* 진행/완료 */}
+                      {/* Open/Closed */}
                       <div
                         className={cn(
-                          "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                          boardStatusStyles[post.status]
+                          "inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-medium border w-[70px]",
+                          post.openStatus === "OPEN"
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-gray-50 text-gray-700 border-gray-200"
                         )}
                       >
-                        {boardStatusLabels[post.status]}
+                        {post.openStatus}
                       </div>
 
                       {/* 제목/작성자 */}
@@ -383,11 +380,7 @@ export default function Board() {
                 </Card>
               ))}
 
-              {!isLoading && posts.filter((post) => {
-                if (postStatusFilter === "진행중" && post.status !== "progress") return false;
-                if (postStatusFilter === "완료" && post.status !== "complete") return false;
-                return true;
-              }).length === 0 && (
+              {!isLoading && posts.length === 0 && (
                 <Card>
                   <CardContent className="p-12 text-center">
                     <p className="text-muted-foreground">게시글이 없습니다.</p>

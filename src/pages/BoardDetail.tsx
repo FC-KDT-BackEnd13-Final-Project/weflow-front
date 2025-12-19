@@ -18,6 +18,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   boardStatusLabels,
   boardStatusStyles,
   BoardPostStatus,
@@ -865,11 +871,20 @@ export default function BoardDetail() {
   // 작성자 본인 여부
   const isAuthor = user?.id === post.author.memberId;
 
-  // 수정 가능 여부: 작성자 본인이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
-  const canEdit = isAuthor && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
+  // 수정 가능 여부: 작성자 본인이고, OPEN 상태이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
+  const canEdit = isAuthor && post.openStatus === "OPEN" && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
 
   // 삭제 가능 여부: 작성자 본인만 가능
   const canDelete = isAuthor;
+
+  // 수정 불가 사유 메시지
+  const getEditDisabledReason = () => {
+    if (!isAuthor) return null;
+    if (post.openStatus === "CLOSED") return "종료된 게시글은 수정할 수 없습니다.";
+    if (post.comments.length > 0) return "댓글이 있는 게시글은 수정할 수 없습니다.";
+    if (post.questions.some(q => q.answer !== null)) return "답변이 등록된 게시글은 수정할 수 없습니다.";
+    return null;
+  };
 
   const handleDelete = async () => {
     if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
@@ -958,15 +973,28 @@ export default function BoardDetail() {
                     Close
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleEdit}
-                  disabled={!canEdit}
-                >
-                  <Pencil className="h-4 w-4" />
-                  수정
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={handleEdit}
+                          disabled={!canEdit}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          수정
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!canEdit && getEditDisabledReason() && (
+                      <TooltipContent>
+                        <p>{getEditDisabledReason()}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
                 <Button
                   variant="outline"
                   className="gap-2"
@@ -1001,7 +1029,14 @@ export default function BoardDetail() {
                   </Badge>
                 )}
               </div>
-              <Badge variant="outline" className="bg-slate-50">
+              <Badge
+                variant="outline"
+                className={cn(
+                  post.openStatus === "OPEN"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : "bg-gray-50 text-gray-700 border-gray-200"
+                )}
+              >
                 {postOpenStatusLabelText}
               </Badge>
             </div>
