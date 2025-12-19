@@ -76,7 +76,8 @@ export default function BoardNew() {
   });
 
   const [files, setFiles] = useState<File[]>([]);
-  const [links, setLinks] = useState<string[]>([]);
+  const [existingFiles, setExistingFiles] = useState<{ fileId: number; fileName: string; fileSize: number; filePath: string }[]>([]);
+  const [links, setLinks] = useState<{ linkId?: number; url: string }[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -174,8 +175,52 @@ export default function BoardNew() {
             step: post.step.stepId.toString(),
           });
 
-          setLinks(post.links.map(link => link.url));
-          // 파일은 별도 처리 필요
+          // 링크 데이터 복원 (linkId 포함)
+          setLinks(post.links.map(link => ({
+            linkId: link.linkId,
+            url: link.url,
+          })));
+
+          // 첨부파일 데이터 복원
+          if (post.files && post.files.length > 0) {
+            setExistingFiles(post.files.map(file => ({
+              fileId: file.fileId,
+              fileName: file.fileName,
+              fileSize: file.fileSize,
+              filePath: file.downloadUrl, // 실제 파일 경로는 다를 수 있음
+            })));
+          }
+
+          // 질문 데이터 복원
+          if (post.questions && post.questions.length > 0) {
+            const convertedQuestions: LocalQuestion[] = post.questions.map((q, index) => {
+              let localType: LocalQuestionType;
+              switch (q.questionType) {
+                case "SINGLE":
+                  localType = "객관식";
+                  break;
+                case "MULTI":
+                  localType = "복수선택";
+                  break;
+                case "TEXT":
+                  localType = "주관식";
+                  break;
+                default:
+                  localType = "주관식";
+              }
+
+              return {
+                id: index + 1,
+                questionText: q.content,
+                type: localType,
+                options: Array.isArray(q.options) ? q.options.map(opt => ({
+                  optionText: opt.optionText,
+                  hasInput: opt.hasInput,
+                })) : [],
+              };
+            });
+            setQuestions(convertedQuestions);
+          }
         } catch (error) {
           console.error("게시글 조회 실패:", error);
           toast({
@@ -207,6 +252,10 @@ export default function BoardNew() {
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const removeExistingFile = (fileId: number) => {
+    setExistingFiles(prev => prev.filter(f => f.fileId !== fileId));
+  };
+
   const handleAddLink = () => {
     const trimmedLink = linkInput.trim();
     if (!trimmedLink) {
@@ -221,12 +270,12 @@ export default function BoardNew() {
       return;
     }
 
-    if (links.includes(trimmedLink)) {
+    if (links.some(link => link.url === trimmedLink)) {
       setLinkError("이미 추가된 링크입니다");
       return;
     }
 
-    setLinks(prev => [...prev, trimmedLink]);
+    setLinks(prev => [...prev, { url: trimmedLink }]);
     setLinkInput("");
     setLinkError(null);
   };
@@ -464,14 +513,27 @@ export default function BoardNew() {
       }
 
       if (isEditMode && postId) {
-        // 수정 모드
+        // 수정 모드: 기존 파일 + 새 파일, 기존 링크 + 새 링크
+        const allFiles: FileRequest[] = [
+          // 기존 파일 유지 (fileId 포함)
+          ...existingFiles.map(file => ({
+            fileId: file.fileId,
+            fileName: file.fileName,
+            fileSize: file.fileSize,
+            filePath: file.filePath,
+            contentType: 'application/octet-stream', // 기존 파일의 contentType은 서버에 있음
+          })),
+          // 새로 업로드한 파일 (fileId 없음)
+          ...uploadedFiles,
+        ];
+
         const requestPayload = {
           title: formData.title,
           content: formData.content,
           stepId: stepId,
           projectPhase: projectPhase,
-          links: links.map(url => ({ url })),
-          files: uploadedFiles,
+          links: links, // 이미 { linkId?, url } 형태
+          files: allFiles,
           questions: questions.length > 0 ? questions.map(q => ({
             questionText: q.questionText,
             questionType: questionTypeToApi(q.type),
@@ -488,6 +550,7 @@ export default function BoardNew() {
 
         // 상태 초기화
         setFiles([]);
+        setExistingFiles([]);
         setLinks([]);
         setQuestions([]);
         setFormData({
@@ -507,7 +570,7 @@ export default function BoardNew() {
           stepId: stepId,
           projectPhase: projectPhase,
           parentPostId: replyInfo?.parentPostId,
-          links: links.map(url => ({ url })),
+          links: links.map(link => ({ url: link.url })),
           files: uploadedFiles,
           questions: questions.length > 0 ? questions.map(q => ({
             questionText: q.questionText,
@@ -523,6 +586,7 @@ export default function BoardNew() {
 
         // 상태 초기화
         setFiles([]);
+        setExistingFiles([]);
         setLinks([]);
         setQuestions([]);
         setFormData({
@@ -744,13 +808,44 @@ export default function BoardNew() {
                     파일 선택
                   </Button>
                   <span className="text-sm text-muted-foreground">
-                    {files.length}개 파일 선택됨
+                    {existingFiles.length + files.length}개 파일 (기존 {existingFiles.length}개 + 새로 추가 {files.length}개)
                   </span>
                 </div>
-                
-                {/* File List */}
+
+                {/* Existing Files (from server) */}
+                {existingFiles.length > 0 && (
+                  <div className="space-y-2 mt-3">
+                    <p className="text-xs text-muted-foreground font-medium">기존 첨부파일</p>
+                    {existingFiles.map((file) => (
+                      <div
+                        key={file.fileId}
+                        className="flex items-center justify-between p-2 border rounded-md bg-blue-50/50"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Paperclip className="h-4 w-4 flex-shrink-0 text-blue-600" />
+                          <span className="text-sm truncate">{file.fileName}</span>
+                          <Badge variant="secondary" className="text-xs flex-shrink-0">
+                            {(file.fileSize / 1024).toFixed(1)} KB
+                          </Badge>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 flex-shrink-0"
+                          onClick={() => removeExistingFile(file.fileId)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* New File List */}
                 {files.length > 0 && (
                   <div className="space-y-2 mt-3">
+                    <p className="text-xs text-muted-foreground font-medium">새로 추가할 파일</p>
                     {files.map((file, index) => (
                       <div
                         key={index}
@@ -804,18 +899,21 @@ export default function BoardNew() {
                   <div className="space-y-2 mt-3">
                     {links.map((link, index) => (
                       <div
-                        key={`${link}-${index}`}
-                        className="flex items-center gap-2 p-2 border rounded-md bg-muted/30"
+                        key={link.linkId || `new-${index}`}
+                        className={`flex items-center gap-2 p-2 border rounded-md ${link.linkId ? 'bg-blue-50/50' : 'bg-muted/30'}`}
                       >
-                        <Link2 className="h-4 w-4 flex-shrink-0" />
+                        <Link2 className={`h-4 w-4 flex-shrink-0 ${link.linkId ? 'text-blue-600' : ''}`} />
                         <a
-                          href={link}
+                          href={link.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm underline-offset-2 hover:underline flex-1 min-w-0 truncate"
                         >
-                          {link}
+                          {link.url}
                         </a>
+                        {link.linkId && (
+                          <span className="text-xs text-muted-foreground">기존</span>
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
