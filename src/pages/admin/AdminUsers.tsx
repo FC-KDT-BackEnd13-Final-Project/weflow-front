@@ -11,9 +11,6 @@ import {
   type SystemAdmin,
 } from "@/apis/systemAdmins";
 
-// =========================================================================
-// [스켈레톤 컴포넌트 정의]
-// =========================================================================
 const Skeleton = ({ className }: { className?: string }) => (
   <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
 );
@@ -45,16 +42,10 @@ const AdminUsers = () => {
 
   const [keyword, setKeyword] = useState("");
 
-  /* =========================
-     검색어 변경 시 페이지 리셋
-  ========================= */
   useEffect(() => {
     setPage(0);
   }, [keyword]);
 
-  /* =========================
-     데이터 로딩
-  ========================= */
   const loadAdmins = async () => {
     setIsLoading(true); // 데이터 로딩 시작
 
@@ -82,9 +73,6 @@ const AdminUsers = () => {
     loadAdmins();
   }, [page]);
 
-  /* =========================
-     실시간 검색 (클라이언트 측 필터링)
-  ========================= */
   const filteredAdmins = useMemo(() => {
     if (!keyword.trim()) return admins;
 
@@ -98,9 +86,6 @@ const AdminUsers = () => {
 
   const isSearching = keyword.trim().length > 0;
 
-  /* =========================
-     삭제
-  ========================= */
   const handleDelete = async (id: number) => {
     if (!confirm("정말 삭제하시겠습니까?")) return;
 

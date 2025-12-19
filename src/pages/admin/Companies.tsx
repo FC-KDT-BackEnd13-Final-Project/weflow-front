@@ -21,9 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { adminApi } from "@/apis/admin";
 import { useToast } from "@/hooks/use-toast";
 
-// =========================================================================
-// [스켈레톤 컴포넌트 정의]
-// =========================================================================
 const Skeleton = ({ className }: { className?: string }) => (
   <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
 );
@@ -61,16 +58,10 @@ const Companies = () => {
   // Debounce 적용 (500ms)
   const debouncedSearchInput = useDebounce(searchInput, 500);
 
-  /* =========================
-     검색어/필터 변경 시 페이지 리셋
-  ========================= */
   useEffect(() => {
     setCurrentPage(0);
   }, [debouncedSearchInput, statusFilter]);
 
-  /* =========================
-     데이터 로딩
-  ========================= */
   useEffect(() => {
     const fetchCompanies = async () => {
       setIsLoading(true); // 로딩 시작
@@ -105,9 +96,6 @@ const Companies = () => {
     fetchCompanies();
   }, [currentPage, statusFilter, debouncedSearchInput, toast]);
 
-  /* =========================
-     상태 뱃지
-  ========================= */
   const getStatusBadge = (status: string) => {
     if (status === "ACTIVE") {
       return (
@@ -126,9 +114,6 @@ const Companies = () => {
     );
   };
 
-  /* =========================
-     렌더
-  ========================= */
   return (
     <div className="space-y-6">
       {/* 헤더 */}

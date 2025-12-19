@@ -24,7 +24,7 @@ import {
   actionTypeLabels,
   targetTableLabels,
 } from "@/constants/logs";
-// =========================================================================
+
 const Skeleton = ({ className }: { className?: string }) => (
   <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
 );

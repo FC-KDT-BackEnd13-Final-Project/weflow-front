@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import api from "@/apis/api";
 import { cn } from "@/lib/utils";
+import { useDebounce } from "@/hooks/useDebounce";
 
 // =========================================================================
 // [스켈레톤 컴포넌트 정의]
@@ -68,15 +69,17 @@ const TemplateList = () => {
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [searchInput, setSearchInput] = useState("");
 
+  const debouncedSearchInput = useDebounce(searchInput, 500);
+
   const [page, setPage] = useState(0);
   const size = 10;
 
   /* =========================
-     검색어 변경 시 페이지 리셋
+     Debounce된 검색어 또는 카테고리 변경 시 페이지 리셋
   ========================= */
   useEffect(() => {
     setPage(0);
-  }, [searchInput, selectedCategory]);
+  }, [debouncedSearchInput, selectedCategory]);
 
   /* =========================
      데이터 로딩
@@ -97,6 +100,7 @@ const TemplateList = () => {
               selectedCategory !== "전체"
                 ? selectedCategory
                 : undefined,
+            keyword: debouncedSearchInput || undefined,
           },
           signal: controller.signal,
         });
@@ -120,7 +124,7 @@ const TemplateList = () => {
         }
 
         throw new Error();
-      } catch {
+      } catch (e) {
         if (!controller.signal.aborted) {
           setError("템플릿 목록을 불러오는 중 오류가 발생했습니다.");
         }
@@ -133,38 +137,23 @@ const TemplateList = () => {
 
     fetchPaginated();
     return () => controller.abort();
-  }, [page, size, selectedCategory]);
+  }, [page, size, selectedCategory, debouncedSearchInput]);
 
   /* =========================
-     카테고리 + 검색 필터 (클라이언트 측 필터링)
+     필터링 로직 수정 (서버에서 검색하므로 클라이언트 측 검색 필터링 제거)
   ========================= */
   const filteredTemplates = useMemo(() => {
-    if (isLoading) return []; // 로딩 중에는 빈 배열 반환하여 실제 데이터 렌더링 방지
-
     return templates
-      .filter((t) => {
-        const categoryMatch =
-          selectedCategory === "전체" ||
-          t.category === selectedCategory;
-
-        const keyword = searchInput.trim().toLowerCase();
-        const searchMatch =
-          !keyword ||
-          t.title.toLowerCase().includes(keyword) ||
-          t.description?.toLowerCase().includes(keyword);
-
-        return categoryMatch && searchMatch;
-      })
       .sort((a, b) => {
-        if (a.deleted === b.deleted) {
-          return (
-            new Date(b.updatedAt ?? b.createdAt).getTime() -
-            new Date(a.updatedAt ?? a.createdAt).getTime()
-          );
+        if (a.deleted !== b.deleted) {
+          return a.deleted ? 1 : -1;
         }
-        return a.deleted ? 1 : -1;
+        return (
+          new Date(b.updatedAt ?? b.createdAt).getTime() -
+          new Date(a.updatedAt ?? a.createdAt).getTime()
+        );
       });
-  }, [templates, selectedCategory, searchInput, isLoading]);
+  }, [templates]);
 
   const isSearching = searchInput.trim().length > 0;
 
@@ -184,14 +173,13 @@ const TemplateList = () => {
           onClick={() =>
             navigate("/admin/checklist-templates/create")
           }
-          disabled={isLoading} // 로딩 중 버튼 비활성화
+          disabled={isLoading}
         >
           + 템플릿 생성
         </Button>
       </div>
 
       {/* 카테고리 */}
-      {/* 로딩 중에는 카테고리 필터도 스켈레톤으로 대체 */}
       {isLoading ? (
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 5 }).map((_, index) => (
@@ -205,7 +193,7 @@ const TemplateList = () => {
               "전체",
               ...Array.from(
                 new Set(
-                  templates
+                  filteredTemplates
                     .map((t) => t.category)
                     .filter(Boolean)
                 )
@@ -220,6 +208,8 @@ const TemplateList = () => {
                 }
                 size="sm"
                 onClick={() => setSelectedCategory(category)}
+                // 💡 로딩 중 카테고리 버튼 비활성화 유지
+                disabled={isLoading}
               >
                 {category}
               </Button>
@@ -236,6 +226,8 @@ const TemplateList = () => {
           onChange={(e) =>
             setSearchInput(e.target.value)
           }
+        // 💡 로딩 상태에 관계없이 입력 활성화
+        // disabled={isLoading} 제거
         />
       </div>
 
@@ -264,7 +256,7 @@ const TemplateList = () => {
             !error &&
             filteredTemplates.length === 0 && (
               <div className="py-12 text-center text-muted-foreground">
-                등록된 템플릿이 없습니다.
+                {isSearching ? "검색 결과에 해당하는 템플릿이 없습니다." : "등록된 템플릿이 없습니다."}
               </div>
             )}
 
@@ -336,11 +328,10 @@ const TemplateList = () => {
               </Card>
             ))}
 
-          {/* 페이지네이션 (검색 중엔 숨김) */}
+          {/* 페이지네이션 */}
           {!isSearching && totalPages > 1 && (
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
               {isLoading ? (
-                // 로딩 중 페이지 정보 스켈레톤
                 <Skeleton className="h-5 w-48" />
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -353,7 +344,8 @@ const TemplateList = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={page === 0 || isLoading} // 로딩 중 비활성화
+                  // 💡 로딩 중에도 페이지네이션 버튼은 비활성화 유지
+                  disabled={page === 0 || isLoading}
                   onClick={() =>
                     setPage((p) => Math.max(0, p - 1))
                   }
@@ -363,7 +355,8 @@ const TemplateList = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={page >= totalPages - 1 || isLoading} // 로딩 중 비활성화
+                  // 💡 로딩 중에도 페이지네이션 버튼은 비활성화 유지
+                  disabled={page >= totalPages - 1 || isLoading}
                   onClick={() =>
                     setPage((p) =>
                       Math.min(totalPages - 1, p + 1)
