@@ -23,7 +23,7 @@ import {
   BoardPostStatus,
   BoardApprovalStatus,
 } from "@/constants/boardStatus";
-import { getPost, deletePost, answerQuestion } from "@/apis/postApi";
+import { getPost, deletePost, answerQuestion, closePost } from "@/apis/postApi";
 import { getDownloadUrl } from "@/apis/attachmentApi";
 import { getComments, createComment, createReply, deleteComment as deleteCommentApi, getReplies } from "@/apis/commentApi";
 import { useUserStore } from "@/stores/user";
@@ -907,6 +907,33 @@ export default function BoardDetail() {
     }
   };
 
+  const handleClosePost = async () => {
+    if (!id || !postId || !post) return;
+
+    if (!window.confirm("정말로 이 게시글을 종료하시겠습니까?\n종료된 게시글은 다시 열 수 없습니다.")) {
+      return;
+    }
+
+    try {
+      await closePost(Number(id), Number(postId));
+
+      toast({
+        title: "게시글 종료 완료",
+        description: "게시글이 성공적으로 종료되었습니다.",
+      });
+
+      // 게시글 다시 조회
+      window.location.reload();
+    } catch (error) {
+      console.error("게시글 종료 실패:", error);
+      toast({
+        title: "게시글 종료 실패",
+        description: "게시글 종료 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -922,6 +949,15 @@ export default function BoardDetail() {
           <div className="flex gap-2">
             {isAuthor && (
               <>
+                {post.openStatus === "OPEN" && (
+                  <Button
+                    variant="destructive"
+                    className="gap-2"
+                    onClick={handleClosePost}
+                  >
+                    Close
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="gap-2"
