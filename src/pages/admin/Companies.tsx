@@ -21,6 +21,22 @@ import { Badge } from "@/components/ui/badge";
 import { adminApi } from "@/apis/admin";
 import { useToast } from "@/hooks/use-toast";
 
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
+// 회사 목록 테이블 행 스켈레톤
+const CompanySkeletonRow = () => (
+  // 테이블의 gridTemplateColumns와 동일한 스타일 적용
+  <div className="grid gap-4 p-4" style={{ gridTemplateColumns: '1fr 1fr 120px 2fr 100px' }}>
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+  </div>
+);
+
 const Companies = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -34,23 +50,21 @@ const Companies = () => {
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [totalElements, setTotalElements] = useState<number | null>(null);
 
+  // 로딩 상태 추가
+  const [isLoading, setIsLoading] = useState(true);
+
   const [searchInput, setSearchInput] = useState("");
 
   // Debounce 적용 (500ms)
   const debouncedSearchInput = useDebounce(searchInput, 500);
 
-  /* =========================
-     검색어/필터 변경 시 페이지 리셋
-  ========================= */
   useEffect(() => {
     setCurrentPage(0);
   }, [debouncedSearchInput, statusFilter]);
 
-  /* =========================
-     데이터 로딩 (조용히)
-  ========================= */
   useEffect(() => {
     const fetchCompanies = async () => {
+      setIsLoading(true); // 로딩 시작
       try {
         const response = await adminApi.getCompanies(
           currentPage,
@@ -72,15 +86,16 @@ const Companies = () => {
             error.response?.data?.message ||
             "회사 목록을 불러올 수 없습니다.",
         });
+      } finally {
+        // 로딩 완료 후 0.5초 딜레이 추가 (선택 사항: 사용자 경험 개선)
+        // setTimeout(() => setIsLoading(false), 500);
+        setIsLoading(false);
       }
     };
 
     fetchCompanies();
   }, [currentPage, statusFilter, debouncedSearchInput, toast]);
 
-  /* =========================
-     상태 뱃지
-  ========================= */
   const getStatusBadge = (status: string) => {
     if (status === "ACTIVE") {
       return (
@@ -99,9 +114,6 @@ const Companies = () => {
     );
   };
 
-  /* =========================
-     렌더
-  ========================= */
   return (
     <div className="space-y-6">
       {/* 헤더 */}
@@ -172,6 +184,7 @@ const Companies = () => {
 
           {/* 테이블 */}
           <div className="border rounded-lg overflow-hidden">
+            {/* 테이블 헤더 */}
             <div className="grid gap-4 bg-muted p-4 font-medium text-sm" style={{ gridTemplateColumns: '1fr 1fr 120px 2fr 100px' }}>
               <div>회사명</div>
               <div>대표자</div>
@@ -181,11 +194,18 @@ const Companies = () => {
             </div>
 
             <div className="divide-y">
-              {companies.length === 0 ? (
+              {isLoading ? (
+                // 1. 로딩 중일 때 스켈레톤 행 표시
+                Array.from({ length: pageSize }).map((_, index) => (
+                  <CompanySkeletonRow key={index} />
+                ))
+              ) : companies.length === 0 ? (
+                // 2. 로딩 완료 및 데이터 없음
                 <div className="p-8 text-center text-muted-foreground">
                   회사가 없습니다.
                 </div>
               ) : (
+                // 3. 로딩 완료 및 데이터 있음
                 companies.map((company) => {
                   const isDeleted =
                     company.deletedAt != null;
@@ -193,9 +213,8 @@ const Companies = () => {
                   return (
                     <div
                       key={company.id}
-                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
-                        isDeleted ? "opacity-60" : ""
-                      }`}
+                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${isDeleted ? "opacity-60" : ""
+                        }`}
                       style={{ gridTemplateColumns: '1fr 1fr 120px 2fr 100px' }}
                       onClick={() =>
                         navigate(
@@ -203,6 +222,7 @@ const Companies = () => {
                         )
                       }
                     >
+                      {/* 실제 데이터 표시 (로딩 중이 아니므로 안전) */}
                       <div className="font-medium">
                         {company.name}
                         {isDeleted && (
@@ -220,7 +240,7 @@ const Companies = () => {
                         {company.companyType ? (
                           <Badge variant="outline">
                             {company.companyType ===
-                            "AGENCY"
+                              "AGENCY"
                               ? "에이전시"
                               : "고객사"}
                           </Badge>
@@ -256,7 +276,7 @@ const Companies = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={currentPage === 0}
+                  disabled={isLoading || currentPage === 0}
                   onClick={() =>
                     setCurrentPage((p) =>
                       Math.max(0, p - 1)
@@ -266,15 +286,21 @@ const Companies = () => {
                   이전
                 </Button>
 
-                <span className="text-sm text-muted-foreground">
-                  {currentPage + 1} / {totalPages} 페이지
-                </span>
+                {isLoading ? (
+                  // 로딩 중 페이지 정보 스켈레톤
+                  <Skeleton className="h-5 w-24" />
+                ) : (
+                  // 로딩 완료 후 실제 페이지 정보
+                  <span className="text-sm text-muted-foreground">
+                    {currentPage + 1} / {totalPages} 페이지
+                  </span>
+                )}
 
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={
-                    currentPage >= totalPages - 1
+                    isLoading || currentPage >= totalPages - 1
                   }
                   onClick={() =>
                     setCurrentPage((p) =>
