@@ -187,6 +187,10 @@ export default function ApprovalDetail() {
     setLocalStatus(null);
     setHasEditedAfterChangeRequest(false);
   }, [approval?.id]);
+  const hasEditedOnce = useMemo(
+    () => Boolean(approval?.updatedAt && approval?.updatedAt !== approval?.createdAt),
+    [approval?.createdAt, approval?.updatedAt]
+  );
   const { data: feedbackData } = useQuery({
     queryKey: ["step-request-feedback", requestId],
     queryFn: () => getFeedback(requestId),
@@ -346,10 +350,10 @@ export default function ApprovalDetail() {
   }, [showEditDialog, approval]);
 
   useEffect(() => {
-    if (currentStatus !== "CHANGE_REQUESTED") {
-      setHasEditedAfterChangeRequest(false);
+    if (hasEditedOnce) {
+      setHasEditedAfterChangeRequest(true);
     }
-  }, [currentStatus, approval?.id]);
+  }, [hasEditedOnce]);
 
   if (!approval) {
     return (
@@ -557,7 +561,7 @@ export default function ApprovalDetail() {
               <span className="text-foreground font-medium">{requestedByLabel}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-foreground font-medium">{metaDate}</span>
-              {updatedAtFormatted && (
+              {updatedAtFormatted && hasEditedAfterChangeRequest && approval.status === "REQUESTED" && (
                 <>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-primary font-medium">수정</span>
@@ -637,26 +641,6 @@ export default function ApprovalDetail() {
                   />
                 </div>
               )}
-            </CardContent>
-          </Card>
-        )}
-
-        {feedbackHistory.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-muted-foreground">결정 이력</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {feedbackHistory.map((item, index) => (
-                <div key={`${item.id ?? item.response}-${index}`} className="flex items-start gap-3 text-sm">
-                  <div className="mt-2 h-2 w-2 rounded-full bg-slate-400" />
-                    <div className="flex-1 space-y-0.5">
-                      <div className="font-medium text-foreground">
-                        {formatDateTime(item.decidedAt ?? item.createdAt)} · {feedbackLabelMap[item.response] ?? item.response} · {item.respondedByName || item.respondedBy || "결정자"}
-                      </div>
-                    </div>
-                  </div>
-                ))}
             </CardContent>
           </Card>
         )}
