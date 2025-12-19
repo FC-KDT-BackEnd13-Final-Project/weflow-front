@@ -116,6 +116,8 @@ export default function ApprovalDetail() {
       payload: Partial<Omit<StepRequestResponse, "files" | "links">> & {
         files?: StepAttachmentFileInput[] | null;
         links?: StepAttachmentLinkInput[] | null;
+        keepFileIds?: number[];
+        keepLinkIds?: number[];
       }
     ) => updateStepRequest(requestId, payload),
     onSuccess: () => {
@@ -236,6 +238,9 @@ export default function ApprovalDetail() {
     () => ((feedback?.attachments ?? []) as (AttachmentResponse | string)[]),
     [feedback]
   );
+  console.log("RAW attachments", requestAttachmentItems);
+  console.log("files", requestAttachmentItems.filter((a) => (a as { link?: boolean }).link === false));
+  console.log("links", requestAttachmentItems.filter((a) => (a as { link?: boolean }).link === true));
   const mapAttachmentToUploaded = (file: AttachmentResponse | string, index: number): UploadedAttachment => {
     const attachmentType = typeof file === "string" ? "LINK" : (file as { attachmentType?: string }).attachmentType;
     const pathValue = typeof file === "string" ? undefined : file?.filePath || file?.path;
@@ -260,6 +265,7 @@ export default function ApprovalDetail() {
       fileSize: typeof file === "string" ? undefined : file?.fileSize,
       filePath: isLink ? undefined : pathValue || url || undefined,
       contentType: typeof file === "string" ? undefined : file?.contentType,
+      isNew: false,
     };
   };
   const buildAttachmentPayload = (
@@ -282,6 +288,40 @@ export default function ApprovalDetail() {
       })
       .filter((l) => Boolean(l.url));
     return { files, links };
+  };
+  const buildEditAttachmentPayload = (
+    items: UploadedAttachment[]
+  ): {
+    keepFileIds: number[];
+    keepLinkIds: number[];
+    files?: StepAttachmentFileInput[];
+    links?: StepAttachmentLinkInput[];
+  } => {
+    const keepFileIds = items
+      .filter((a) => !a.isLink && !a.isNew && typeof a.id === "number")
+      .map((a) => Number(a.id));
+    const keepLinkIds = items
+      .filter((a) => a.isLink && !a.isNew && typeof a.id === "number")
+      .map((a) => Number(a.id));
+
+    const files = items
+      .filter((a) => !a.isLink && (a.isNew || typeof a.id !== "number"))
+      .map((a) => ({
+        fileName: a.fileName || a.name,
+        fileSize: a.fileSize ?? 0,
+        filePath: a.filePath || "",
+        contentType: a.contentType || "application/octet-stream",
+      }))
+      .filter((f) => f.fileName && f.filePath);
+    const links = items
+      .filter((a) => a.isLink && (a.isNew || typeof a.id !== "number"))
+      .map((a) => {
+        const url = (a.url || a.name || "").trim();
+        return { url };
+      })
+      .filter((l) => Boolean(l.url));
+
+    return { keepFileIds, keepLinkIds, files, links };
   };
   const me = meData?.data as MeResponse | undefined;
 
@@ -437,10 +477,12 @@ export default function ApprovalDetail() {
       toast({ title: "제목을 입력하세요.", variant: "destructive" });
       return;
     }
-    const { files, links } = buildAttachmentPayload(editAttachments);
+    const { keepFileIds, keepLinkIds, files, links } = buildEditAttachmentPayload(editAttachments);
     updateRequestMutation.mutate({
       title: editTitle,
       description: editDescription,
+      keepFileIds,
+      keepLinkIds,
       files,
       links,
     });

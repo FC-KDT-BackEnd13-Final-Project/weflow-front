@@ -12,6 +12,8 @@ import {
 type StepRequestPayload = Partial<Omit<StepRequestResponse, "files" | "links">> & {
   files?: StepAttachmentFileInput[] | null;
   links?: StepAttachmentLinkInput[] | null;
+  keepFileIds?: number[];
+  keepLinkIds?: number[];
 };
 
 export async function createStepRequest(stepId: number, body: StepRequestPayload): Promise<StepApiResponse<StepRequestResponse>> {

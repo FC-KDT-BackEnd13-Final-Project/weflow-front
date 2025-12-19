@@ -50,11 +50,12 @@ const normalizeAttachments = (items: AttachmentInputItem[]) => {
             (item as StepAttachmentResponse)?.originalName ||
             pathValue ||
             (item as StepAttachmentResponse | CommonAttachmentResponse)?.url;
-      const isLinkType =
-        attachmentType === "LINK" ||
-        Boolean((item as StepAttachmentResponse).isLink) ||
-        Boolean((item as StepAttachmentResponse | CommonAttachmentResponse).url && !(item as StepAttachmentResponse | CommonAttachmentResponse).filePath);
-      const isLink = typeof item === "string" || isLinkType;
+      const isLink =
+        typeof item === "string"
+          ? true
+          : (item as { link?: boolean }).link ??
+            (item as { isLink?: boolean }).isLink ??
+            false;
       const id = typeof item === "string" ? `link-${idx}` : (item as StepAttachmentResponse | CommonAttachmentResponse)?.id ?? `${attachmentType ?? "att"}-${idx}`;
       const key = isLink ? `link-${url || baseName}` : `file-${pathValue || url || baseName}`;
       const size =
