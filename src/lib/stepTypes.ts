@@ -66,6 +66,7 @@ export interface StepRequestResponse {
   attachments?: AttachmentResponse[]; // 백엔드 응답이 attachments로 내려오는 경우 대비
   links?: (AttachmentResponse | string)[];
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface StepRequestSummaryResponse {
@@ -74,6 +75,7 @@ export interface StepRequestSummaryResponse {
   status: StepRequestStatus;
   createdAt: string;
   decidedAt?: string;
+   updatedAt?: string;
   stepId: number;
   stepTitle?: string;
   projectId?: number;

@@ -16,6 +16,7 @@ import { getPosts } from "@/apis/postApi";
 import { ProjectPhase, type PageInfo, type PostItem } from "@/types/post";
 import { getStepsByProject } from "@/apis/stepApi";
 import type { StepResponse } from "@/types/step";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 interface BoardPost {
   id: number;
@@ -50,6 +51,40 @@ const projectPhaseReverseMap: Record<string, string> = {
   "MAINTENANCE": "유지보수",
 };
 
+// 게시글 항목 스켈레톤 컴포넌트 정의
+const BoardPostSkeleton = () => (
+  <Card className="border border-border/70 rounded-xl">
+    <CardContent className="p-4 space-y-2">
+      <div className="flex items-start gap-3">
+        {/* 진행/완료 배지 */}
+        <Skeleton className="h-6 w-16 rounded-full" />
+
+        {/* 제목/작성자 */}
+        <div className="flex flex-1 flex-col gap-1">
+          <Skeleton className="h-5 w-3/4" />
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+            <Skeleton className="h-4 w-12" />
+            <span className="text-muted-foreground">•</span>
+            <Skeleton className="h-4 w-16" />
+            <span className="text-muted-foreground">•</span>
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+        </div>
+
+        {/* 승인 요청 / 첨부파일 / 댓글 */}
+        <div className="flex flex-col gap-2 items-end">
+          <Skeleton className="h-6 w-20 rounded-full" />
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Skeleton className="h-4 w-6" />
+            <Skeleton className="h-4 w-6" />
+          </div>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+
 export default function Board() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -70,6 +105,7 @@ export default function Board() {
   const [isLoading, setIsLoading] = useState(false);
   const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "Open" | "Closed">("전체");
   const [steps, setSteps] = useState<StepResponse[]>([]);
+  const [isStepsLoading, setIsStepsLoading] = useState(true); // 단계 로딩 상태 추가
 
   // 선택된 phase에 해당하는 step만 필터링
   const activePhaseEnum = projectPhaseEnumMap[activeProjectPhase];
@@ -85,12 +121,14 @@ export default function Board() {
   useEffect(() => {
     const fetchSteps = async () => {
       if (!id) return;
-
+      setIsStepsLoading(true);
       try {
         const response = await getStepsByProject(Number(id));
         setSteps(response.steps);
       } catch (error) {
         console.error("Step 목록 조회 실패:", error);
+      } finally {
+        setIsStepsLoading(false);
       }
     };
 
@@ -99,7 +137,7 @@ export default function Board() {
 
   // 뒤로가기 시 필터 상태 복원 (steps 로드 완료 후 실행)
   useEffect(() => {
-    if (steps.length === 0) return; // steps가 로드될 때까지 대기
+    if (isStepsLoading) return; // steps가 로드될 때까지 대기
 
     const locationState = location.state as {
       restorePhase?: string;
@@ -121,7 +159,7 @@ export default function Board() {
     if (locationState) {
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, steps]);
+  }, [location.state, isStepsLoading]); // steps 대신 isStepsLoading 사용
 
   // 백엔드에서 게시글 목록 가져오기
   useEffect(() => {
@@ -232,17 +270,28 @@ export default function Board() {
     navigate(`/project/${id}/board/${postId}`);
   };
 
+  // 필터링된 게시글 (클라이언트 사이드 필터링)
+  const clientFilteredPosts = posts.filter((post) => {
+    if (postStatusFilter === "진행중" && post.status !== "progress") return false;
+    if (postStatusFilter === "완료" && post.status !== "complete") return false;
+    return true;
+  });
+
   return (
     <ProjectLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">게시판</h1>
-          <Button className="gap-2" onClick={() => navigate(`/project/${id}/board/new`, {
-            state: {
-              preSelectedPhase: activeProjectPhase !== "전체" ? projectPhaseEnumMap[activeProjectPhase] : undefined,
-              preSelectedStepId: selectedStepId ?? undefined,
-            }
-          })}>
+          <Button
+            className="gap-2"
+            onClick={() => navigate(`/project/${id}/board/new`, {
+              state: {
+                preSelectedPhase: activeProjectPhase !== "전체" ? projectPhaseEnumMap[activeProjectPhase] : undefined,
+                preSelectedStepId: selectedStepId ?? undefined,
+              }
+            })}
+            disabled={isLoading} // 로딩 중 작성 버튼 비활성화
+          >
             <Plus className="h-4 w-4" />
             게시글 작성
           </Button>
@@ -261,6 +310,7 @@ export default function Board() {
                       ? "bg-primary text-white border-primary"
                       : "text-muted-foreground border-input hover:text-foreground"
                   )}
+                  disabled={isLoading} // 로딩 중 필터 비활성화
                 >
                   {phase}
                 </button>
@@ -272,7 +322,14 @@ export default function Board() {
 
             <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
               <div className="flex flex-wrap gap-3">
-                {availableSteps.map((stepOption) => {
+                {isStepsLoading ? (
+                  // 단계 로딩 중 스켈레톤
+                  <>
+                    <Skeleton className="h-5 w-12" />
+                    <Skeleton className="h-5 w-16" />
+                    <Skeleton className="h-5 w-14" />
+                  </>
+                ) : availableSteps.map((stepOption) => {
                   const isSelected = selectedStepId === stepOption.id || (stepOption.id === null && selectedStepId === null);
                   return (
                     <button
@@ -282,6 +339,7 @@ export default function Board() {
                         "pb-1 border-b-2 transition-colors",
                         isSelected ? "text-primary border-primary font-semibold" : "text-muted-foreground border-transparent hover:text-foreground"
                       )}
+                      disabled={isLoading}
                     >
                       {stepOption.name}
                     </button>
@@ -294,6 +352,7 @@ export default function Board() {
                   setPostStatusFilter(value);
                   setCurrentPage(1);
                 }}
+                disabled={isLoading}
               >
                 <SelectTrigger className="w-[140px] h-10">
                   <SelectValue placeholder="상태 선택" />
@@ -309,11 +368,10 @@ export default function Board() {
             {/* 게시글 목록 */}
             <div className="space-y-2">
               {isLoading && (
-                <Card>
-                  <CardContent className="p-12 text-center">
-                    <p className="text-muted-foreground">게시글을 불러오는 중...</p>
-                  </CardContent>
-                </Card>
+                // 로딩 중일 때 항목 스켈레톤 표시
+                Array.from({ length: pageSize }).map((_, i) => (
+                  <BoardPostSkeleton key={i} />
+                ))
               )}
 
               {!isLoading && posts.map((post) => (
@@ -401,27 +459,39 @@ export default function Board() {
 
             {/* 페이지네이션 */}
             <div className="flex items-center justify-between pt-4 border-t">
-              <p className="text-sm text-muted-foreground">
-                총 {pageInfo.totalElements}건 · {pageInfo.currentPage + 1}/{pageInfo.totalPages || 1} 페이지
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={!pageInfo.hasPrevious || currentPage === 1}
-                >
-                  이전
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={!pageInfo.hasNext || currentPage >= (pageInfo.totalPages || 1)}
-                >
-                  다음
-                </Button>
-              </div>
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-4 w-48" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-9 w-16" />
+                    <Skeleton className="h-9 w-16" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    총 {pageInfo.totalElements}건 · {pageInfo.currentPage + 1}/{pageInfo.totalPages || 1} 페이지
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={!pageInfo.hasPrevious || currentPage === 1}
+                    >
+                      이전
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={!pageInfo.hasNext || currentPage >= (pageInfo.totalPages || 1)}
+                    >
+                      다음
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
 
           </CardContent>

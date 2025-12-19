@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,25 @@ import { Badge } from "@/components/ui/badge";
 import { adminApi } from "@/apis/admin";
 import { useToast } from "@/hooks/use-toast";
 
+// =========================================================================
+// [스켈레톤 컴포넌트 정의]
+// =========================================================================
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse bg-gray-200 rounded-md dark:bg-gray-700 ${className}`} />
+);
+
+// 회원 목록 테이블 행 스켈레톤
+const MemberSkeletonRow = () => (
+  // 테이블의 gridTemplateColumns와 동일한 스타일 적용
+  <div className="grid gap-4 p-4" style={{ gridTemplateColumns: '1fr 2fr 120px 1fr 100px' }}>
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+    <Skeleton className="h-5 w-full" />
+  </div>
+);
+
 const roleLabels: Record<string, string> = {
   SYSTEM_ADMIN: "시스템 관리자",
   AGENCY: "에이전시",
@@ -37,6 +56,7 @@ const Members = () => {
 
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [totalElements, setTotalElements] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // 로딩 상태 추가
 
   const [roleFilter, setRoleFilter] = useState("전체");
   const [statusFilter, setStatusFilter] = useState("전체");
@@ -57,6 +77,7 @@ const Members = () => {
   ========================= */
   useEffect(() => {
     const fetchMembers = async () => {
+      setIsLoading(true); // 로딩 시작
       try {
         const response = await adminApi.getUsers(
           currentPage,
@@ -79,6 +100,8 @@ const Members = () => {
             error.response?.data?.message ||
             "회원 목록을 불러올 수 없습니다.",
         });
+      } finally {
+        setIsLoading(false); // 로딩 종료
       }
     };
 
@@ -115,6 +138,7 @@ const Members = () => {
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium">활성 상태</label>
+              {/* 필터는 로딩 중에도 변경 가능하도록 유지 */}
               <Select
                 value={statusFilter}
                 onValueChange={(v) => {
@@ -167,6 +191,7 @@ const Members = () => {
 
           {/* 테이블 */}
           <div className="border rounded-lg overflow-hidden">
+            {/* 테이블 헤더 */}
             <div className="grid gap-4 bg-muted p-4 font-medium text-sm" style={{ gridTemplateColumns: '1fr 2fr 120px 1fr 100px' }}>
               <div>이름</div>
               <div>이메일</div>
@@ -176,20 +201,26 @@ const Members = () => {
             </div>
 
             <div className="divide-y">
-              {members.length === 0 ? (
+              {isLoading ? (
+                // 로딩 중일 때 스켈레톤 행 표시
+                Array.from({ length: pageSize }).map((_, index) => (
+                  <MemberSkeletonRow key={index} />
+                ))
+              ) : members.length === 0 ? (
+                // 로딩 완료 및 데이터 없음
                 <div className="p-8 text-center text-muted-foreground">
                   회원이 없습니다.
                 </div>
               ) : (
+                // 로딩 완료 및 데이터 있음
                 members.map((member) => {
                   const isDeleted = member.deletedAt != null;
 
                   return (
                     <div
                       key={member.id}
-                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${
-                        isDeleted ? "opacity-60" : ""
-                      }`}
+                      className={`grid gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer ${isDeleted ? "opacity-60" : ""
+                        }`}
                       style={{ gridTemplateColumns: '1fr 2fr 120px 1fr 100px' }}
                       onClick={() =>
                         navigate(`/admin/members/${member.id}`, {
@@ -220,8 +251,8 @@ const Members = () => {
                             member.status === "ACTIVE"
                               ? "default"
                               : member.status === "DELETED"
-                              ? "destructive"
-                              : "secondary"
+                                ? "destructive"
+                                : "secondary"
                           }
                         >
                           {member.status}
@@ -236,34 +267,40 @@ const Members = () => {
 
           {/* 페이지네이션 */}
           {typeof totalPages === "number" && totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === 0}
-                  onClick={() =>
-                    setCurrentPage((p) => Math.max(0, p - 1))
-                  }
-                >
-                  이전
-                </Button>
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || currentPage === 0} // 로딩 중 비활성화
+                onClick={() =>
+                  setCurrentPage((p) => Math.max(0, p - 1))
+                }
+              >
+                이전
+              </Button>
+              {isLoading ? (
+                // 로딩 중 페이지 정보 스켈레톤
+                <Skeleton className="h-5 w-24" />
+              ) : (
+                // 로딩 완료 후 실제 페이지 정보
                 <span className="text-sm text-muted-foreground">
                   {currentPage + 1} / {totalPages} 페이지
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage >= totalPages - 1}
-                  onClick={() =>
-                    setCurrentPage((p) =>
-                      Math.min(totalPages - 1, p + 1)
-                    )
-                  }
-                >
-                  다음
-                </Button>
-              </div>
-            )}
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || currentPage >= totalPages - 1} // 로딩 중 비활성화
+                onClick={() =>
+                  setCurrentPage((p) =>
+                    Math.min(totalPages - 1, p + 1)
+                  )
+                }
+              >
+                다음
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
