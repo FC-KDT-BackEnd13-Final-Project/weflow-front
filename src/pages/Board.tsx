@@ -270,13 +270,6 @@ export default function Board() {
     navigate(`/project/${id}/board/${postId}`);
   };
 
-  // 필터링된 게시글 (클라이언트 사이드 필터링)
-  const clientFilteredPosts = posts.filter((post) => {
-    if (postStatusFilter === "진행중" && post.status !== "progress") return false;
-    if (postStatusFilter === "완료" && post.status !== "complete") return false;
-    return true;
-  });
-
   return (
     <ProjectLayout>
       <div className="space-y-6">
