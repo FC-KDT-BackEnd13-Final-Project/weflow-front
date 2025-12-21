@@ -41,6 +41,7 @@ export default function Settings() {
     role: "",
     email: "",
     isEmailNotificationEnabled: false,
+    isSmsNotificationEnabled: false,
   });
   const [formData, setFormData] = useState(profile);
   const [isDirty, setIsDirty] = useState(false);
@@ -59,6 +60,7 @@ export default function Settings() {
             role: userResponse.data.role,
             email: userResponse.data.email,
             isEmailNotificationEnabled: userResponse.data.isEmailNotificationEnabled ?? false,
+            isSmsNotificationEnabled: userResponse.data.isSmsNotificationEnabled ?? false,
           };
           setProfile(initialProfile);
           setFormData(initialProfile);
@@ -101,6 +103,11 @@ export default function Settings() {
     setIsDirty(true);
   };
 
+  const handleSmsNotificationChange = (checked: boolean) => {
+    setFormData((prev) => ({ ...prev, isSmsNotificationEnabled: checked }));
+    setIsDirty(true);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSaving(true);
@@ -110,6 +117,7 @@ export default function Settings() {
         name: formData.name,
         phoneNumber: formData.phone,
         isEmailNotificationEnabled: formData.isEmailNotificationEnabled,
+        isSmsNotificationEnabled: formData.isSmsNotificationEnabled,
       });
 
       if (response.success) {
@@ -119,6 +127,7 @@ export default function Settings() {
           role: formData.role,
           email: response.data.email,
           isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
+          isSmsNotificationEnabled: response.data.isSmsNotificationEnabled,
         };
         setProfile(updatedProfile);
         setFormData(updatedProfile);
@@ -128,6 +137,7 @@ export default function Settings() {
           name: response.data.name,
           phoneNumber: response.data.phoneNumber,
           isEmailNotificationEnabled: response.data.isEmailNotificationEnabled,
+          isSmsNotificationEnabled: response.data.isSmsNotificationEnabled,
         }));
 
         toast({
@@ -255,6 +265,22 @@ export default function Settings() {
                   />
                 </div>
 
+                <div className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="sms-notification" className="text-base">
+                      중요 알림 SMS 수신
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      승인 요청, 비밀번호 변경 등 중요한 알림을 문자로 받습니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="sms-notification"
+                    checked={formData.isSmsNotificationEnabled}
+                    onCheckedChange={handleSmsNotificationChange}
+                  />
+                </div>
+
                 <div className="flex items-center justify-end gap-3">
                   <Button type="button" variant="outline" onClick={handleReset} disabled={isSaving}>
                     취소
@@ -286,11 +312,17 @@ export default function Settings() {
                     <p className="text-base font-medium mt-1">{profile.email}</p>
                   </div>
                 </div>
-                <div className="pt-4 border-t">
+                <div className="pt-4 border-t space-y-2">
                   <div className="flex items-center gap-2">
                     <p className="text-sm text-muted-foreground">중요 알림 이메일 수신</p>
                     <Badge variant={profile.isEmailNotificationEnabled ? "default" : "secondary"}>
                       {profile.isEmailNotificationEnabled ? "ON" : "OFF"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">중요 알림 SMS 수신</p>
+                    <Badge variant={profile.isSmsNotificationEnabled ? "default" : "secondary"}>
+                      {profile.isSmsNotificationEnabled ? "ON" : "OFF"}
                     </Badge>
                   </div>
                 </div>

@@ -1,39 +1,13 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { notificationsApi } from "@/apis/notifications";
 import { clearCurrentUserCache, useCurrentUser } from "@/hooks/useCurrentUser";
+import { useNotification } from "@/contexts/NotificationContext";
 
 export function Topbar() {
   const navigate = useNavigate();
   const { user, isLoading } = useCurrentUser();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchUnreadCount = async () => {
-      try {
-        const response = await notificationsApi.getUnreadCount();
-        if (!mounted) return;
-        if (response.success) {
-          setUnreadCount(response.data);
-        }
-      } catch (error) {
-        if (mounted) {
-          console.error("❌ 읽지 않은 알림 개수 조회 실패:", error);
-        }
-      }
-    };
-
-    fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  const { unreadCount } = useNotification();
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken");
