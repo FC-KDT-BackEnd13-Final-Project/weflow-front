@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Paperclip } from "lucide-react";
 
 import {
   DndContext,
@@ -66,6 +66,8 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { adminApi } from "@/apis/admin";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import {
   Popover as CmdPopover,
   PopoverContent as CmdPopoverContent,
@@ -79,8 +81,14 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import type { Company } from "@/apis/admin";
-import { uploadFile } from "@/apis/attachmentApi";
-import { TargetType } from "@/types/attachment";
+import {
+  uploadFile,
+  getAttachments,
+  deleteAttachment,
+  getAttachment,
+} from "@/apis/attachmentApi";
+import type { AttachmentResponse } from "@/apis/attachmentApi";
+import { AttachmentType, TargetType } from "@/types/attachment";
 
 // ----------------------------------------------
 // SortableStage (ProjectCreate와 동일)
@@ -156,6 +164,7 @@ const AdminProjectEdit = () => {
   const projectId = Number(id);
 
   const navigate = useNavigate();
+  const { toast } = useToast();
   const sensors = useSensors(useSensor(PointerSensor));
 
   const [loading, setLoading] = useState(true);
@@ -174,9 +183,10 @@ const AdminProjectEdit = () => {
   const [phase, setPhase] = useState<ProjectPhase>("CONTRACT");
 
   const [contractAmount, setContractAmount] = useState("");
-  const [contractFileUrl, setContractFileUrl] = useState("");
-  const [contractFileName, setContractFileName] = useState("");
-  const [contractUploading, setContractUploading] = useState(false);
+  const [existingContractAttachment, setExistingContractAttachment] =
+    useState<AttachmentResponse | null>(null);
+  const [newContractFile, setNewContractFile] = useState<File | null>(null);
+  const [contractDeleting, setContractDeleting] = useState(false);
 
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -257,18 +267,33 @@ const AdminProjectEdit = () => {
         setContractAmount(
           detail.contractAmount ? String(detail.contractAmount) : ""
         );
-        setContractFileUrl(detail.contractFileUrl || "");
-        setContractFileName(
-          detail.contractFileUrl
-            ? detail.contractFileUrl.split("/").pop() ?? ""
-            : ""
-        );
 
         setStartDate(detail.startDate ? new Date(detail.startDate) : null);
         setEndDate(
           detail.endDateExpected ? new Date(detail.endDateExpected) : null
         );
         setActualEndDate(detail.endDate ? new Date(detail.endDate) : null);
+
+        try {
+          const attachments = await getAttachments(
+            TargetType.PROJECT_CONTRACT,
+            projectId
+          );
+          let fileAttachment = attachments.find(
+            (a) => a.attachmentType === AttachmentType.FILE
+          );
+
+          if (!fileAttachment && detail.contractAttachmentId) {
+            const fallback = await getAttachment(detail.contractAttachmentId);
+            if (fallback.attachmentType === AttachmentType.FILE) {
+              fileAttachment = fallback;
+            }
+          }
+
+          setExistingContractAttachment(fileAttachment ?? null);
+        } catch (err) {
+          console.error("계약서 첨부파일 조회 실패", err);
+        }
 
         // 멤버 조회: 개발사 전체 + 해당 고객사만
         const usersRes = await fetchAllUsers({
@@ -313,18 +338,18 @@ const AdminProjectEdit = () => {
   // -------------------------------
   // 단계 추가/삭제/드래그
   // -------------------------------
-const handleAddStage = () => {
-  if (!newStageName.trim()) return;
+  const handleAddStage = () => {
+    if (!newStageName.trim()) return;
 
-  setStages([
-    ...stages,
-    {
-      key: `stage-${Date.now()}-${Math.random()}`,
-      name: newStageName,
-      order: stages.length + 1,
-      phase: newStagePhase,
-    },
-  ]);
+    setStages([
+      ...stages,
+      {
+        key: `stage-${Date.now()}-${Math.random()}`,
+        name: newStageName,
+        order: stages.length + 1,
+        phase: newStagePhase,
+      },
+    ]);
 
     setNewStageName("");
     setNewStagePhase("CONTRACT");
@@ -353,6 +378,39 @@ const handleAddStage = () => {
     }));
 
     setStages(reordered);
+  };
+
+  const handleStatusChange = (next: ProjectStatus) => {
+    if (status !== "CLOSED" && next === "CLOSED") {
+      setActualEndDate(new Date());
+    }
+    setStatus(next);
+  };
+
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    setNewContractFile(file);
+    if (e.target) e.target.value = "";
+  };
+
+  const handleRemoveExistingContract = async () => {
+    if (!existingContractAttachment) return;
+    try {
+      setContractDeleting(true);
+      await deleteAttachment(existingContractAttachment.id);
+      setExistingContractAttachment(null);
+      toast({ title: "계약서가 삭제되었습니다." });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "삭제 실패",
+        description: "계약서 파일 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setContractDeleting(false);
+    }
   };
 
   // -------------------------------
@@ -431,6 +489,22 @@ const handleAddStage = () => {
     try {
       const orderedStages = [...stages].sort((a, b) => a.order - b.order);
 
+      let uploadedContract: AttachmentResponse | null = null;
+
+      if (newContractFile) {
+        try {
+          uploadedContract = await uploadFile(
+            newContractFile,
+            TargetType.PROJECT_CONTRACT,
+            projectId
+          );
+        } catch (err) {
+          console.error(err);
+          setSubmitError("계약서 업로드에 실패했습니다.");
+          return;
+        }
+      }
+
       await updateAdminProject(projectId, {
         name,
         description,
@@ -438,7 +512,10 @@ const handleAddStage = () => {
         phase,
         customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
         contractAmount: contractAmount ? Number(contractAmount) : null,
-        contractFileUrl: contractFileUrl || null,
+        contractFileUrl:
+          uploadedContract?.filePath ??
+          existingContractAttachment?.filePath ??
+          null,
         startDate: toLocal(startDate),
         endDateExpected: toLocal(endDate),
         endDate: toLocal(actualEndDate),
@@ -448,6 +525,14 @@ const handleAddStage = () => {
           orderIndex: idx + 1,
         })),
       });
+
+      if (newContractFile && existingContractAttachment?.id) {
+        try {
+          await deleteAttachment(existingContractAttachment.id);
+        } catch (err) {
+          console.error("기존 계약서 삭제 실패", err);
+        }
+      }
 
       const current = new Set(members.map((m) => m.id));
 
@@ -552,7 +637,7 @@ const handleAddStage = () => {
               <Label>상태</Label>
               <Select
                 value={status}
-                onValueChange={(v) => setStatus(v as ProjectStatus)}
+                onValueChange={(v) => handleStatusChange(v as ProjectStatus)}
               >
                 <SelectTrigger ref={statusButtonRef}>
                   <SelectValue />
@@ -590,73 +675,90 @@ const handleAddStage = () => {
 
           {/* 계약서 파일 첨부 */}
           <div className="space-y-2">
-            <Label>계약서 파일</Label>
-            <div className="rounded-xl border bg-muted/20 px-4 py-3 flex items-center gap-3">
-              <Input
-                ref={contractFileInputRef}
-                type="file"
-                accept="application/pdf, image/*"
-                disabled={contractUploading}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  if (!file) return;
-                  try {
-                    setContractUploading(true);
-                    const uploaded = await uploadFile(
-                      file,
-                      TargetType.PROJECT_CONTRACT,
-                      projectId
-                    );
-                    setContractFileName(uploaded.fileName ?? file.name);
-                    setContractFileUrl(uploaded.filePath ?? "");
-                  } catch (err) {
-                    console.error(err);
-                  } finally {
-                    setContractUploading(false);
-                    if (e.target) e.target.value = "";
-                  }
-                }}
-                className="hidden"
-                id="contract-file"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => contractFileInputRef.current?.click()}
-                className="gap-2 w-[150px]"
-                disabled={contractUploading}
-              >
-                <Plus className="h-4 w-4" />
-                파일 선택
-              </Button>
-
-              <span className="text-sm text-muted-foreground">
-                {contractFileName
-                  ? "업로드됨"
-                  : contractUploading
-                  ? "업로드 중..."
-                  : "선택된 파일 없음"}
-              </span>
-
-              <div className="flex-1 flex items-center text-sm text-muted-foreground gap-2 min-w-0">
-                <span className="flex-1 border-b border-muted-foreground/40" />
-                <span className="truncate max-w-[240px]">
-                  {contractFileName || ""}
+            <Label>계약서 파일 (1개만 선택 가능)</Label>
+            <div className="rounded-xl border bg-muted/20 px-4 py-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  ref={contractFileInputRef}
+                  type="file"
+                  accept="application/pdf, image/*"
+                  onChange={handleContractFileChange}
+                  className="hidden"
+                  id="contract-file"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => contractFileInputRef.current?.click()}
+                  className="gap-2 w-[150px]"
+                >
+                  <Plus className="h-4 w-4" />
+                  파일 선택
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {newContractFile
+                    ? "새 계약서가 선택되었습니다."
+                    : existingContractAttachment
+                    ? "기존 계약서가 등록되어 있습니다."
+                    : "선택된 파일 없음"}
                 </span>
               </div>
 
-              {contractFileName && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setContractFileName("");
-                    setContractFileUrl("");
-                  }}
-                >
-                  삭제
-                </Button>
+              {newContractFile && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Paperclip className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm truncate">
+                      {newContractFile.name}
+                    </span>
+                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                      {(newContractFile.size / 1024).toFixed(1)} KB
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={() => setNewContractFile(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {!newContractFile && existingContractAttachment && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Paperclip className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm truncate">
+                      {existingContractAttachment.fileName ??
+                        existingContractAttachment.filePath ??
+                        "계약서"}
+                    </span>
+                    {existingContractAttachment.fileSize && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs flex-shrink-0"
+                      >
+                        {(existingContractAttachment.fileSize / 1024).toFixed(
+                          1
+                        )}{" "}
+                        KB
+                      </Badge>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    disabled={contractDeleting}
+                    onClick={handleRemoveExistingContract}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               )}
             </div>
           </div>

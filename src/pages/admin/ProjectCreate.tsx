@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Paperclip } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 import {
@@ -20,6 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 import {
   createAdminProject,
+  updateAdminProject,
   addAdminProjectMember,
   ProjectStatus,
   ProjectPhase,
@@ -40,6 +41,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -148,27 +150,22 @@ const ProjectCreate = () => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [customerCompanyId, setCustomerCompanyId] = useState("");
-  const [status, setStatus] = useState<ProjectStatus>("OPEN");
+  const [status] = useState<ProjectStatus>("OPEN");
   const [phase, setPhase] = useState<ProjectPhase>("CONTRACT");
 
   const [contractAmount, setContractAmount] = useState("");
-  const [contractFileName, setContractFileName] = useState("");
-  const [contractFileUrl, setContractFileUrl] = useState("");
-  const [contractUploading, setContractUploading] = useState(false);
+  const [contractFile, setContractFile] = useState<File | null>(null);
 
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
-  const [actualEndDate, setActualEndDate] = useState<Date | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companySelectOpen, setCompanySelectOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const nameRef = useRef<HTMLDivElement | null>(null);
   const companyRef = useRef<HTMLDivElement | null>(null);
-  const statusRef = useRef<HTMLDivElement | null>(null);
   const dateRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const companyButtonRef = useRef<HTMLButtonElement | null>(null);
-  const statusButtonRef = useRef<HTMLButtonElement | null>(null);
   const startDateButtonRef = useRef<HTMLButtonElement | null>(null);
   const endDateButtonRef = useRef<HTMLButtonElement | null>(null);
   const contractFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -194,12 +191,6 @@ const ProjectCreate = () => {
       toast({ title: "고객사를 선택하세요.", variant: "destructive" });
       scrollToRef(companyRef);
       companyButtonRef.current?.focus();
-      return false;
-    }
-    if (!status) {
-      toast({ title: "상태를 선택하세요.", variant: "destructive" });
-      scrollToRef(statusRef);
-      statusButtonRef.current?.focus();
       return false;
     }
     if (!startDate) {
@@ -332,31 +323,11 @@ const ProjectCreate = () => {
     setStages(reordered);
   };
 
-  const handleContractFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
-
-    try {
-      setContractUploading(true);
-      // 프로젝트 생성 전이라 targetId는 임시로 0 사용
-      // 백엔드가 지원하는 enum 내에서 저장하기 위해 SUPPORT 타입으로 업로드
-      const uploaded = await uploadFile(file, TargetType.PROJECT_CONTRACT, 0);
-      setContractFileName(uploaded.fileName ?? file.name);
-      setContractFileUrl(uploaded.filePath ?? "");
-      toast({ title: "계약서가 업로드되었습니다." });
-    } catch (err) {
-      console.error(err);
-      toast({
-        title: "업로드 실패",
-        description: "계약서 파일 업로드 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setContractUploading(false);
-      if (e.target) e.target.value = "";
-    }
+    setContractFile(file);
+    if (e.target) e.target.value = "";
   };
 
   // ---------------------------
@@ -378,7 +349,6 @@ const ProjectCreate = () => {
         startDate: toLocalDateTime(startDate),
         endDateExpected: toLocalDateTime(endDate),
         contractAmount: contractAmount ? Number(contractAmount) : null,
-        contractFileUrl: contractFileUrl || null,
         steps: orderedStages.map((stage, idx) => ({
           title: stage.name,
           phase: stage.phase,
@@ -388,6 +358,29 @@ const ProjectCreate = () => {
 
       const project = await createAdminProject(payload);
       const projectId = project.id;
+
+      if (contractFile) {
+        try {
+          const uploaded = await uploadFile(
+            contractFile,
+            TargetType.PROJECT_CONTRACT,
+            projectId
+          );
+
+          // 계약서 경로를 기록하기 위해 한번 더 업데이트
+          await updateAdminProject(projectId, {
+            ...payload,
+            contractFileUrl: uploaded.filePath ?? null,
+          });
+        } catch (err) {
+          console.error(err);
+          toast({
+            title: "계약서 업로드 실패",
+            description: "프로젝트는 생성되었지만 계약서 업로드에 실패했습니다.",
+            variant: "destructive",
+          });
+        }
+      }
 
       await Promise.all(
         members.map((m) =>
@@ -491,22 +484,6 @@ const ProjectCreate = () => {
               )}
             </div>
 
-            <div className="space-y-2" ref={statusRef}>
-              <Label>상태</Label>
-              <Select
-                value={status}
-                onValueChange={(v) => setStatus(v as ProjectStatus)}
-              >
-                <SelectTrigger ref={statusButtonRef}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="OPEN">활성</SelectItem>
-                  <SelectItem value="CLOSED">종료</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2">
               <Label>프로젝트 단계</Label>
               <Select
@@ -537,55 +514,50 @@ const ProjectCreate = () => {
 
           {/* 계약서 파일 첨부 */}
           <div className="space-y-2">
-            <Label>계약서 파일</Label>
-            <div className="rounded-xl border bg-muted/20 px-4 py-3 flex items-center gap-3">
-              <Input
-                ref={contractFileInputRef}
-                type="file"
-                accept="application/pdf, image/*"
-                disabled={contractUploading}
-                onChange={handleContractFileChange}
-                className="hidden"
-                id="contract-file"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => contractFileInputRef.current?.click()}
-                className="gap-2 w-[150px]"
-                disabled={contractUploading}
-              >
-                <Plus className="h-4 w-4" />
-                파일 선택
-              </Button>
-
-              <span className="text-sm text-muted-foreground">
-                {contractFileName
-                  ? "업로드됨"
-                  : contractUploading
-                  ? "업로드 중..."
-                  : "선택된 파일 없음"}
-              </span>
-
-              <div className="flex-1 flex items-center text-sm text-muted-foreground gap-2 min-w-0">
-                <span className="flex-1 border-b border-muted-foreground/40" />
-                <span className="truncate max-w-[240px]">
-                  {contractFileName || ""}
+            <Label>계약서 파일 (1개만 선택 가능)</Label>
+            <div className="rounded-xl border bg-muted/20 px-4 py-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  ref={contractFileInputRef}
+                  type="file"
+                  accept="application/pdf, image/*"
+                  onChange={handleContractFileChange}
+                  className="hidden"
+                  id="contract-file"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => contractFileInputRef.current?.click()}
+                  className="gap-2 w-[150px]"
+                >
+                  <Plus className="h-4 w-4" />
+                  파일 선택
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {contractFile ? "1개 파일 선택됨" : "선택된 파일 없음"}
                 </span>
               </div>
 
-              {contractFileName && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setContractFileName("");
-                    setContractFileUrl("");
-                  }}
-                >
-                  삭제
-                </Button>
+              {contractFile && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Paperclip className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm truncate">{contractFile.name}</span>
+                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                      {(contractFile.size / 1024).toFixed(1)} KB
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={() => setContractFile(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -607,13 +579,6 @@ const ProjectCreate = () => {
               buttonRef={endDateButtonRef}
             />
           </div>
-
-          <DateSelector
-            label="실제 종료일"
-            date={actualEndDate}
-            setDate={setActualEndDate}
-            optional
-          />
 
           {/* 단계 설정 */}
           <StageSection

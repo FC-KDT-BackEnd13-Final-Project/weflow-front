@@ -220,18 +220,24 @@ export default function Projects() {
   }, [projects, searchQuery, statusFilter]);
 
   const filteredAndSortedProjects = useMemo(() => {
-    if (userRole !== "AGENCY") return filteredProjects;
+    const statusPriority = (status?: ProjectStatus | string | null) => {
+      if (status === "OPEN") return 0; // 진행
+      if (status === "CLOSED") return 1; // 종료
+      return 2;
+    };
 
-    const priority = {
-      joined: 0,
-      unknown: 1,
-      "not-joined": 2,
-    } as const;
+    const membershipPriority = (project: ProjectSummaryResponse) => {
+      const state = getMembershipState(project);
+      if (state === "joined") return 0;
+      if (state === "unknown") return 1;
+      return 2; // not-joined 맨 뒤
+    };
 
-    return [...filteredProjects].sort(
-      (a, b) =>
-        priority[getMembershipState(a)] - priority[getMembershipState(b)]
-    );
+    return [...filteredProjects].sort((a, b) => {
+      const memDiff = membershipPriority(a) - membershipPriority(b);
+      if (memDiff !== 0) return memDiff;
+      return statusPriority(a.status) - statusPriority(b.status);
+    });
   }, [filteredProjects, userRole]);
 
   // 필터 변경 시 첫 페이지로 이동
