@@ -3,14 +3,14 @@ import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Paperclip, MessageSquare } from "lucide-react";
+import { Plus, Paperclip, MessageSquare, Link2 } from "lucide-react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   boardStatusLabels,
   boardStatusStyles,
   BoardPostStatus,
-  BoardApprovalStatus,
+  BoardQuestionStatus,
 } from "@/constants/boardStatus";
 import { getPosts } from "@/apis/postApi";
 import { ProjectPhase, type PageInfo, type PostItem } from "@/types/post";
@@ -24,11 +24,12 @@ interface BoardPost {
   author: string;
   date: string;
   attachments: number;
+  links: number;
   comments: number;
   projectStatus: string;
   stepId: number;
-  status: BoardPostStatus;
-  questionStatus: BoardApprovalStatus;
+  openStatus: "OPEN" | "CLOSED";
+  questionStatus: BoardQuestionStatus | null;
   hasQuestions: boolean;
 }
 
@@ -71,10 +72,11 @@ const BoardPostSkeleton = () => (
           </div>
         </div>
 
-        {/* 승인 요청 / 첨부파일 / 댓글 */}
+        {/* 승인 요청 / 첨부파일 / 링크 / 댓글 */}
         <div className="flex flex-col gap-2 items-end">
           <Skeleton className="h-6 w-20 rounded-full" />
           <div className="flex items-center gap-3 text-muted-foreground">
+            <Skeleton className="h-4 w-6" />
             <Skeleton className="h-4 w-6" />
             <Skeleton className="h-4 w-6" />
           </div>
@@ -103,7 +105,7 @@ export default function Board() {
     hasPrevious: false,
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "진행중" | "완료">("전체");
+  const [postStatusFilter, setPostStatusFilter] = useState<"전체" | "Open" | "Closed">("전체");
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isStepsLoading, setIsStepsLoading] = useState(true); // 단계 로딩 상태 추가
 
@@ -173,6 +175,7 @@ export default function Board() {
           size: pageSize,
           stepId: selectedStepId ?? undefined,
           projectPhase: activePhaseEnum || undefined,
+          openStatus: postStatusFilter === "전체" ? undefined : (postStatusFilter === "Open" ? "OPEN" : "CLOSED"),
           sortBy: "createdAt",
           direction: "DESC",
         });
@@ -186,21 +189,32 @@ export default function Board() {
         };
 
         // 백엔드 데이터를 프론트 형식으로 변환
-        const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => ({
-          id: post.postId,
-          title: post.title,
-          author: post.author.name,
-          date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
-          attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
-          comments: post.commentCount,
-          projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
-          stepId: post.stepId,
-          status: post.status === "CONFIRMED" ? "complete" : "progress",
-          hasQuestions: post.hasQuestions,
-          questionStatus: post.hasQuestions
-            ? (post.status === "CONFIRMED" ? "approved" : post.status === "REJECTED" ? "rejected" : "request")
-            : "request", // hasQuestions가 false여도 일단 request로 설정 (배지는 조건부 렌더링으로 숨김)
-        }));
+        const convertedPosts: BoardPost[] = response.posts.map((post: PostItem) => {
+          // 질문 상태 매핑: WAITING_ANSWER -> waiting, ANSWERED -> answered
+          let questionStatus: BoardQuestionStatus | null = null;
+          if (post.hasQuestions) {
+            if (post.status === "WAITING_ANSWER") {
+              questionStatus = "waiting";
+            } else if (post.status === "ANSWERED") {
+              questionStatus = "answered";
+            }
+          }
+
+          return {
+            id: post.postId,
+            title: post.title,
+            author: post.author.name,
+            date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
+            attachments: post.fileCount,
+            links: post.linkCount,
+            comments: post.commentCount + post.replyCount, // 최상위 댓글 + 대댓글 합산
+            projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
+            stepId: post.stepId,
+            openStatus: post.openStatus || "OPEN",
+            hasQuestions: post.hasQuestions,
+            questionStatus,
+          };
+        });
 
         setPosts(convertedPosts);
         setPageInfo(response.pageInfo);
@@ -213,7 +227,7 @@ export default function Board() {
     };
 
     fetchPosts();
-  }, [id, currentPage, activePhaseEnum, selectedStepId]);
+  }, [id, currentPage, activePhaseEnum, selectedStepId, postStatusFilter]);
 
   // phase 변경 시 선택된 step이 해당 phase에 속하지 않으면 초기화
   useEffect(() => {
@@ -258,13 +272,6 @@ export default function Board() {
   const handlePostClick = (postId: number) => {
     navigate(`/project/${id}/board/${postId}`);
   };
-
-  // 필터링된 게시글 (클라이언트 사이드 필터링)
-  const clientFilteredPosts = posts.filter((post) => {
-    if (postStatusFilter === "진행중" && post.status !== "progress") return false;
-    if (postStatusFilter === "완료" && post.status !== "complete") return false;
-    return true;
-  });
 
   return (
     <ProjectLayout>
@@ -337,7 +344,7 @@ export default function Board() {
               </div>
               <Select
                 value={postStatusFilter}
-                onValueChange={(value: "전체" | "진행중" | "완료") => {
+                onValueChange={(value: "전체" | "Open" | "Closed") => {
                   setPostStatusFilter(value);
                   setCurrentPage(1);
                 }}
@@ -348,8 +355,8 @@ export default function Board() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="진행중">진행중</SelectItem>
-                  <SelectItem value="완료">완료</SelectItem>
+                  <SelectItem value="Open">Open</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -363,7 +370,7 @@ export default function Board() {
                 ))
               )}
 
-              {!isLoading && clientFilteredPosts.length > 0 && clientFilteredPosts.map((post) => (
+              {!isLoading && posts.map((post) => (
                 <Card
                   key={post.id}
                   className="card-hover cursor-pointer hover:shadow-md transition-shadow border border-border/70 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -380,14 +387,16 @@ export default function Board() {
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
 
-                      {/* 진행/완료 */}
+                      {/* Open/Closed */}
                       <div
                         className={cn(
-                          "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                          boardStatusStyles[post.status]
+                          "inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-medium border w-[70px]",
+                          post.openStatus === "OPEN"
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-gray-50 text-gray-700 border-gray-200"
                         )}
                       >
-                        {boardStatusLabels[post.status]}
+                        {post.openStatus}
                       </div>
 
                       {/* 제목/작성자 */}
@@ -404,10 +413,10 @@ export default function Board() {
                         </div>
                       </div>
 
-                      {/* 승인 요청 / 승인 */}
-                      <div className="flex flex-col gap-2 items-end">
+                      {/* 질문 답변 상태 및 아이콘 */}
+                      <div className="flex flex-col gap-2 items-end justify-between min-h-[50px]">
 
-                        {post.hasQuestions && (
+                        {post.hasQuestions && post.questionStatus && (
                           <div
                             className={cn(
                               "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
@@ -418,10 +427,14 @@ export default function Board() {
                           </div>
                         )}
 
-                        <div className="flex items-center gap-3 text-muted-foreground">
+                        <div className="flex items-center gap-3 text-muted-foreground mt-auto">
                           <div className="flex items-center gap-1 text-xs">
                             <Paperclip className="h-4 w-4" />
                             <span>{post.attachments}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs">
+                            <Link2 className="h-4 w-4" />
+                            <span>{post.links}</span>
                           </div>
                           <div className="flex items-center gap-1 text-xs">
                             <MessageSquare className="h-4 w-4" />
@@ -435,7 +448,7 @@ export default function Board() {
                 </Card>
               ))}
 
-              {!isLoading && clientFilteredPosts.length === 0 && (
+              {!isLoading && posts.length === 0 && (
                 <Card>
                   <CardContent className="p-12 text-center">
                     <p className="text-muted-foreground">게시글이 없습니다.</p>

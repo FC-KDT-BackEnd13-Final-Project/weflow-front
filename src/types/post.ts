@@ -2,9 +2,9 @@
 
 // ===== Enums =====
 export enum PostApprovalStatus {
-  PENDING = "PENDING",
-  CONFIRMED = "CONFIRMED",
-  REJECTED = "REJECTED",
+  NORMAL = "NORMAL",              // 일반 게시글 (질문 없음)
+  WAITING_ANSWER = "WAITING_ANSWER",  // 답변 대기 중
+  ANSWERED = "ANSWERED",          // 답변 완료
 }
 
 export enum PostOpenStatus {
@@ -113,11 +113,12 @@ export interface PostItem {
   postId: number;
   title: string;
   status: PostApprovalStatus;
+  openStatus: PostOpenStatus;
   projectPhase: ProjectPhase;
   stepId: number;
   author: AuthorDto;
-  hasFiles: boolean;
-  hasLinks: boolean;
+  fileCount: number;
+  linkCount: number;
   hasQuestions: boolean;
   commentCount: number;
   replyCount: number;

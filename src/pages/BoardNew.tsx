@@ -257,10 +257,15 @@ export default function BoardNew() {
   };
 
   const handleAddLink = () => {
-    const trimmedLink = linkInput.trim();
+    let trimmedLink = linkInput.trim();
     if (!trimmedLink) {
       setLinkError("링크를 입력해주세요");
       return;
+    }
+
+    // http:// 또는 https://가 없으면 자동으로 https:// 추가
+    if (!/^https?:\/\//i.test(trimmedLink)) {
+      trimmedLink = `https://${trimmedLink}`;
     }
 
     try {
@@ -467,6 +472,47 @@ export default function BoardNew() {
 
     setErrors({});
 
+    // 질문 유효성 검증
+    if (questions.length > 0) {
+      for (const question of questions) {
+        // 질문 내용 검증
+        if (!question.questionText.trim()) {
+          toast({
+            title: "질문 내용 누락",
+            description: "모든 질문의 내용을 입력해주세요.",
+            variant: "destructive",
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        // 객관식/복수선택의 경우에만 옵션 검증 (주관식은 옵션 불필요)
+        if (question.type === "객관식" || question.type === "복수선택") {
+          if (question.options.length === 0) {
+            toast({
+              title: "답변 옵션 누락",
+              description: `"${question.questionText}" 질문에 최소 1개 이상의 답변 옵션을 추가해주세요.`,
+              variant: "destructive",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+
+          // 각 옵션이 비어있지 않은지 검증
+          const hasEmptyOption = question.options.some(opt => !opt.optionText.trim());
+          if (hasEmptyOption) {
+            toast({
+              title: "답변 옵션 내용 누락",
+              description: `"${question.questionText}" 질문의 모든 답변 옵션 내용을 입력해주세요.`,
+              variant: "destructive",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+    }
+
     // 백엔드 API 호출
     setIsSubmitting(true);
     try {
@@ -572,11 +618,11 @@ export default function BoardNew() {
           parentPostId: replyInfo?.parentPostId,
           links: links.map(link => ({ url: link.url })),
           files: uploadedFiles,
-          questions: questions.length > 0 ? questions.map(q => ({
+          questions: questions.map(q => ({
             questionText: q.questionText,
             questionType: questionTypeToApi(q.type),
             options: q.type === "주관식" ? [] : q.options,
-          })) : undefined,
+          })),
         });
 
         toast({
@@ -599,11 +645,12 @@ export default function BoardNew() {
         // 방금 작성한 게시글 상세 페이지로 이동
         navigate(`/project/${id}/board/${response.postId}`);
       }
-    } catch (error) {
-      console.error(`게시글 ${isEditMode ? '수정' : '작성'} 실패:`, error);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
+
       toast({
         title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
-        description: `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

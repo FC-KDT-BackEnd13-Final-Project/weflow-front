@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Mail } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
+import { useNotification } from "@/contexts/NotificationContext";
 
 const typeLabels: Record<string, string> = {
   STEP_REQUEST: "단계 요청",
@@ -46,6 +47,7 @@ export default function NotificationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { decrementCount, incrementCount } = useNotification();
   const [notification, setNotification] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -58,7 +60,9 @@ export default function NotificationDetail() {
           setNotification(response.data);
           // 읽지 않은 상태라면 읽음 처리
           if (!response.data.read) {
-             notificationsApi.markAsRead(Number(id));
+            await notificationsApi.markAsRead(Number(id));
+            // unread count 즉시 감소
+            decrementCount();
           }
         }
       } catch (error: any) {
@@ -74,13 +78,15 @@ export default function NotificationDetail() {
     };
 
     fetchNotification();
-  }, [id, navigate, toast]);
+  }, [id, navigate, toast, decrementCount]);
 
   const handleMarkAsUnread = async () => {
     if (!id) return;
     try {
       const response = await notificationsApi.markAsUnread(Number(id));
       if (response.success) {
+        // unread count 즉시 증가
+        incrementCount();
         toast({
           title: "안 읽음 처리 완료",
           description: "알림을 읽지 않음 상태로 변경했습니다.",

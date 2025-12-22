@@ -59,6 +59,7 @@ interface UserDetailResponse {
 
 interface UpdateUserRequest {
   name: string;
+  phoneNumber?: string;
   role: string;
   status: string;
   companyId: number;
