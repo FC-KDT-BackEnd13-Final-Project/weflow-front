@@ -46,6 +46,7 @@ interface MemberSelectDialogProps {
   setSelectedClientCompany: (v: string | null) => void;
 
   users?: MemberData[]; // 서버에서 내려오는 실제 사용자 목록
+  clientCompanies?: string[]; // 고객사 회사 목록 (멤버 0명이어도 표시)
 }
 
 // --------------------------------------------------------------
@@ -59,6 +60,7 @@ const MemberSelectDialog = ({
   selectedClientCompany,
   setSelectedClientCompany,
   users,
+  clientCompanies,
 }: MemberSelectDialogProps) => {
   // users undefined 방지 + companyType 대문자 정규화
   const normalizedUsers: MemberData[] = useMemo(() => {
@@ -99,12 +101,30 @@ const MemberSelectDialog = ({
       setAdminMemberId(existingAdminId ?? null);
 
       const companies = companiesFromIds(existingMemberIds);
+      const agencyCompanies = Array.from(
+        new Set(
+          normalizedUsers
+            .filter((u) => u.companyType === "AGENCY")
+            .map((u) => u.company)
+        )
+      );
 
-      // 개발사 기본 열림 + 기존 선택된 회사 열림
-      const defaultExpanded = new Set(["DevCorp", ...companies]);
+      // 개발사 기본 열림 + 기존 선택 + 선택된 고객사도 기본 열림
+      const defaultExpanded = new Set([
+        ...agencyCompanies,
+        ...companies,
+        ...(clientCompanies ?? []),
+      ]);
       setExpandedCompanies(Array.from(defaultExpanded));
+      setActiveTab("AGENCY");
     }
-  }, [open, existingMemberIds, existingAdminId, normalizedUsers]);
+  }, [
+    open,
+    existingMemberIds,
+    existingAdminId,
+    normalizedUsers,
+    clientCompanies,
+  ]);
 
   // 고객사는 **1개 회사만 선택 가능**
   useEffect(() => {
@@ -130,14 +150,44 @@ const MemberSelectDialog = ({
     });
   }, [normalizedUsers, activeTab, searchQuery]);
 
-  const groupedByCompany = useMemo(() => {
-    const groups: Record<string, MemberData[]> = {};
+  type CompanyGroup = {
+    company: string;
+    members: MemberData[];
+    type: "AGENCY" | "CLIENT";
+  };
+
+  const companyGroups = useMemo(() => {
+    const map = new Map<string, CompanyGroup>();
+
+    const ensureGroup = (company: string, type: "AGENCY" | "CLIENT") => {
+      if (!map.has(company)) {
+        map.set(company, { company, members: [], type });
+      }
+      return map.get(company)!;
+    };
+
     filteredMembers.forEach((m) => {
-      if (!groups[m.company]) groups[m.company] = [];
-      groups[m.company].push(m);
+      const group = ensureGroup(m.company, m.companyType);
+      group.members.push(m);
     });
-    return groups;
-  }, [filteredMembers]);
+
+    // 고객사 탭에서는 멤버 0명이어도 회사명 표시
+    if (activeTab === "CLIENT") {
+      const matchesCompanySearch = (name: string) => {
+        if (!searchQuery.trim()) return true;
+        return name.toLowerCase().includes(searchQuery.toLowerCase());
+      };
+
+      (clientCompanies ?? []).forEach((company) => {
+        if (!matchesCompanySearch(company)) return;
+        ensureGroup(company, "CLIENT");
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.company.localeCompare(b.company, "ko-KR")
+    );
+  }, [filteredMembers, activeTab, clientCompanies, searchQuery]);
 
   // ---------------------------
   // 고객사 단일 선택 로직
@@ -149,9 +199,10 @@ const MemberSelectDialog = ({
   };
 
   const isAllCompanySelected = (members: MemberData[]) =>
-    members.every((m) => selectedIds.includes(m.id));
+    members.length > 0 && members.every((m) => selectedIds.includes(m.id));
 
   const isCompanyPartiallySelected = (members: MemberData[]) =>
+    members.length > 0 &&
     members.some((m) => selectedIds.includes(m.id)) &&
     !isAllCompanySelected(members);
 
@@ -159,6 +210,8 @@ const MemberSelectDialog = ({
   // 회사 전체 선택
   // ---------------------------
   const handleToggleCompanyAll = (company: string, members: MemberData[]) => {
+    if (members.length === 0) return; // 선택할 멤버 없음
+
     const ids = members.map((m) => m.id);
     const companyType = members[0].companyType;
 
@@ -236,11 +289,9 @@ const MemberSelectDialog = ({
   const renderCompanyGroup = (
     company: string,
     members: MemberData[],
+    type: "AGENCY" | "CLIENT",
     showAdminOption: boolean
   ) => {
-    if (!members || members.length === 0) return null;
-
-    const type = members[0].companyType;
     const selectable = isCompanySelectable(company, type);
 
     const allSelected = isAllCompanySelected(members);
@@ -279,7 +330,7 @@ const MemberSelectDialog = ({
 
             <Checkbox
               checked={checkboxState}
-              disabled={!selectable}
+              disabled={!selectable || members.length === 0}
               onCheckedChange={() => handleToggleCompanyAll(company, members)}
             />
           </div>
@@ -287,6 +338,11 @@ const MemberSelectDialog = ({
 
         {isExpanded && (
           <div className="px-4 pb-3 space-y-2">
+            {members.length === 0 && (
+              <div className="text-sm text-muted-foreground px-1">
+                구성원이 없습니다.
+              </div>
+            )}
             {members.map((m) => {
               const isChecked = selectedIds.includes(m.id);
 
@@ -388,11 +444,9 @@ const MemberSelectDialog = ({
             value="AGENCY"
             className="flex-1 overflow-y-auto border rounded-md mt-2"
           >
-            {Object.entries(groupedByCompany)
-              .filter(([_, mem]) => mem[0].companyType === "AGENCY")
-              .map(([company, members]) =>
-                renderCompanyGroup(company, members, true)
-              )}
+            {companyGroups
+              .filter((g) => g.type === "AGENCY")
+              .map((g) => renderCompanyGroup(g.company, g.members, g.type, true))}
           </TabsContent>
 
           {/* 고객사 */}
@@ -400,11 +454,9 @@ const MemberSelectDialog = ({
             value="CLIENT"
             className="flex-1 overflow-y-auto border rounded-md mt-2"
           >
-            {Object.entries(groupedByCompany)
-              .filter(([_, mem]) => mem[0].companyType === "CLIENT")
-              .map(([company, members]) =>
-                renderCompanyGroup(company, members, false)
-              )}
+            {companyGroups
+              .filter((g) => g.type === "CLIENT")
+              .map((g) => renderCompanyGroup(g.company, g.members, g.type, false))}
           </TabsContent>
         </Tabs>
 
