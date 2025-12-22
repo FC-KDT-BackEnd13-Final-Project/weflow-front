@@ -21,6 +21,7 @@ export interface StepListResponse {
   page: number;
   size: number;
   steps: StepResponse[];
+  isPhaseCompleted?: Record<string, boolean>;
 }
 
 export type StepRequestStatus = "REQUESTED" | "APPROVED" | "REJECTED" | "CANCELED" | "DRAFT" | "CHANGE_REQUESTED" | string;
@@ -75,13 +76,16 @@ export interface StepRequestSummaryResponse {
   status: StepRequestStatus;
   createdAt: string;
   decidedAt?: string;
-   updatedAt?: string;
+  updatedAt?: string;
   stepId: number;
   stepTitle?: string;
   projectId?: number;
   projectName?: string;
   requestedBy?: number;
   requestedByName?: string;
+  requesterName?: string;
+  createdBy?: number;
+  createdByName?: string;
   hasAttachment?: boolean;
   phase?: string;
 }
