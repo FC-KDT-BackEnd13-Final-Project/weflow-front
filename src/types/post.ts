@@ -117,8 +117,8 @@ export interface PostItem {
   projectPhase: ProjectPhase;
   stepId: number;
   author: AuthorDto;
-  hasFiles: boolean;
-  hasLinks: boolean;
+  fileCount: number;
+  linkCount: number;
   hasQuestions: boolean;
   commentCount: number;
   replyCount: number;

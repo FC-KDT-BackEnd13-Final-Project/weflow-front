@@ -3,7 +3,7 @@ import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Paperclip, MessageSquare } from "lucide-react";
+import { Plus, Paperclip, MessageSquare, Link2 } from "lucide-react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
@@ -24,6 +24,7 @@ interface BoardPost {
   author: string;
   date: string;
   attachments: number;
+  links: number;
   comments: number;
   projectStatus: string;
   stepId: number;
@@ -71,10 +72,11 @@ const BoardPostSkeleton = () => (
           </div>
         </div>
 
-        {/* 승인 요청 / 첨부파일 / 댓글 */}
+        {/* 승인 요청 / 첨부파일 / 링크 / 댓글 */}
         <div className="flex flex-col gap-2 items-end">
           <Skeleton className="h-6 w-20 rounded-full" />
           <div className="flex items-center gap-3 text-muted-foreground">
+            <Skeleton className="h-4 w-6" />
             <Skeleton className="h-4 w-6" />
             <Skeleton className="h-4 w-6" />
           </div>
@@ -203,8 +205,9 @@ export default function Board() {
             title: post.title,
             author: post.author.name,
             date: post.createdAt.split('T')[0], // ISO 8601 -> YYYY-MM-DD
-            attachments: post.hasFiles ? 1 : 0, // 임시: 실제로는 파일 개수 필요
-            comments: post.commentCount,
+            attachments: post.fileCount,
+            links: post.linkCount,
+            comments: post.commentCount + post.replyCount, // 최상위 댓글 + 대댓글 합산
             projectStatus: projectPhaseMap[post.projectPhase] || post.projectPhase,
             stepId: post.stepId,
             openStatus: post.openStatus || "OPEN",
@@ -410,8 +413,8 @@ export default function Board() {
                         </div>
                       </div>
 
-                      {/* 질문 답변 상태 */}
-                      <div className="flex flex-col gap-2 items-end">
+                      {/* 질문 답변 상태 및 아이콘 */}
+                      <div className="flex flex-col gap-2 items-end justify-between min-h-[50px]">
 
                         {post.hasQuestions && post.questionStatus && (
                           <div
@@ -424,10 +427,14 @@ export default function Board() {
                           </div>
                         )}
 
-                        <div className="flex items-center gap-3 text-muted-foreground">
+                        <div className="flex items-center gap-3 text-muted-foreground mt-auto">
                           <div className="flex items-center gap-1 text-xs">
                             <Paperclip className="h-4 w-4" />
                             <span>{post.attachments}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs">
+                            <Link2 className="h-4 w-4" />
+                            <span>{post.links}</span>
                           </div>
                           <div className="flex items-center gap-1 text-xs">
                             <MessageSquare className="h-4 w-4" />
