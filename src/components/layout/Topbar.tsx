@@ -4,11 +4,11 @@ import { User, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { notificationsApi } from "@/apis/notifications";
 import { clearCurrentUserCache, useCurrentUser } from "@/hooks/useCurrentUser";
-import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function Topbar() {
   const navigate = useNavigate();
-  const { user, isLoading } = useCurrentUser(); // isLoading 상태 사용
+  const { user, isLoading } = useCurrentUser();
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
