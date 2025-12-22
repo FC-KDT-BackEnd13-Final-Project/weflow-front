@@ -83,6 +83,9 @@ export interface StepRequestSummaryResponse {
   projectName?: string;
   requestedBy?: number;
   requestedByName?: string;
+  requesterName?: string;
+  createdBy?: number;
+  createdByName?: string;
   hasAttachment?: boolean;
   phase?: string;
 }

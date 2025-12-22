@@ -520,11 +520,6 @@ export default function ApprovalDetail() {
   const phaseLabel = phaseLabelMap[stepPhase || ""] || stepPhase || "";
   const requestedByLabel = approval.requestedByName || approval.requestedBy || "-";
   const decidedByLabel = approval.decidedByName || approval.decidedBy || "-";
-  const decidedByCompany =
-    (approval as { decidedByCompanyName?: string; decidedByCompany?: string }).decidedByCompanyName ||
-    (approval as { decidedByCompanyName?: string; decidedByCompany?: string }).decidedByCompany ||
-    "";
-  const decidedByDisplayCompany = decidedByCompany || "회사명"; // TODO: 결정자 회사 정보를 API로 수신하면 교체하세요.
   const metaDate = formatDateTime(approval.createdAt);
   const updatedAtFormatted =
     approval.updatedAt && approval.updatedAt !== approval.createdAt
@@ -612,7 +607,6 @@ export default function ApprovalDetail() {
                     <span className="text-sm text-muted-foreground min-w-[70px] font-semibold">결정자</span>
                     <span className="text-sm text-foreground/80 flex-1 break-words">
                       {decidedByLabel}
-                      {` · ${decidedByDisplayCompany}`}
                     </span>
                   </div>
                   <div className="flex gap-2 flex-wrap sm:flex-nowrap items-start sm:items-center">

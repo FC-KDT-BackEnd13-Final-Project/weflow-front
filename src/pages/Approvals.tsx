@@ -135,34 +135,71 @@ export default function Approvals() {
 
   const [page, setPage] = useState(0);
   const pageSize = 20;
+  const [selectedStepId, setSelectedStepId] = useState<number | null>(null);
+  const [requestTitle, setRequestTitle] = useState("");
+  const [requestDescription, setRequestDescription] = useState("");
+  const [uploadedAttachments, setUploadedAttachments] = useState<UploadedAttachment[]>([]);
+  const [isCreateStepDialogOpen, setIsCreateStepDialogOpen] = useState(false);
+  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+  const [newStepPhase, setNewStepPhase] = useState<StepPhase>(PHASE_ORDER[0]);
+  const [newStepTitle, setNewStepTitle] = useState("");
+  const [newStepDescription, setNewStepDescription] = useState("");
+  const [isEditStepDialogOpen, setIsEditStepDialogOpen] = useState(false);
+  const [editingStepId, setEditingStepId] = useState<number | null>(null);
+  const [editingStepTitle, setEditingStepTitle] = useState("");
+  const [editingStepDescription, setEditingStepDescription] = useState("");
+  const [openMenuStepId, setOpenMenuStepId] = useState<number | null>(null);
+  const [orderedSteps, setOrderedSteps] = useState<StepResponse[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  const stepsQueryKey = useMemo(() => ["project-steps", projectId], [projectId]);
 
   const { data: stepsData, isLoading: stepsLoading } = useQuery({
-    queryKey: ["project-steps", projectId],
+    queryKey: stepsQueryKey,
     queryFn: () => getProjectSteps(projectId),
     enabled: !!projectId,
   });
+  const serverSteps = stepsData?.data.steps ?? [];
 
   const { data: requestData, isLoading: requestsLoading } = useQuery({
     queryKey: ["project-step-requests", projectId, page],
     queryFn: () => getProjectStepRequests(projectId, page, pageSize),
     enabled: !!projectId,
   });
+  const {
+    stepRequestSummaryResponses: stepRequestSummaries = [],
+    totalCount = 0,
+    page: currentPageFromApi,
+    size: pageSizeFromApi,
+  } = requestData ?? {};
+  const currentPage = currentPageFromApi ?? page;
+  const pageSizeForCalc = pageSizeFromApi ?? pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSizeForCalc));
   const phaseCompletion = (stepsData?.data as { isPhaseCompleted?: Record<string, boolean> } | undefined)?.isPhaseCompleted ?? {};
   const isPhaseCompleted = useCallback((phase: StepPhase) => Boolean(phaseCompletion?.[phase]), [phaseCompletion]);
-  const allPhasesCompleted = useMemo(() => PHASE_ORDER.every((phase) => isPhaseCompleted(phase)), [isPhaseCompleted]);
-  const firstAvailablePhase = useMemo(
-    () => PHASE_ORDER.find((phase) => !isPhaseCompleted(phase)) ?? PHASE_ORDER[0],
+  const availablePhases = useMemo(
+    () => PHASE_ORDER.filter((phase) => !isPhaseCompleted(phase)),
     [isPhaseCompleted]
   );
   const defaultCreatePhase = useMemo(() => {
-    if (allPhasesCompleted) return firstAvailablePhase;
     const currentPhaseValue = PHASE_ORDER.includes(currentPhase as StepPhase) ? (currentPhase as StepPhase) : null;
-    if (!currentPhaseValue || isPhaseCompleted(currentPhaseValue)) {
-      if (!isPhaseCompleted("IN_PROGRESS")) return "IN_PROGRESS";
-      return firstAvailablePhase;
-    }
-    return currentPhaseValue;
-  }, [allPhasesCompleted, currentPhase, firstAvailablePhase, isPhaseCompleted]);
+    if (currentPhaseValue && availablePhases.includes(currentPhaseValue)) return currentPhaseValue;
+    return availablePhases[0] ?? PHASE_ORDER[0];
+  }, [availablePhases, currentPhase]);
+
+  const phaseOptions = useMemo(
+    () => [
+      { value: "ALL", label: "전체" },
+      { value: "CONTRACT", label: "계약" },
+      { value: "IN_PROGRESS", label: "진행" },
+      { value: "DELIVERY", label: "납품" },
+      { value: "MAINTENANCE", label: "유지보수" },
+    ],
+    []
+  );
 
   useEffect(() => {
     if (!serverSteps.length) return;
@@ -188,16 +225,10 @@ export default function Approvals() {
 
   useEffect(() => {
     setNewStepPhase((prev) => {
-      if (allPhasesCompleted) return defaultCreatePhase;
-      if (isPhaseCompleted(prev)) return defaultCreatePhase;
-      return prev || defaultCreatePhase;
+      if (prev && availablePhases.includes(prev)) return prev;
+      return defaultCreatePhase;
     });
-  }, [allPhasesCompleted, defaultCreatePhase, isPhaseCompleted]);
-
-  const filteredSteps = useMemo(() => {
-    if (currentPhase === "ALL") return orderedSteps;
-    return orderedSteps.filter((s) => s.phase === currentPhase);
-  }, [orderedSteps, currentPhase]);
+  }, [availablePhases, defaultCreatePhase]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -225,7 +256,13 @@ export default function Approvals() {
     }
     return null;
   }, [orderedSteps]);
-  const selectedPhaseCompleted = isPhaseCompleted(newStepPhase);
+
+  const isRequestableStep = (step?: StepResponse | null) => {
+    if (!step) return false;
+    return step.status !== "APPROVED" && step.status !== "CANCELED";
+  };
+
+  const canShowCreateButton = (step: StepResponse) => isRequestableStep(step) && nextAvailableStepId === step.id;
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(Number(event.active.id));
@@ -327,20 +364,14 @@ export default function Approvals() {
     setIsDirty(false);
   };
   const stepStatusBadge = (status: StepResponse["status"], hasRequests: boolean) => {
-    const isComplete = status === "APPROVED";
-    const labelKey = isComplete ? "complete" : "progress";
-    const label = boardStatusLabels[labelKey];
-    const style = boardStatusStyles[labelKey];
-
-    if (!isComplete && hasRequests) {
-      return { label, className: style };
+    if (status === "APPROVED") {
+      return { label: boardStatusLabels.complete, className: boardStatusStyles.complete };
     }
-
-    if (isComplete) {
-      return { label, className: style };
+    if (status === "PENDING") {
+      if (hasRequests) return { label: boardStatusLabels.progress, className: boardStatusStyles.progress };
+      return { label: "진행 전", className: "bg-gray-500 text-white" };
     }
-
-    return { label: "진행 전", className: "bg-gray-500 text-white" };
+    return { label: boardStatusLabels.progress, className: boardStatusStyles.progress };
   };
 
   const requestStatusBadge = (status: StepRequestSummaryResponse["status"]) => {
@@ -360,7 +391,7 @@ export default function Approvals() {
 
   const openRequestDialog = (stepId: number) => {
     const targetStep = orderedSteps.find((s) => s.id === stepId);
-    if (!targetStep || targetStep.status === "APPROVED" || targetStep.status === "CANCELED") {
+    if (!isRequestableStep(targetStep)) {
       toast({ title: "요청 생성 불가", description: "생성할 수 없는 단계입니다.", variant: "destructive" });
       return;
     }
@@ -416,6 +447,31 @@ export default function Approvals() {
       .filter((l) => Boolean(l.url));
     return { files, links };
   };
+
+  const createRequestMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedStepId) throw new Error("단계를 선택해주세요.");
+      const { files, links } = buildAttachmentPayload(uploadedAttachments);
+      return createStepRequest(selectedStepId, {
+        title: requestTitle,
+        description: requestDescription,
+        files,
+        links,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "승인 요청이 생성되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-step-requests", projectId, page] });
+      handleRequestDialogChange(false);
+    },
+    onError: (error: unknown) =>
+      toast({
+        title: "요청 생성 실패",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
 
   const createStepMutation = useMutation({
     mutationFn: () =>
@@ -503,18 +559,13 @@ export default function Approvals() {
                 setIsCreateStepDialogOpen(true);
               }}
               className="gap-2"
-              disabled={allPhasesCompleted || (currentPhase !== "ALL" && isPhaseCompleted(currentPhase as StepPhase))}
+              disabled={availablePhases.length === 0}
             >
               <Plus className="h-4 w-4" />
               단계 생성
             </Button>
           )}
         </div>
-        {(allPhasesCompleted || (currentPhase !== "ALL" && isPhaseCompleted(currentPhase as StepPhase))) && (
-          <p className="text-sm text-muted-foreground">
-            완료된 Phase에서는 단계를 추가할 수 없습니다.
-          </p>
-        )}
 
         <div className="w-full flex flex-wrap gap-2 items-center">
           {phaseOptions.map((phase) => {
@@ -554,10 +605,10 @@ export default function Approvals() {
                 !requestsLoading &&
                 filteredSteps.map((step) => {
                   const requests = stepRequestSummaries.filter((r) => r.stepId === step.id);
-                  const isApproved = step.status === "APPROVED";
-                  const statusKey = isApproved ? "complete" : "progress";
-                  const status = boardStatusLabels[statusKey];
-                  const statusClass = boardStatusStyles[statusKey];
+                  const hasRequests = requests.length > 0;
+                  const statusInfo = stepStatusBadge(step.status, hasRequests);
+                  const canEditStep = canManageStep && step.status === "PENDING";
+                  const canDeleteStep = canManageStep && step.status === "PENDING" && !hasRequests;
 
                   return (
                     <DraggableStepCard
@@ -569,8 +620,61 @@ export default function Approvals() {
                     >
                       <CardHeader className="border-b space-y-2 py-2">
                         <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {currentPhase === "ALL" && (
+                              <Badge variant="outline" className="text-xs">
+                                {PHASE_LABEL_MAP[step.phase as StepPhase] || step.phase || "단계"}
+                              </Badge>
+                            )}
+                          </div>
+                          {canManageStep && (
+                            <DropdownMenu
+                              open={openMenuStepId === step.id}
+                              onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
+                            >
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  disabled={!canEditStep}
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    if (!canEditStep) return;
+                                    setEditingStepId(step.id);
+                                    setEditingStepTitle(step.title);
+                                    setEditingStepDescription(step.description || "");
+                                    setIsEditStepDialogOpen(true);
+                                  }}
+                                  className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
+                                >
+                                  단계 수정
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  disabled={!canDeleteStep}
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    if (!canDeleteStep) return;
+                                    if (window.confirm("단계를 삭제하시겠습니까?")) {
+                                      deleteStepMutation.mutate(step.id);
+                                    }
+                                  }}
+                                  className={cn(!canDeleteStep && "opacity-50 cursor-not-allowed")}
+                                >
+                                  단계 삭제
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
                           <CardTitle className="text-lg">{step.title}</CardTitle>
-                          <Badge className={cn(statusClass)}>{status}</Badge>
+                          <Badge className={cn(statusInfo.className, "pointer-events-none")}>
+                            {statusInfo.label}
+                          </Badge>
                         </div>
                       </CardHeader>
                       <CardContent className="flex-1 pt-4 space-y-4">
@@ -580,24 +684,43 @@ export default function Approvals() {
                           </div>
                         )}
                         {requests.map((r) => {
-                          const badge = stepRequestStatusMap[r.status];
+                          const badge = stepRequestStatusMap[r.status] || requestStatusBadge(r.status);
+                          const requester =
+                            (r as { requesterName?: string }).requesterName ||
+                            r.requestedByName ||
+                            (r as { createdByName?: string }).createdByName ||
+                            "요청자";
+                          const createdLabel = formatDate(r.createdAt);
                           return (
                             <button
                               key={r.id}
                               onClick={() =>
                                 navigate(`/project/${projectId}/approvals/${r.id}?tab=${currentPhase}`)
                               }
-                              className="w-full rounded-lg border p-3 text-left hover:shadow-md"
+                              className="w-full rounded-lg border p-3 text-left hover:shadow-md bg-background"
                             >
                               <div className="flex justify-between items-start gap-2">
-                                <div className="text-sm font-medium line-clamp-2">
-                                  {r.title}
-                                </div>
-                                <Badge className={badge.className}>{badge.label}</Badge>
+                                <div className="text-sm font-medium line-clamp-2">{r.title}</div>
+                                <Badge className={cn(badge.className, "pointer-events-none")}>
+                                  {badge.label}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {requester} · {createdLabel}
                               </div>
                             </button>
                           );
                         })}
+                        {canShowCreateButton(step) && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => openRequestDialog(step.id)}
+                          >
+                            승인 요청 생성
+                          </Button>
+                        )}
                       </CardContent>
                     </DraggableStepCard>
                   );
@@ -683,25 +806,13 @@ export default function Approvals() {
                   <SelectValue placeholder="Phase를 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CONTRACT" disabled={isPhaseCompleted("CONTRACT")}>
-                    계약{isPhaseCompleted("CONTRACT") ? " (완료)" : ""}
-                  </SelectItem>
-                  <SelectItem value="IN_PROGRESS" disabled={isPhaseCompleted("IN_PROGRESS")}>
-                    진행{isPhaseCompleted("IN_PROGRESS") ? " (완료)" : ""}
-                  </SelectItem>
-                  <SelectItem value="DELIVERY" disabled={isPhaseCompleted("DELIVERY")}>
-                    납품{isPhaseCompleted("DELIVERY") ? " (완료)" : ""}
-                  </SelectItem>
-                  <SelectItem value="MAINTENANCE" disabled={isPhaseCompleted("MAINTENANCE")}>
-                    유지보수{isPhaseCompleted("MAINTENANCE") ? " (완료)" : ""}
-                  </SelectItem>
+                  {availablePhases.map((phase) => (
+                    <SelectItem key={phase} value={phase}>
+                      {PHASE_LABEL_MAP[phase] || phase}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              {(allPhasesCompleted || selectedPhaseCompleted) && (
-                <p className="text-xs text-muted-foreground">
-                  완료된 Phase에는 단계를 추가할 수 없습니다.
-                </p>
-              )}
             </div>
             <div className="space-y-2">
               <Label>단계명</Label>
@@ -714,12 +825,7 @@ export default function Approvals() {
             </Button>
             <Button
               onClick={() => createStepMutation.mutate()}
-              disabled={
-                !newStepTitle.trim() ||
-                createStepMutation.isPending ||
-                selectedPhaseCompleted ||
-                allPhasesCompleted
-              }
+              disabled={!newStepTitle.trim() || createStepMutation.isPending || availablePhases.length === 0}
             >
               {createStepMutation.isPending ? "생성 중..." : "생성"}
             </Button>
