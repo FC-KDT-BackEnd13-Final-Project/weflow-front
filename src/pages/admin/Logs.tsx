@@ -283,7 +283,9 @@ export default function Logs() {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    }).format(new Date(value));
+      hour12: true,
+      timeZone: "Asia/Seoul",
+    }).format(new Date(value + "Z"));
 
   const userOptions = useMemo(() => {
     const entries = new Map<number, string>();
