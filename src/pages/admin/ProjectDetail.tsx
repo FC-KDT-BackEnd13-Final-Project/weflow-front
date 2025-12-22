@@ -4,6 +4,7 @@ import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import type { AttachmentResponse } from "@/apis/attachmentApi";
 import {
   AdminProjectDetailResponse,
   AdminProjectMemberListItem,
@@ -14,6 +15,12 @@ import {
   fetchAdminProjectMembers,
 } from "@/apis/adminProjects";
 import { adminApi } from "@/apis/admin";
+import {
+  getAttachments,
+  getAttachment,
+  getDownloadUrl,
+} from "@/apis/attachmentApi";
+import { AttachmentType, TargetType } from "@/types/attachment";
 
 const statusLabels: Record<ProjectStatus, string> = {
   OPEN: "진행",
@@ -42,6 +49,8 @@ const ProjectDetail = () => {
   const [customerCompanyName, setCustomerCompanyName] = useState<string | null>(
     null
   );
+  const [contractAttachment, setContractAttachment] =
+    useState<AttachmentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const id = idParam ? Number(idParam) : null;
@@ -69,6 +78,37 @@ const ProjectDetail = () => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!detail?.id) return;
+
+    const fetchContractAttachment = async () => {
+      try {
+        const attachments = await getAttachments(
+          TargetType.PROJECT_CONTRACT,
+          detail.id
+        );
+
+        let file = attachments.find(
+          (a) => a.attachmentType === AttachmentType.FILE
+        );
+
+        if (!file && detail.contractAttachmentId) {
+          const fallback = await getAttachment(detail.contractAttachmentId);
+          if (fallback.attachmentType === AttachmentType.FILE) {
+            file = fallback;
+          }
+        }
+
+        setContractAttachment(file ?? null);
+      } catch (e) {
+        console.error("계약서 첨부파일 조회 실패", e);
+        setContractAttachment(null);
+      }
+    };
+
+    fetchContractAttachment();
+  }, [detail?.id]);
 
   const customerCompanyId = detail?.customerCompanyId;
 
@@ -120,6 +160,19 @@ const ProjectDetail = () => {
     }
   };
 
+  const downloadAttachment = async (attachmentId?: number | null) => {
+    if (!attachmentId) return;
+    try {
+      const downloadUrl = await getDownloadUrl(attachmentId);
+      window.open(downloadUrl, "_blank");
+    } catch (e) {
+      console.error(e);
+      alert("파일 다운로드에 실패했습니다.");
+    }
+  };
+
+  const isClosed = detail?.status === "CLOSED";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -142,7 +195,7 @@ const ProjectDetail = () => {
             >
               목록
             </Button>
-            {id && !detail?.deletedAt && (
+            {id && !detail?.deletedAt && !isClosed && (
               <Button
                 className="gap-2"
                 onClick={() => navigate(`/admin/projects/${id}/edit`)}
@@ -150,7 +203,7 @@ const ProjectDetail = () => {
                 수정
               </Button>
             )}
-            {!detail?.deletedAt && (
+            {!detail?.deletedAt && !isClosed && (
               <Button
                 variant="destructive"
                 className="gap-2"
@@ -182,9 +235,7 @@ const ProjectDetail = () => {
                     <Badge variant="outline" className="text-sm font-medium">
                       설명
                     </Badge>
-                    <span className="text-muted-foreground">
-                      {detail.description || "-"}
-                    </span>
+                    <span>{detail.description || "-"}</span>
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -205,7 +256,7 @@ const ProjectDetail = () => {
                     <Badge variant="outline" className="text-sm font-medium">
                       회사
                     </Badge>
-                    <span className="text-muted-foreground">
+                    <span>
                       {customerCompanyName ??
                         detail.customerCompanyName ??
                         detail.customerCompanyId ??
@@ -256,16 +307,17 @@ const ProjectDetail = () => {
                     <Badge variant="outline" className="text-sm font-medium">
                       계약서
                     </Badge>
-                    {detail.contractFileUrl ? (
-                      <a
-                        href={detail.contractFileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary hover:underline flex items-center gap-2"
+                    {contractAttachment ? (
+                      <Button
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() =>
+                          downloadAttachment(contractAttachment.id)
+                        }
                       >
-                        <FileText className="h-4 w-4 text-primary" />
-                        {detail.contractFileUrl}
-                      </a>
+                        <FileText className="h-4 w-4" />
+                        계약서 다운로드
+                      </Button>
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}

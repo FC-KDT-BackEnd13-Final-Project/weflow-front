@@ -8,6 +8,7 @@ import { X, Mail, MailOpen } from "lucide-react";
 import { notificationsApi } from "@/apis/notifications";
 import { useToast } from "@/hooks/use-toast";
 import { useNotification } from "@/contexts/NotificationContext";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 const typeLabels: Record<string, string> = {
   STEP_REQUEST: "단계 요청",
@@ -43,7 +44,6 @@ const formatDateTime = (value: string) =>
 export default function Notifications() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { decrementCount, incrementCount, resetCount } = useNotification();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -123,14 +123,9 @@ export default function Notifications() {
     if (!window.confirm("알림을 삭제하시겠습니까?")) return;
 
     try {
-      const notification = notifications.find((n) => n.id === id);
       const response = await notificationsApi.deleteNotification(id);
       if (response.success) {
         setNotifications((prev) => prev.filter((notification) => notification.id !== id));
-        // 읽지 않은 알림을 삭제한 경우 count 감소
-        if (notification && !notification.read) {
-          decrementCount();
-        }
         toast({
           title: "알림 삭제",
           description: "알림이 삭제되었습니다.",
@@ -156,8 +151,6 @@ export default function Notifications() {
               : notification
           )
         );
-        // unread count 즉시 감소
-        decrementCount();
       }
     } catch (error: any) {
       toast({
@@ -180,8 +173,6 @@ export default function Notifications() {
               : notification
           )
         );
-        // unread count 즉시 증가
-        incrementCount();
         toast({
           title: "알림 안 읽음 처리",
           description: "알림을 읽지 않음 상태로 변경했습니다.",
@@ -203,8 +194,6 @@ export default function Notifications() {
         setNotifications((prev) =>
           prev.map((notification) => ({ ...notification, read: true }))
         );
-        // unread count 즉시 0으로
-        resetCount();
         toast({
           title: "모두 읽음 처리 완료",
           description: "모든 알림을 읽음 상태로 변경했습니다.",

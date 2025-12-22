@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Paperclip } from "lucide-react";
 
 import {
   DndContext,
@@ -31,14 +31,8 @@ import {
   removeAdminProjectMember,
 } from "@/apis/adminProjects";
 
-import {
-  fetchProjectSteps,
-  createStep,
-  updateStep,
-  deleteStep,
-  reorderSteps,
-  StepResponse,
-} from "@/apis/steps";
+import { fetchAdminProjectSteps } from "@/apis/steps";
+import { normalizeStages } from "@/utils/normalizeStages";
 
 import { fetchAllUsers } from "@/apis/adminUsers";
 import MemberSelectDialog, {
@@ -72,6 +66,8 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { adminApi } from "@/apis/admin";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import {
   Popover as CmdPopover,
   PopoverContent as CmdPopoverContent,
@@ -85,14 +81,26 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import type { Company } from "@/apis/admin";
-import { uploadFile } from "@/apis/attachmentApi";
-import { TargetType } from "@/types/attachment";
+import {
+  uploadFile,
+  getAttachments,
+  deleteAttachment,
+  getAttachment,
+} from "@/apis/attachmentApi";
+import type { AttachmentResponse } from "@/apis/attachmentApi";
+import { AttachmentType, TargetType } from "@/types/attachment";
 
 // ----------------------------------------------
 // SortableStage (ProjectCreate와 동일)
 // ----------------------------------------------
 type StagePhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
-type Stage = { id?: number; name: string; order: number; phase: StagePhase };
+type Stage = {
+  key: string;
+  id?: number;
+  name: string;
+  order: number;
+  phase: StagePhase;
+};
 
 const phaseOptions: { value: StagePhase; label: string }[] = [
   { value: "CONTRACT", label: "계약" },
@@ -101,16 +109,16 @@ const phaseOptions: { value: StagePhase; label: string }[] = [
   { value: "MAINTENANCE", label: "유지보수" },
 ];
 
-const stageKey = (s: Stage) => s.id ?? s.order;
+const stageKey = (s: Stage) => s.key;
 
 const SortableStage = ({
   stage,
   onDelete,
 }: {
   stage: Stage;
-  onDelete: (id: number | string) => void;
+  onDelete: (id: string) => void;
 }) => {
-  const sortableId = stage.id ?? stage.order;
+  const sortableId = stage.key;
 
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({
@@ -129,10 +137,8 @@ const SortableStage = ({
                  px-4 py-3 rounded-xl border bg-white shadow-sm
                  hover:bg-accent cursor-grab transition"
     >
-      {/* 단계명 */}
       <span className="font-medium text-sm">{stage.name}</span>
 
-      {/* 삭제 버튼 */}
       <button
         type="button"
         onClick={(e) => {
@@ -158,6 +164,7 @@ const AdminProjectEdit = () => {
   const projectId = Number(id);
 
   const navigate = useNavigate();
+  const { toast } = useToast();
   const sensors = useSensors(useSensor(PointerSensor));
 
   const [loading, setLoading] = useState(true);
@@ -176,9 +183,10 @@ const AdminProjectEdit = () => {
   const [phase, setPhase] = useState<ProjectPhase>("CONTRACT");
 
   const [contractAmount, setContractAmount] = useState("");
-  const [contractFileUrl, setContractFileUrl] = useState("");
-  const [contractFileName, setContractFileName] = useState("");
-  const [contractUploading, setContractUploading] = useState(false);
+  const [existingContractAttachment, setExistingContractAttachment] =
+    useState<AttachmentResponse | null>(null);
+  const [newContractFile, setNewContractFile] = useState<File | null>(null);
+  const [contractDeleting, setContractDeleting] = useState(false);
 
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -194,7 +202,6 @@ const AdminProjectEdit = () => {
   // 단계
   // -------------------------------
   const [stages, setStages] = useState<Stage[]>([]);
-  const [deletedStageIds, setDeletedStageIds] = useState<number[]>([]);
   const [newStageName, setNewStageName] = useState("");
   const [newStagePhase, setNewStagePhase] = useState<StagePhase>("CONTRACT");
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false);
@@ -224,18 +231,10 @@ const AdminProjectEdit = () => {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      if (u.companyType === "agency") return true;
+      if (u.companyType === "AGENCY") return true;
       return selectedCompany ? u.companyId === selectedCompany.id : false;
     });
   }, [users, selectedCompany]);
-
-  const mapPhaseFromTitle = (title: string): StagePhase => {
-    const lower = title.toLowerCase();
-    if (lower.includes("계약")) return "CONTRACT";
-    if (lower.includes("납품")) return "DELIVERY";
-    if (lower.includes("유지") || lower.includes("보수")) return "MAINTENANCE";
-    return "IN_PROGRESS";
-  };
 
   // -------------------------------
   // 초기 로딩
@@ -245,18 +244,11 @@ const AdminProjectEdit = () => {
       try {
         setLoading(true);
 
-        const [usersRes, companiesRes] = await Promise.all([
-          fetchAllUsers(),
+        const [companiesRes, detail] = await Promise.all([
           adminApi.getCompanies(),
-        ]);
-        setUsers(usersRes);
-        setCompanies(companiesRes.data.content ?? []);
-
-        const [detail, memberRes, stepRes] = await Promise.all([
           fetchAdminProjectDetail(projectId),
-          fetchAdminProjectMembers(projectId),
-          fetchProjectSteps(projectId),
         ]);
+        setCompanies(companiesRes.data.content ?? []);
 
         // 프로젝트 정보
         setName(detail.name);
@@ -275,12 +267,6 @@ const AdminProjectEdit = () => {
         setContractAmount(
           detail.contractAmount ? String(detail.contractAmount) : ""
         );
-        setContractFileUrl(detail.contractFileUrl || "");
-        setContractFileName(
-          detail.contractFileUrl
-            ? detail.contractFileUrl.split("/").pop() ?? ""
-            : ""
-        );
 
         setStartDate(detail.startDate ? new Date(detail.startDate) : null);
         setEndDate(
@@ -288,13 +274,45 @@ const AdminProjectEdit = () => {
         );
         setActualEndDate(detail.endDate ? new Date(detail.endDate) : null);
 
+        try {
+          const attachments = await getAttachments(
+            TargetType.PROJECT_CONTRACT,
+            projectId
+          );
+          let fileAttachment = attachments.find(
+            (a) => a.attachmentType === AttachmentType.FILE
+          );
+
+          if (!fileAttachment && detail.contractAttachmentId) {
+            const fallback = await getAttachment(detail.contractAttachmentId);
+            if (fallback.attachmentType === AttachmentType.FILE) {
+              fileAttachment = fallback;
+            }
+          }
+
+          setExistingContractAttachment(fileAttachment ?? null);
+        } catch (err) {
+          console.error("계약서 첨부파일 조회 실패", err);
+        }
+
+        // 멤버 조회: 개발사 전체 + 해당 고객사만
+        const usersRes = await fetchAllUsers({
+          customerCompanyId: detail.customerCompanyId,
+        });
+        setUsers(usersRes);
+
+        const [memberRes, stepRes] = await Promise.all([
+          fetchAdminProjectMembers(projectId),
+          fetchAdminProjectSteps(projectId),
+        ]);
+
         // 멤버 (삭제된 멤버 제외)
         const mappedMembers = memberRes.members
           .filter((m) => !m.removedAt)
           .map((m) => {
             const u = usersRes.find((x) => x.id === String(m.userId));
             const companyType =
-              u?.companyType ?? (m.userRole === "CLIENT" ? "client" : "agency");
+              u?.companyType ?? (m.userRole === "CLIENT" ? "CLIENT" : "AGENCY");
             return {
               id: String(m.userId),
               name: m.username,
@@ -308,17 +326,7 @@ const AdminProjectEdit = () => {
         setMembers(mappedMembers);
         initialMemberIds.current = new Set(mappedMembers.map((m) => m.id));
 
-        // 단계: 제목 기반으로 phase 추론(백엔드에 phase 없을 때용)
-        setStages(
-          stepRes
-            .sort((a, b) => a.orderIndex - b.orderIndex)
-            .map((s: StepResponse) => ({
-              id: s.id,
-              name: s.title,
-              order: s.orderIndex,
-              phase: mapPhaseFromTitle(s.title),
-            }))
-        );
+        setStages(normalizeStages(stepRes));
       } finally {
         setLoading(false);
       }
@@ -336,6 +344,7 @@ const AdminProjectEdit = () => {
     setStages([
       ...stages,
       {
+        key: `stage-${Date.now()}-${Math.random()}`,
         name: newStageName,
         order: stages.length + 1,
         phase: newStagePhase,
@@ -347,10 +356,7 @@ const AdminProjectEdit = () => {
     setIsStageDialogOpen(false);
   };
 
-  const handleDeleteStage = (key: number | string) => {
-    const target = stages.find((s) => stageKey(s) === key);
-    if (target?.id) deletedStageIds.push(target.id);
-
+  const handleDeleteStage = (key: string) => {
     const filtered = stages.filter((s) => stageKey(s) !== key);
     setStages(filtered.map((s, i) => ({ ...s, order: i + 1 })));
   };
@@ -372,6 +378,39 @@ const AdminProjectEdit = () => {
     }));
 
     setStages(reordered);
+  };
+
+  const handleStatusChange = (next: ProjectStatus) => {
+    if (status !== "CLOSED" && next === "CLOSED") {
+      setActualEndDate(new Date());
+    }
+    setStatus(next);
+  };
+
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    setNewContractFile(file);
+    if (e.target) e.target.value = "";
+  };
+
+  const handleRemoveExistingContract = async () => {
+    if (!existingContractAttachment) return;
+    try {
+      setContractDeleting(true);
+      await deleteAttachment(existingContractAttachment.id);
+      setExistingContractAttachment(null);
+      toast({ title: "계약서가 삭제되었습니다." });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "삭제 실패",
+        description: "계약서 파일 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setContractDeleting(false);
+    }
   };
 
   // -------------------------------
@@ -448,6 +487,24 @@ const AdminProjectEdit = () => {
   const handleSubmit = async () => {
     if (!validateRequired()) return;
     try {
+      const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+
+      let uploadedContract: AttachmentResponse | null = null;
+
+      if (newContractFile) {
+        try {
+          uploadedContract = await uploadFile(
+            newContractFile,
+            TargetType.PROJECT_CONTRACT,
+            projectId
+          );
+        } catch (err) {
+          console.error(err);
+          setSubmitError("계약서 업로드에 실패했습니다.");
+          return;
+        }
+      }
+
       await updateAdminProject(projectId, {
         name,
         description,
@@ -455,39 +512,27 @@ const AdminProjectEdit = () => {
         phase,
         customerCompanyId: customerCompanyId ? Number(customerCompanyId) : null,
         contractAmount: contractAmount ? Number(contractAmount) : null,
-        contractFileUrl: contractFileUrl || null,
+        contractFileUrl:
+          uploadedContract?.filePath ??
+          existingContractAttachment?.filePath ??
+          null,
         startDate: toLocal(startDate),
         endDateExpected: toLocal(endDate),
         endDate: toLocal(actualEndDate),
+        steps: orderedStages.map((s, idx) => ({
+          title: s.name,
+          phase: s.phase,
+          orderIndex: idx + 1,
+        })),
       });
 
-      for (const del of deletedStageIds) {
-        await deleteStep(projectId, del);
-      }
-
-      const newStages = [...stages];
-
-      for (let i = 0; i < newStages.length; i++) {
-        const s = newStages[i];
-
-        if (!s.id) {
-          const created = await createStep(projectId, { title: s.name });
-          newStages[i] = { ...s, id: created.id };
-        } else {
-          await updateStep(projectId, s.id, { title: s.name });
+      if (newContractFile && existingContractAttachment?.id) {
+        try {
+          await deleteAttachment(existingContractAttachment.id);
+        } catch (err) {
+          console.error("기존 계약서 삭제 실패", err);
         }
       }
-
-      setStages(newStages);
-
-      await reorderSteps(projectId, {
-        steps: newStages
-          .sort((a, b) => a.order - b.order)
-          .map((s, idx) => ({
-            stepId: s.id!,
-            orderIndex: idx + 1,
-          })),
-      });
 
       const current = new Set(members.map((m) => m.id));
 
@@ -592,7 +637,7 @@ const AdminProjectEdit = () => {
               <Label>상태</Label>
               <Select
                 value={status}
-                onValueChange={(v) => setStatus(v as ProjectStatus)}
+                onValueChange={(v) => handleStatusChange(v as ProjectStatus)}
               >
                 <SelectTrigger ref={statusButtonRef}>
                   <SelectValue />
@@ -630,73 +675,90 @@ const AdminProjectEdit = () => {
 
           {/* 계약서 파일 첨부 */}
           <div className="space-y-2">
-            <Label>계약서 파일</Label>
-            <div className="rounded-xl border bg-muted/20 px-4 py-3 flex items-center gap-3">
-              <Input
-                ref={contractFileInputRef}
-                type="file"
-                accept="application/pdf, image/*"
-                disabled={contractUploading}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  if (!file) return;
-                  try {
-                    setContractUploading(true);
-                    const uploaded = await uploadFile(
-                      file,
-                      TargetType.PROJECT_CONTRACT,
-                      projectId
-                    );
-                    setContractFileName(uploaded.fileName ?? file.name);
-                    setContractFileUrl(uploaded.filePath ?? "");
-                  } catch (err) {
-                    console.error(err);
-                  } finally {
-                    setContractUploading(false);
-                    if (e.target) e.target.value = "";
-                  }
-                }}
-                className="hidden"
-                id="contract-file"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => contractFileInputRef.current?.click()}
-                className="gap-2 w-[150px]"
-                disabled={contractUploading}
-              >
-                <Plus className="h-4 w-4" />
-                파일 선택
-              </Button>
-
-              <span className="text-sm text-muted-foreground">
-                {contractFileName
-                  ? "업로드됨"
-                  : contractUploading
-                  ? "업로드 중..."
-                  : "선택된 파일 없음"}
-              </span>
-
-              <div className="flex-1 flex items-center text-sm text-muted-foreground gap-2 min-w-0">
-                <span className="flex-1 border-b border-muted-foreground/40" />
-                <span className="truncate max-w-[240px]">
-                  {contractFileName || ""}
+            <Label>계약서 파일 (1개만 선택 가능)</Label>
+            <div className="rounded-xl border bg-muted/20 px-4 py-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  ref={contractFileInputRef}
+                  type="file"
+                  accept="application/pdf, image/*"
+                  onChange={handleContractFileChange}
+                  className="hidden"
+                  id="contract-file"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => contractFileInputRef.current?.click()}
+                  className="gap-2 w-[150px]"
+                >
+                  <Plus className="h-4 w-4" />
+                  파일 선택
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {newContractFile
+                    ? "새 계약서가 선택되었습니다."
+                    : existingContractAttachment
+                    ? "기존 계약서가 등록되어 있습니다."
+                    : "선택된 파일 없음"}
                 </span>
               </div>
 
-              {contractFileName && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setContractFileName("");
-                    setContractFileUrl("");
-                  }}
-                >
-                  삭제
-                </Button>
+              {newContractFile && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Paperclip className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm truncate">
+                      {newContractFile.name}
+                    </span>
+                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                      {(newContractFile.size / 1024).toFixed(1)} KB
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={() => setNewContractFile(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+
+              {!newContractFile && existingContractAttachment && (
+                <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Paperclip className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm truncate">
+                      {existingContractAttachment.fileName ??
+                        existingContractAttachment.filePath ??
+                        "계약서"}
+                    </span>
+                    {existingContractAttachment.fileSize && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs flex-shrink-0"
+                      >
+                        {(existingContractAttachment.fileSize / 1024).toFixed(
+                          1
+                        )}{" "}
+                        KB
+                      </Badge>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    disabled={contractDeleting}
+                    onClick={handleRemoveExistingContract}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -784,7 +846,7 @@ const AdminProjectEdit = () => {
         onOpenChange={setIsMemberDialogOpen}
         onConfirm={handleAddMembers}
         existingMemberIds={members.map((m) => m.id)}
-        existingAdminId={null}
+        existingAdminId={members.find((m) => m.role === "최고권한")?.id ?? null}
         users={filteredUsers}
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
@@ -944,13 +1006,13 @@ const StageSection = ({
               <h3 className="text-lg font-semibold">{group.label}</h3>
 
               <SortableContext
-                items={group.items.map((s) => s.id ?? s.order)}
+                items={group.items.map((s) => s.key)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="grid grid-cols-1 gap-3">
                   {group.items.map((stage) => (
                     <SortableStage
-                      key={stage.id ?? stage.order}
+                      key={stage.key}
                       stage={stage}
                       onDelete={handleDeleteStage}
                     />
@@ -1029,8 +1091,8 @@ const MemberSection = ({
   members: SelectedMember[];
   handleDeleteMember: (idx: number) => void;
 }) => {
-  const agency = members.filter((m) => m.companyType === "agency");
-  const client = members.filter((m) => m.companyType === "client");
+  const agency = members.filter((m) => m.companyType === "AGENCY");
+  const client = members.filter((m) => m.companyType === "CLIENT");
 
   const renderTable = (title: string, list: SelectedMember[]) => (
     <div className="border rounded-lg overflow-hidden">

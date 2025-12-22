@@ -16,6 +16,7 @@ export type UploadedAttachment = {
   fileSize?: number;
   filePath?: string;
   contentType?: string;
+  isNew?: boolean;
 };
 
 type TargetType = "STEP_REQUEST" | "STEP_REQUEST_ANSWER";
@@ -110,6 +111,7 @@ export function AttachmentInput({
             fileSize: file.size,
             filePath: presigned.key,
             contentType: file.type || "application/octet-stream",
+            isNew: true,
           };
         })
       );
@@ -132,6 +134,7 @@ export function AttachmentInput({
         name: urlValue,
         url: urlValue,
         isLink: true,
+        isNew: true,
       },
     ]);
     linkInputRef.current.value = "";

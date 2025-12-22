@@ -165,6 +165,7 @@ export interface PostCreateRequest {
 }
 
 export interface FileRequest {
+  fileId?: number; // 수정 시 기존 파일 유지를 위한 ID (optional)
   fileName: string;
   fileSize: number;
   filePath: string;
@@ -172,6 +173,7 @@ export interface FileRequest {
 }
 
 export interface LinkRequest {
+  linkId?: number; // 수정 시 기존 링크 유지를 위한 ID (optional)
   url: string;
 }
 

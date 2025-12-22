@@ -45,6 +45,7 @@ export interface AdminProjectDetailResponse {
   endDate: string | null;
   contractAmount: number | null;
   contractFileUrl: string | null;
+  contractAttachmentId?: number | null;
   customerCompanyId: number | null;
   customerCompanyName?: string | null;
   createdBy: number | null;
@@ -90,11 +91,20 @@ export interface AdminProjectCreateRequest {
   contractFileUrl?: string | null;
   customerCompanyId?: number | null;
   stages?: ProjectStageRequest[];
+  steps?: ProjectStageRequest[]; // 신규 steps 필드 (stages와 병행 지원)
 }
 
 export interface AdminProjectUpdateRequest extends AdminProjectCreateRequest {
   endDate?: string | null;
 }
+
+export type AdminProjectUpdateWithStepsRequest = AdminProjectUpdateRequest & {
+  steps?: {
+    title: string;
+    phase: string;
+    orderIndex: number;
+  }[];
+};
 
 const unwrap = async <T>(promise: Promise<{ data: ApiResponse<T> }>) => {
   const response = await promise;
@@ -130,7 +140,10 @@ export const createAdminProject = (payload: AdminProjectCreateRequest) =>
     api.post("/api/admin/projects", payload),
   );
 
-export const updateAdminProject = (projectId: number, payload: AdminProjectUpdateRequest) =>
+export const updateAdminProject = (
+  projectId: number,
+  payload: AdminProjectUpdateWithStepsRequest
+) =>
   unwrap<{ id: number; name: string; status: ProjectStatus; updatedAt?: string }>(
     api.patch(`/api/admin/projects/${projectId}`, payload),
   );

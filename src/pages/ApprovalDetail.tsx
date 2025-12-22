@@ -116,6 +116,8 @@ export default function ApprovalDetail() {
       payload: Partial<Omit<StepRequestResponse, "files" | "links">> & {
         files?: StepAttachmentFileInput[] | null;
         links?: StepAttachmentLinkInput[] | null;
+        keepFileIds?: number[];
+        keepLinkIds?: number[];
       }
     ) => updateStepRequest(requestId, payload),
     onSuccess: () => {
@@ -260,6 +262,7 @@ export default function ApprovalDetail() {
       fileSize: typeof file === "string" ? undefined : file?.fileSize,
       filePath: isLink ? undefined : pathValue || url || undefined,
       contentType: typeof file === "string" ? undefined : file?.contentType,
+      isNew: false,
     };
   };
   const buildAttachmentPayload = (
@@ -282,6 +285,40 @@ export default function ApprovalDetail() {
       })
       .filter((l) => Boolean(l.url));
     return { files, links };
+  };
+  const buildEditAttachmentPayload = (
+    items: UploadedAttachment[]
+  ): {
+    keepFileIds: number[];
+    keepLinkIds: number[];
+    files?: StepAttachmentFileInput[];
+    links?: StepAttachmentLinkInput[];
+  } => {
+    const keepFileIds = items
+      .filter((a) => !a.isLink && !a.isNew && typeof a.id === "number")
+      .map((a) => Number(a.id));
+    const keepLinkIds = items
+      .filter((a) => a.isLink && !a.isNew && typeof a.id === "number")
+      .map((a) => Number(a.id));
+
+    const files = items
+      .filter((a) => !a.isLink && (a.isNew || typeof a.id !== "number"))
+      .map((a) => ({
+        fileName: a.fileName || a.name,
+        fileSize: a.fileSize ?? 0,
+        filePath: a.filePath || "",
+        contentType: a.contentType || "application/octet-stream",
+      }))
+      .filter((f) => f.fileName && f.filePath);
+    const links = items
+      .filter((a) => a.isLink && (a.isNew || typeof a.id !== "number"))
+      .map((a) => {
+        const url = (a.url || a.name || "").trim();
+        return { url };
+      })
+      .filter((l) => Boolean(l.url));
+
+    return { keepFileIds, keepLinkIds, files, links };
   };
   const me = meData?.data as MeResponse | undefined;
 
@@ -437,10 +474,12 @@ export default function ApprovalDetail() {
       toast({ title: "제목을 입력하세요.", variant: "destructive" });
       return;
     }
-    const { files, links } = buildAttachmentPayload(editAttachments);
+    const { keepFileIds, keepLinkIds, files, links } = buildEditAttachmentPayload(editAttachments);
     updateRequestMutation.mutate({
       title: editTitle,
       description: editDescription,
+      keepFileIds,
+      keepLinkIds,
       files,
       links,
     });
@@ -483,6 +522,10 @@ export default function ApprovalDetail() {
     "";
   const decidedByDisplayCompany = decidedByCompany || "회사명"; // TODO: 결정자 회사 정보를 API로 수신하면 교체하세요.
   const metaDate = formatDateTime(approval.createdAt);
+  const updatedAtFormatted =
+    approval.updatedAt && approval.updatedAt !== approval.createdAt
+      ? formatDateTime(approval.updatedAt)
+      : null;
 
   return (
     <ProjectLayout>
@@ -514,14 +557,27 @@ export default function ApprovalDetail() {
               <span className="text-foreground font-medium">{requestedByLabel}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-foreground font-medium">{metaDate}</span>
+              {updatedAtFormatted && (
+                <>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-primary font-medium">수정</span>
+                  <span className="text-foreground font-medium">{updatedAtFormatted}</span>
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
               <Label>설명</Label>
-              <div className="text-sm text-muted-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
-                {approval.description || "설명이 없습니다."}
-              </div>
+              {approval.description ? (
+                <div className="text-sm text-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
+                  {approval.description}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground whitespace-pre-line rounded-md border bg-muted/30 p-3">
+                  설명이 없습니다.
+                </div>
+              )}
             </div>
 
             <Separator />

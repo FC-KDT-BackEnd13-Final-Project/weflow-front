@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { checklistsApi } from "@/apis/checklists";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 type ChecklistCategory = string;
 type StatusFilter = "전체" | "완료" | "대기";
@@ -29,7 +30,18 @@ interface ProjectStep {
   orderIndex: number;
 }
 
-export const mockChecklists: ChecklistItem[] = [];
+// 체크리스트 항목 스켈레톤 컴포넌트 정의
+const ChecklistItemSkeleton = () => (
+  <Card className="p-4">
+    <div className="flex items-center gap-3">
+      <Skeleton className="h-6 w-16 rounded-full" /> {/* Badge */}
+      <div className="flex-1 space-y-1">
+        <Skeleton className="h-5 w-3/4" /> {/* Title */}
+        <Skeleton className="h-3 w-1/4" /> {/* Count */}
+      </div>
+    </div>
+  </Card>
+);
 
 export default function Checklist() {
   const [selectedCategory, setSelectedCategory] = useState<ChecklistCategory>("전체");
@@ -168,24 +180,33 @@ export default function Checklist() {
             </Button>
           )}
         </div>
-        
+
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-wrap gap-2 mt-3">
-              {categoryTabs.map((category) => (
-                <Button
-                  key={category}
-                  variant={selectedCategory === category ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category)}
-                  className="text-xs"
-                >
-                  {category}
-                </Button>
-              ))}
-              {isStepLoading && (
-                <span className="text-xs text-muted-foreground">단계를 불러오는 중...</span>
+              {isStepLoading ? (
+                // 단계 로딩 중일 때 카테고리 탭 스켈레톤
+                <>
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-8 w-20" />
+                  <Skeleton className="h-8 w-14" />
+                </>
+              ) : categoryTabs.length > 0 ? (
+                categoryTabs.map((category) => (
+                  <Button
+                    key={category}
+                    variant={selectedCategory === category ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(category)}
+                    className="text-xs"
+                  >
+                    {category}
+                  </Button>
+                ))
+              ) : (
+                <span className="text-xs text-muted-foreground">단계 정보가 없습니다.</span>
               )}
+
               {stepError && !isStepLoading && (
                 <span className="text-xs text-destructive">{stepError}</span>
               )}
@@ -199,31 +220,39 @@ export default function Checklist() {
                   onClick={() => setSelectedStatus(status)}
                   className={cn(
                     "text-sm transition-colors pb-1 border-b-2",
-                    selectedStatus === status 
-                      ? "text-primary border-primary font-semibold" 
+                    selectedStatus === status
+                      ? "text-primary border-primary font-semibold"
                       : "text-muted-foreground border-transparent hover:text-foreground"
                   )}
+                  disabled={isLoading}
                 >
                   {status}
                 </button>
               ))}
             </div>
+
             {isLoading && (
-              <div className="text-sm text-muted-foreground py-6 text-center">
-                체크리스트를 불러오는 중입니다...
+              // 체크리스트 로딩 중일 때 항목 스켈레톤 표시
+              <div className="space-y-3">
+                {Array.from({ length: size }).map((_, i) => (
+                  <ChecklistItemSkeleton key={i} />
+                ))}
               </div>
             )}
+
             {fetchError && !isLoading && (
               <div className="text-sm text-destructive py-6 text-center">
                 {fetchError}
               </div>
             )}
-            {!isLoading && filteredChecklists.length === 0 && (
+
+            {!isLoading && !fetchError && filteredChecklists.length === 0 && (
               <div className="text-sm text-muted-foreground py-6 text-center">
                 조건에 맞는 체크리스트가 없습니다.
               </div>
             )}
-           {filteredChecklists.map((item) => (
+
+            {!isLoading && !fetchError && filteredChecklists.length > 0 && filteredChecklists.map((item) => (
               <Card
                 key={item.id}
                 role="button"
@@ -255,31 +284,43 @@ export default function Checklist() {
                 </CardContent>
               </Card>
             ))}
-            {!isLoading && !fetchError && (
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
-                <p className="text-sm text-muted-foreground">
-                  총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === 0}
-                    onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-                  >
-                    이전
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages - 1}
-                    onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
-                  >
-                    다음
-                  </Button>
-                </div>
-              </div>
-            )}
+
+            {/* 페이지네이션 스켈레톤/UI */}
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-4 w-48" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-9 w-16" />
+                    <Skeleton className="h-9 w-16" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page === 0}
+                      onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                    >
+                      이전
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                    >
+                      다음
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

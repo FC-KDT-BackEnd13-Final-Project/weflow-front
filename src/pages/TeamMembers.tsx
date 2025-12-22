@@ -23,7 +23,12 @@ import {
   removeProjectMember,
   updateProjectMemberRole,
 } from "@/apis/projectMembers";
+import {
+  fetchAdminProjectMembers,
+  type AdminProjectMemberListItem,
+} from "@/apis/adminProjects";
 import { useUserStore } from "@/stores/user";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
 const roleLabels: Record<
   ProjectMember["projectRole"],
@@ -33,8 +38,28 @@ const roleLabels: Record<
   MEMBER: { label: "멤버", badgeVariant: "secondary" },
 };
 
+// 멤버 카드 스켈레톤 컴포넌트 정의
+const MemberCardSkeleton = () => (
+  <Card className="p-4">
+    <CardContent className="flex flex-col items-center text-center space-y-3 p-4">
+      {/* 프로필 아바타 스켈레톤 */}
+      <Skeleton className="h-16 w-16 rounded-full" />
+
+      {/* 이름 및 회사 스켈레톤 */}
+      <div className="space-y-1">
+        <Skeleton className="h-5 w-24" /> {/* 이름 */}
+        <Skeleton className="h-4 w-20" /> {/* 회사명 */}
+      </div>
+
+      {/* 역할 뱃지 스켈레톤 */}
+      <Skeleton className="h-5 w-16 rounded-full" />
+    </CardContent>
+  </Card>
+);
+
 export default function TeamMembers() {
   const { user } = useUserStore();
+  const userRole = user?.role?.toUpperCase();
   const [selectedMember, setSelectedMember] = useState<ProjectMember | null>(
     null
   );
@@ -66,6 +91,15 @@ export default function TeamMembers() {
     try {
       setLoading(true);
       setError(null);
+      if (userRole === "SYSTEM_ADMIN") {
+        const adminMembers = await fetchAdminProjectMembers(projectId);
+        const mapped: ProjectMember[] =
+          adminMembers.members?.map(mapAdminMemberToProjectMember) ?? [];
+        const active = mapped.filter((m) => !m.removedAt);
+        setMembers(active);
+        return;
+      }
+
       const data = await fetchProjectMembers(projectId);
       const activeMembers = (data ?? []).filter((m) => !m.removedAt);
       setMembers(activeMembers);
@@ -86,8 +120,10 @@ export default function TeamMembers() {
     return me?.projectRole ?? null;
   }, [members, user]);
 
-  // AGENCY + ADMIN 만 권한 변경 가능
-  const canManageMembers = user?.role === "AGENCY" && myProjectRole === "ADMIN";
+  // 시스템 관리자 or 프로젝트 관리자(AGENCY)만 권한 변경 가능
+  const canManageMembers =
+    userRole === "SYSTEM_ADMIN" ||
+    (userRole === "AGENCY" && myProjectRole === "ADMIN");
 
   /** 모달 오픈 */
   const openRoleDialog = (member: ProjectMember) => {
@@ -172,6 +208,7 @@ export default function TeamMembers() {
     saving ||
     !canManageMembers;
 
+  // 로딩 플레이스홀더 배열
   const loadingPlaceholders = Array.from({ length: 6 });
 
   return (
@@ -195,17 +232,39 @@ export default function TeamMembers() {
           </Button>
         </div>
 
+        {/* 로딩 상태 */}
+        {loading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {loadingPlaceholders.map((_, index) => (
+              <MemberCardSkeleton key={index} />
+            ))}
+          </div>
+        )}
+
+        {/* 에러 상태 */}
+        {!loading && error && (
+          <div className="text-center py-12 border rounded-lg bg-destructive/10 text-destructive">
+            <p>{error}</p>
+            <Button
+              variant="link"
+              onClick={loadMembers}
+              className="mt-2 text-destructive"
+            >
+              다시 시도
+            </Button>
+          </div>
+        )}
+
         {/* 멤버 리스트 */}
         {!loading && !error && members.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {members.map((member) => (
               <Card
                 key={member.projectMemberId}
-                className={`${
-                  canManageMembers
-                    ? "cursor-pointer hover:shadow-lg"
-                    : "cursor-default"
-                } 
+                className={`${canManageMembers
+                  ? "cursor-pointer hover:shadow-lg"
+                  : "cursor-default"
+                  } 
                             transition-all p-4`}
                 onClick={() => canManageMembers && openRoleDialog(member)}
               >
@@ -234,6 +293,13 @@ export default function TeamMembers() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        )}
+
+        {/* 멤버 없음 상태 */}
+        {!loading && !error && members.length === 0 && (
+          <div className="text-center py-12 border rounded-lg bg-secondary/5 text-muted-foreground">
+            <p>현재 프로젝트에 참여하는 멤버가 없습니다.</p>
           </div>
         )}
       </div>
@@ -314,3 +380,17 @@ export default function TeamMembers() {
     </ProjectLayout>
   );
 }
+
+const mapAdminMemberToProjectMember = (
+  member: AdminProjectMemberListItem
+): ProjectMember => ({
+  projectMemberId: member.projectMemberId,
+  userId: member.userId,
+  name: member.username,
+  email: member.email,
+  companyName: member.companyName,
+  userRole: member.userRole as "CLIENT" | "AGENCY",
+  projectRole: member.projectRole as ProjectMember["projectRole"],
+  joinedAt: member.createdAt,
+  removedAt: member.removedAt,
+});
