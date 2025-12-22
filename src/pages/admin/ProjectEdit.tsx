@@ -246,11 +246,12 @@ const AdminProjectEdit = () => {
         setLoading(true);
 
         const [companiesRes, detail] = await Promise.all([
-          adminApi.getCompanies(0, 9999, "", "ACTIVE"),
+          adminApi.getCompanies(0, 9999), // 수정 시 비활성 고객사도 필요하므로 status 필터 제거
           fetchAdminProjectDetail(projectId),
         ]);
+
         const clientCompanies = (companiesRes.data.content ?? []).filter(
-          (c) => c.companyType === "CLIENT"
+          (c) => c.companyType === "CLIENT" || !c.companyType
         );
         const sortedCompanies = [...clientCompanies].sort((a, b) =>
           a.name.localeCompare(b.name, "ko-KR")
@@ -269,7 +270,31 @@ const AdminProjectEdit = () => {
           const found = companiesRes.data.content?.find(
             (c) => c.id === detail.customerCompanyId
           );
-          if (found) setSelectedCompany(found);
+
+          if (found) {
+            setSelectedCompany(found);
+          } else {
+            // 비활성/미노출 고객사도 선택 상태로 표시
+            const fallbackCompany = {
+              id: detail.customerCompanyId,
+              name: detail.customerCompanyName ?? "고객사",
+              businessNumber: null,
+              representative: null,
+              email: null,
+              address: null,
+              memo: null,
+              status: "UNKNOWN",
+              companyType: "CLIENT",
+              createdAt: "",
+              updatedAt: "",
+              deletedAt: null,
+            };
+            setSelectedCompany(fallbackCompany);
+            setCompanies((prev) => {
+              const exists = prev.some((c) => c.id === fallbackCompany.id);
+              return exists ? prev : [...prev, fallbackCompany];
+            });
+          }
         }
         setContractAmount(
           detail.contractAmount ? String(detail.contractAmount) : ""
