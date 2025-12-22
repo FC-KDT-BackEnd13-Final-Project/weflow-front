@@ -23,6 +23,10 @@ import {
   removeProjectMember,
   updateProjectMemberRole,
 } from "@/apis/projectMembers";
+import {
+  fetchAdminProjectMembers,
+  type AdminProjectMemberListItem,
+} from "@/apis/adminProjects";
 import { useUserStore } from "@/stores/user";
 import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
@@ -55,6 +59,7 @@ const MemberCardSkeleton = () => (
 
 export default function TeamMembers() {
   const { user } = useUserStore();
+  const userRole = user?.role?.toUpperCase();
   const [selectedMember, setSelectedMember] = useState<ProjectMember | null>(
     null
   );
@@ -86,6 +91,15 @@ export default function TeamMembers() {
     try {
       setLoading(true);
       setError(null);
+      if (userRole === "SYSTEM_ADMIN") {
+        const adminMembers = await fetchAdminProjectMembers(projectId);
+        const mapped: ProjectMember[] =
+          adminMembers.members?.map(mapAdminMemberToProjectMember) ?? [];
+        const active = mapped.filter((m) => !m.removedAt);
+        setMembers(active);
+        return;
+      }
+
       const data = await fetchProjectMembers(projectId);
       const activeMembers = (data ?? []).filter((m) => !m.removedAt);
       setMembers(activeMembers);
@@ -106,8 +120,10 @@ export default function TeamMembers() {
     return me?.projectRole ?? null;
   }, [members, user]);
 
-  // AGENCY + ADMIN 만 권한 변경 가능
-  const canManageMembers = user?.role === "AGENCY" && myProjectRole === "ADMIN";
+  // 시스템 관리자 or 프로젝트 관리자(AGENCY)만 권한 변경 가능
+  const canManageMembers =
+    userRole === "SYSTEM_ADMIN" ||
+    (userRole === "AGENCY" && myProjectRole === "ADMIN");
 
   /** 모달 오픈 */
   const openRoleDialog = (member: ProjectMember) => {
@@ -364,3 +380,17 @@ export default function TeamMembers() {
     </ProjectLayout>
   );
 }
+
+const mapAdminMemberToProjectMember = (
+  member: AdminProjectMemberListItem
+): ProjectMember => ({
+  projectMemberId: member.projectMemberId,
+  userId: member.userId,
+  name: member.username,
+  email: member.email,
+  companyName: member.companyName,
+  userRole: member.userRole as "CLIENT" | "AGENCY",
+  projectRole: member.projectRole as ProjectMember["projectRole"],
+  joinedAt: member.createdAt,
+  removedAt: member.removedAt,
+});

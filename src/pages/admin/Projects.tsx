@@ -120,8 +120,13 @@ const AdminProjects = () => {
           return name.toLowerCase().includes(companyNameFilter.toLowerCase());
         })
         .sort((a, b) => {
-          if (a.deleted === b.deleted) return 0;
-          return a.deleted ? 1 : -1; // 미삭제 우선
+          const rank = (p: AdminProjectSummary) => {
+            if (p.deleted) return 3;
+            if (p.status === "OPEN") return 1;
+            if (p.status === "CLOSED") return 2;
+            return 4;
+          };
+          return rank(a) - rank(b);
         });
 
       setProjects(filtered);
@@ -343,7 +348,10 @@ const AdminProjects = () => {
                 projects.map((project) => (
                   <div
                     key={project.id}
-                    className="grid grid-cols-[120px_1fr_1fr_1fr_1fr_100px] gap-4 p-4 hover:bg-muted/50 cursor-pointer transition"
+                    className={cn(
+                      "grid grid-cols-[120px_1fr_1fr_1fr_1fr_100px] gap-4 p-4 hover:bg-muted/50 cursor-pointer transition",
+                      project.deleted && "bg-muted/40 text-muted-foreground"
+                    )}
                     onClick={() => navigate(`/admin/projects/${project.id}`)}
                   >
                     <div>
