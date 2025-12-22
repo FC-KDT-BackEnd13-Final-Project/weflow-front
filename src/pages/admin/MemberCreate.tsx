@@ -13,6 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
 import BulkMemberUpload from "@/components/admin/BulkMemberUpload";
 import { adminApi } from "@/apis/admin";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +35,7 @@ const AdminMemberCreate = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [companies, setCompanies] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [companySelectOpen, setCompanySelectOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -38,7 +51,11 @@ const AdminMemberCreate = () => {
       try {
         const response = await adminApi.getCompanies(0, 9999, "", "ACTIVE");
         if (response.success) {
-          setCompanies(response.data.content);
+          // Sort companies alphabetically by name (한글/영문 모두 지원)
+          const sortedCompanies = response.data.content.sort((a, b) =>
+            a.name.localeCompare(b.name, 'ko')
+          );
+          setCompanies(sortedCompanies);
         }
       } catch (error) {
         console.error("회사 목록 로딩 실패:", error);
@@ -215,29 +232,46 @@ const AdminMemberCreate = () => {
                 {/* 회사 선택 */}
                 <div className="space-y-2">
                   <Label>소속 회사 *</Label>
-                  <Select
-                    value={formData.companyId}
-                    onValueChange={(value) => setFormData({ ...formData, companyId: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="회사 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {companies.map((company) => (
-                        <SelectItem key={company.id} value={company.id.toString()}>
-                          {company.name}
-                          {company.companyType && (
-                            <span className="text-xs text-muted-foreground ml-2">
-                              ({company.companyType === 'AGENCY' ? '에이전시' : '고객사'})
-                            </span>
-                          )}
-                          {!company.companyType && (
-                            <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={companySelectOpen} onOpenChange={setCompanySelectOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-between"
+                      >
+                        {formData.companyId
+                          ? companies.find((c) => c.id.toString() === formData.companyId)?.name || "회사 선택"
+                          : "회사 선택"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0" align="start" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+                      <Command>
+                        <CommandInput placeholder="회사 검색..." />
+                        <CommandEmpty>검색 결과 없음</CommandEmpty>
+                        <CommandGroup className="max-h-[300px] overflow-y-auto">
+                          {companies.map((company) => (
+                            <CommandItem
+                              key={company.id}
+                              value={company.name}
+                              onSelect={() => {
+                                setFormData({ ...formData, companyId: company.id.toString() });
+                                setCompanySelectOpen(false);
+                              }}
+                            >
+                              {company.name}
+                              {company.companyType && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  ({company.companyType === 'AGENCY' ? '에이전시' : '고객사'})
+                                </span>
+                              )}
+                              {!company.companyType && (
+                                <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
+                              )}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* 역할 (자동 설정) */}
@@ -258,7 +292,6 @@ const AdminMemberCreate = () => {
                     id="password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="bg-muted"
                   />
                   <p className="text-xs text-muted-foreground">
                     ℹ️ 회원이 첫 로그인 시 사용할 비밀번호입니다.
