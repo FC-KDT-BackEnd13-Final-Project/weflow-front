@@ -45,6 +45,7 @@ export interface AdminProjectDetailResponse {
   endDate: string | null;
   contractAmount: number | null;
   contractFileUrl: string | null;
+  contractAttachmentId?: number | null;
   customerCompanyId: number | null;
   customerCompanyName?: string | null;
   createdBy: number | null;

@@ -158,3 +158,5 @@ export const deleteAttachment = async (
 ): Promise<void> => {
   await api.delete(`/api/attachments/${attachmentId}`);
 };
+
+export type { AttachmentResponse };
