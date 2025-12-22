@@ -75,6 +75,24 @@ export default function TeamMembers() {
   const { toast } = useToast();
   const { id } = useParams<{ id: string }>();
   const projectId = useMemo(() => (id ? Number(id) : null), [id]);
+  const sortMembers = (list: ProjectMember[]) => {
+    const nameOf = (m: ProjectMember) => m.name || m.email || "";
+    return [...list].sort((a, b) => {
+      // 관리자가 먼저
+      if (a.projectRole === "ADMIN" && b.projectRole !== "ADMIN") return -1;
+      if (b.projectRole === "ADMIN" && a.projectRole !== "ADMIN") return 1;
+      return nameOf(a).localeCompare(nameOf(b), "ko-KR");
+    });
+  };
+
+  const agencyMembers = useMemo(
+    () => sortMembers(members.filter((m) => m.userRole === "AGENCY")),
+    [members]
+  );
+  const clientMembers = useMemo(
+    () => sortMembers(members.filter((m) => m.userRole === "CLIENT")),
+    [members]
+  );
 
   const extractErrorMessage = (err: unknown, fallback: string) => {
     if (axios.isAxiosError(err)) {
@@ -211,6 +229,65 @@ export default function TeamMembers() {
   // 로딩 플레이스홀더 배열
   const loadingPlaceholders = Array.from({ length: 6 });
 
+  const renderMemberCard = (member: ProjectMember) => (
+    <Card
+      key={member.projectMemberId}
+      className={`${
+        canManageMembers ? "cursor-pointer hover:shadow-lg" : "cursor-default"
+      } transition-all p-4`}
+      onClick={() => canManageMembers && openRoleDialog(member)}
+    >
+      <CardContent className="flex flex-col items-center text-center space-y-3 p-4">
+        <Avatar className="h-16 w-16">
+          <AvatarFallback className="text-xl">
+            {(member.name || member.email || "M")[0]}
+          </AvatarFallback>
+        </Avatar>
+
+        <div>
+          <p className="font-semibold text-lg">{member.name || "이름 없음"}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {member.companyName}
+          </p>
+        </div>
+
+        <Badge variant={roleLabels[member.projectRole].badgeVariant}>
+          {roleLabels[member.projectRole].label}
+        </Badge>
+      </CardContent>
+    </Card>
+  );
+
+  const renderGroup = (
+    title: string,
+    colorClass: string,
+    groupMembers: ProjectMember[]
+  ) => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Badge
+          variant="secondary"
+          className={`${colorClass} bg-opacity-15 border border-current text-xs`}
+        >
+          {title}
+        </Badge>
+        <span className="text-sm text-muted-foreground">
+          {groupMembers.length}명
+        </span>
+      </div>
+
+      {groupMembers.length === 0 ? (
+        <div className="border rounded-lg p-4 text-sm text-muted-foreground bg-muted/10">
+          해당 그룹 멤버가 없습니다.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {groupMembers.map(renderMemberCard)}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <ProjectLayout>
       <div className="space-y-6">
@@ -255,44 +332,11 @@ export default function TeamMembers() {
           </div>
         )}
 
-        {/* 멤버 리스트 */}
+        {/* 멤버 리스트 (개발사/고객사 구분) */}
         {!loading && !error && members.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {members.map((member) => (
-              <Card
-                key={member.projectMemberId}
-                className={`${canManageMembers
-                  ? "cursor-pointer hover:shadow-lg"
-                  : "cursor-default"
-                  } 
-                            transition-all p-4`}
-                onClick={() => canManageMembers && openRoleDialog(member)}
-              >
-                <CardContent className="flex flex-col items-center text-center space-y-3 p-4">
-                  {/* 프로필 */}
-                  <Avatar className="h-16 w-16">
-                    <AvatarFallback className="text-xl">
-                      {(member.name || member.email || "M")[0]}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  {/* 이름 */}
-                  <div>
-                    <p className="font-semibold text-lg">
-                      {member.name || "이름 없음"}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {member.companyName}
-                    </p>
-                  </div>
-
-                  {/* 역할 뱃지 */}
-                  <Badge variant={roleLabels[member.projectRole].badgeVariant}>
-                    {roleLabels[member.projectRole].label}
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="space-y-8">
+            {renderGroup("개발사", "text-blue-600", agencyMembers)}
+            {renderGroup("고객사", "text-emerald-600", clientMembers)}
           </div>
         )}
 
