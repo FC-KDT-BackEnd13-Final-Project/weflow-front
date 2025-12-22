@@ -94,7 +94,7 @@ const DraggableStepCard = ({
       className={cn(
         "flex flex-col",
         step.status === "APPROVED" && "bg-muted",
-        (isCrossPhaseBlocked || disabled) && "cursor-not-allowed",
+        (isCrossPhaseBlocked || disabled) && "cursor-default",
         isSorting && "shadow-lg",
         isDragging && "ring-2 ring-primary/40"
       )}
@@ -108,6 +108,19 @@ export default function Approvals() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = useUserStore((s) => s.user);
+  const userRole = (user?.role || "").toUpperCase();
+  const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
+  const isSystemAdmin = userRole === "SYSTEM_ADMIN";
+  const isAgency = userRole === "AGENCY";
+  const canManageStep = isSystemAdmin || (isAgency && projectRole === "ADMIN");
+  const canCreateRequest = isSystemAdmin || isAgency;
+  const stepTooltipMessage = {
+    cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
+    cannotDeleteStatus: "진행 중인 단계는 삭제할 수 없습니다.",
+    cannotDeleteRequests: "승인요청이 있어 삭제할 수 없습니다.",
+    cannotDeleteChecklist: "체크리스트가 연결된 단계는 삭제할 수 없습니다.",
+    cannotDeletePosts: "관련 게시글이 있어 삭제할 수 없습니다.",
+  };
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -247,16 +260,19 @@ export default function Approvals() {
   }, [orderedSteps]);
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (!canManageStep) return;
     setActiveId(Number(event.active.id));
     setIsDirty(true);
   };
 
   const handleDragOver = (event: DragOverEvent) => {
+    if (!canManageStep) return;
     const over = event.over;
     setOverId(over ? Number(over.id) : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!canManageStep) return;
     const { active, over } = event;
     setActiveId(null);
     setOverId(null);
@@ -341,6 +357,7 @@ export default function Approvals() {
   };
 
   const handleDragCancel = () => {
+    if (!canManageStep) return;
     setActiveId(null);
     setOverId(null);
     setIsDirty(false);
@@ -378,6 +395,14 @@ export default function Approvals() {
   };
 
   const openRequestDialog = (stepId: number) => {
+    if (!canCreateRequest) {
+      toast({
+        title: "요청 생성 불가",
+        description: "개발사 또는 시스템 관리자만 승인 요청을 생성할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const targetStep = orderedSteps.find((s) => s.id === stepId);
     if (!targetStep || targetStep.status === "APPROVED" || targetStep.status === "CANCELED") {
       toast({ title: "요청 생성 불가", description: "생성할 수 없는 단계입니다.", variant: "destructive" });
@@ -492,19 +517,6 @@ export default function Approvals() {
       }),
   });
 
-  const userRole = (user?.role || "").toUpperCase();
-  const userType = (user as { userRole?: string } | undefined)?.userRole?.toUpperCase?.() || "";
-  const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
-  const canManageStep = userRole === "SYSTEM_ADMIN" || (projectRole === "ADMIN" && userType === "AGENCY");
-
-  const stepTooltipMessage = {
-    cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
-    cannotDeleteStatus: "진행 중인 단계는 삭제할 수 없습니다.",
-    cannotDeleteRequests: "승인요청이 있어 삭제할 수 없습니다.",
-    cannotDeleteChecklist: "체크리스트가 연결된 단계는 삭제할 수 없습니다.",
-    cannotDeletePosts: "관련 게시글이 있어 삭제할 수 없습니다.",
-  };
-
   return (
     <ProjectLayout>
       <div className="space-y-6">
@@ -573,6 +585,7 @@ export default function Approvals() {
                 const hasRequests = requests.length > 0;
                 const canEditStep = canManageStep && isPending;
                 const canDeleteStep = canManageStep && isPending && !hasRequests;
+                const isDraggable = canManageStep && step.status === "PENDING";
                 const deleteTooltip = !isPending
                   ? stepTooltipMessage.cannotDeleteStatus
                   : hasRequests
@@ -580,7 +593,6 @@ export default function Approvals() {
                     : undefined;
                 const isCrossPhaseBlocked = Boolean(isCrossPhase && overStep && overStep.id === step.id);
                 const isDragging = activeId === step.id;
-                const isDraggable = step.status === "PENDING";
                 return (
                   <DraggableStepCard
                     key={step.id}
@@ -622,7 +634,7 @@ export default function Approvals() {
                                         setOpenMenuStepId(null);
                                         setIsEditStepDialogOpen(true);
                                       }}
-                                      className={cn(!canEditStep && "opacity-50 cursor-not-allowed")}
+                                      className={cn(!canEditStep && "opacity-50 cursor-default")}
                                     >
                                       단계 수정
                                     </DropdownMenuItem>
@@ -640,7 +652,7 @@ export default function Approvals() {
                                           deleteStepMutation.mutate(step.id);
                                         }
                                       }}
-                                      className={cn(!canDeleteStep && "opacity-50 cursor-not-allowed")}
+                                      className={cn(!canDeleteStep && "opacity-50 cursor-default")}
                                     >
                                       단계 삭제
                                     </DropdownMenuItem>
@@ -695,7 +707,7 @@ export default function Approvals() {
                           })
                         ) : (
                           <div className="w-full p-4 rounded-lg border border-dashed text-sm text-muted-foreground text-center space-y-3 flex flex-col items-center justify-center min-h-[140px]">
-                            {canShowCreateButton ? (
+                            {canCreateRequest && canShowCreateButton ? (
                               <Button type="button" variant="secondary" onClick={() => openRequestDialog(step.id)}>
                                 승인 요청 생성
                               </Button>
@@ -705,7 +717,7 @@ export default function Approvals() {
                           </div>
                         )}
                       </div>
-                      {canShowCreateButton && requests.length > 0 && (
+                      {canCreateRequest && canShowCreateButton && requests.length > 0 && (
                         <Button
                           type="button"
                           variant="secondary"
