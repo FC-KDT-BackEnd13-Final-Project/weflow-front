@@ -961,22 +961,24 @@ export default function BoardDetail() {
                 <Badge variant="outline" className="bg-purple-50">
                   {post.step.stepName}
                 </Badge>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 {post.questions.length > 0 && overallQuestionStatus && (
                   <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
                     {boardStatusLabels[overallQuestionStatus]}
                   </Badge>
                 )}
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    post.openStatus === "OPEN"
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-gray-50 text-gray-700 border-gray-200"
+                  )}
+                >
+                  {postOpenStatusLabelText}
+                </Badge>
               </div>
-              <Badge
-                variant="outline"
-                className={cn(
-                  post.openStatus === "OPEN"
-                    ? "bg-green-50 text-green-700 border-green-200"
-                    : "bg-gray-50 text-gray-700 border-gray-200"
-                )}
-              >
-                {postOpenStatusLabelText}
-              </Badge>
             </div>
             <CardTitle className="text-2xl">{post.title}</CardTitle>
             <div className="text-sm text-muted-foreground flex flex-wrap gap-3">

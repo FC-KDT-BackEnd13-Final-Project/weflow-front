@@ -257,10 +257,15 @@ export default function BoardNew() {
   };
 
   const handleAddLink = () => {
-    const trimmedLink = linkInput.trim();
+    let trimmedLink = linkInput.trim();
     if (!trimmedLink) {
       setLinkError("링크를 입력해주세요");
       return;
+    }
+
+    // http:// 또는 https://가 없으면 자동으로 https:// 추가
+    if (!/^https?:\/\//i.test(trimmedLink)) {
+      trimmedLink = `https://${trimmedLink}`;
     }
 
     try {
@@ -613,11 +618,11 @@ export default function BoardNew() {
           parentPostId: replyInfo?.parentPostId,
           links: links.map(link => ({ url: link.url })),
           files: uploadedFiles,
-          questions: questions.length > 0 ? questions.map(q => ({
+          questions: questions.map(q => ({
             questionText: q.questionText,
             questionType: questionTypeToApi(q.type),
             options: q.type === "주관식" ? [] : q.options,
-          })) : undefined,
+          })),
         });
 
         toast({
@@ -640,11 +645,12 @@ export default function BoardNew() {
         // 방금 작성한 게시글 상세 페이지로 이동
         navigate(`/project/${id}/board/${response.postId}`);
       }
-    } catch (error) {
-      console.error(`게시글 ${isEditMode ? '수정' : '작성'} 실패:`, error);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
+
       toast({
         title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
-        description: `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
