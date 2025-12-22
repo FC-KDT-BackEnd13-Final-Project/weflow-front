@@ -467,6 +467,47 @@ export default function BoardNew() {
 
     setErrors({});
 
+    // 질문 유효성 검증
+    if (questions.length > 0) {
+      for (const question of questions) {
+        // 질문 내용 검증
+        if (!question.questionText.trim()) {
+          toast({
+            title: "질문 내용 누락",
+            description: "모든 질문의 내용을 입력해주세요.",
+            variant: "destructive",
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        // 객관식/복수선택의 경우에만 옵션 검증 (주관식은 옵션 불필요)
+        if (question.type === "객관식" || question.type === "복수선택") {
+          if (question.options.length === 0) {
+            toast({
+              title: "답변 옵션 누락",
+              description: `"${question.questionText}" 질문에 최소 1개 이상의 답변 옵션을 추가해주세요.`,
+              variant: "destructive",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+
+          // 각 옵션이 비어있지 않은지 검증
+          const hasEmptyOption = question.options.some(opt => !opt.optionText.trim());
+          if (hasEmptyOption) {
+            toast({
+              title: "답변 옵션 내용 누락",
+              description: `"${question.questionText}" 질문의 모든 답변 옵션 내용을 입력해주세요.`,
+              variant: "destructive",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+    }
+
     // 백엔드 API 호출
     setIsSubmitting(true);
     try {
