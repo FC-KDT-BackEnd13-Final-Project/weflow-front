@@ -26,11 +26,11 @@ import {
   ProjectPhase,
 } from "@/apis/adminProjects";
 import { fetchAllUsers } from "@/apis/adminUsers";
-import { DEFAULT_STEPS } from "@/constants/stepDefaults";
 import MemberSelectDialog, {
   SelectedMember,
   MemberData,
 } from "@/components/admin/MemberSelectDialog";
+import { DEFAULT_STEPS } from "@/constants/stepDefaults";
 
 import {
   Dialog,
@@ -69,6 +69,7 @@ import {
 import {
   Command,
   CommandEmpty,
+  CommandList,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -247,9 +248,18 @@ const ProjectCreate = () => {
   }, [selectedCompany]);
 
   useEffect(() => {
-    adminApi.getCompanies().then((res) => {
-      setCompanies(res.data.content ?? []);
-    });
+    adminApi
+      .getCompanies(0, 9999, "", "ACTIVE")
+      .then((res) => {
+        const list = (res.data.content ?? []).filter(
+          (c) => c.companyType === "CLIENT"
+        );
+        const sorted = [...list].sort((a, b) =>
+          a.name.localeCompare(b.name, "ko-KR")
+        );
+        setCompanies(sorted);
+      })
+      .catch((err) => console.error("고객사 목록 조회 실패", err));
   }, []);
 
   const handleAddMembers = (newMembers: SelectedMember[]) => {
@@ -376,7 +386,8 @@ const ProjectCreate = () => {
           console.error(err);
           toast({
             title: "계약서 업로드 실패",
-            description: "프로젝트는 생성되었지만 계약서 업로드에 실패했습니다.",
+            description:
+              "프로젝트는 생성되었지만 계약서 업로드에 실패했습니다.",
             variant: "destructive",
           });
         }
@@ -457,23 +468,25 @@ const ProjectCreate = () => {
                 <CmdPopoverContent className="p-0 w-[320px]">
                   <Command>
                     <CommandInput placeholder="고객사 검색..." />
-                    <CommandEmpty>검색 결과 없음</CommandEmpty>
-                    <CommandGroup>
-                      {companies.map((company) => (
-                        <CommandItem
-                          key={company.id}
-                          value={company.name}
-                          onSelect={() => {
-                            setSelectedCompany(company);
-                            setCustomerCompanyId(String(company.id));
-                            setSelectedClientCompany(company.name);
-                            setCompanySelectOpen(false);
-                          }}
-                        >
-                          {company.name}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    <CommandList className="max-h-72 overflow-auto">
+                      <CommandEmpty>검색 결과 없음</CommandEmpty>
+                      <CommandGroup>
+                        {companies.map((company) => (
+                          <CommandItem
+                            key={company.id}
+                            value={company.name}
+                            onSelect={() => {
+                              setSelectedCompany(company);
+                              setCustomerCompanyId(String(company.id));
+                              setSelectedClientCompany(company.name);
+                              setCompanySelectOpen(false);
+                            }}
+                          >
+                            {company.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
                   </Command>
                 </CmdPopoverContent>
               </CmdPopover>
@@ -543,8 +556,13 @@ const ProjectCreate = () => {
                 <div className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <Paperclip className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-sm truncate">{contractFile.name}</span>
-                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <span className="text-sm truncate">
+                      {contractFile.name}
+                    </span>
+                    <Badge
+                      variant="secondary"
+                      className="text-xs flex-shrink-0"
+                    >
                       {(contractFile.size / 1024).toFixed(1)} KB
                     </Badge>
                   </div>
@@ -645,6 +663,7 @@ const ProjectCreate = () => {
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
         users={filteredUsers}
+        clientCompanies={selectedCompany ? [selectedCompany.name] : []}
       />
     </div>
   );
@@ -795,6 +814,10 @@ const StageSection = ({
           <Plus className="h-4 w-4 mr-1" /> 단계 추가
         </Button>
       </div>
+      <p className="text-xs text-blue-600">
+        단계는 최소 1개 이상 유지해주세요. 기본 단계를 모두 삭제했다면 새 단계를
+        추가해야 합니다. 삭제하고 생성할 시에는 기본 단계로 들어갑니다.
+      </p>
 
       <DndContext
         sensors={sensors}
@@ -809,7 +832,7 @@ const StageSection = ({
             >
               <h3 className="text-lg font-semibold">{group.label}</h3>
 
-      <SortableContext
+              <SortableContext
                 items={group.items.map((s) => s.key)}
                 strategy={verticalListSortingStrategy}
               >
@@ -842,12 +865,6 @@ const StageSection = ({
           </DialogHeader>
 
           <div className="space-y-3 mt-2">
-            <Input
-              placeholder="예: QA, 퍼블리싱"
-              value={newStageName}
-              onChange={(e) => setNewStageName(e.target.value)}
-            />
-
             <div className="space-y-2">
               <Label>Phase</Label>
               <Select
@@ -866,6 +883,12 @@ const StageSection = ({
                 </SelectContent>
               </Select>
             </div>
+
+            <Input
+              placeholder="예: QA, 퍼블리싱"
+              value={newStageName}
+              onChange={(e) => setNewStageName(e.target.value)}
+            />
 
             <div className="flex justify-end gap-2">
               <Button

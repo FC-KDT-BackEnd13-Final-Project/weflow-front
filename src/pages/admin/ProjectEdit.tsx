@@ -76,6 +76,7 @@ import {
 import {
   Command,
   CommandEmpty,
+  CommandList,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -245,10 +246,17 @@ const AdminProjectEdit = () => {
         setLoading(true);
 
         const [companiesRes, detail] = await Promise.all([
-          adminApi.getCompanies(),
+          adminApi.getCompanies(0, 9999), // 수정 시 비활성 고객사도 필요하므로 status 필터 제거
           fetchAdminProjectDetail(projectId),
         ]);
-        setCompanies(companiesRes.data.content ?? []);
+
+        const clientCompanies = (companiesRes.data.content ?? []).filter(
+          (c) => c.companyType === "CLIENT" || !c.companyType
+        );
+        const sortedCompanies = [...clientCompanies].sort((a, b) =>
+          a.name.localeCompare(b.name, "ko-KR")
+        );
+        setCompanies(sortedCompanies);
 
         // 프로젝트 정보
         setName(detail.name);
@@ -262,7 +270,31 @@ const AdminProjectEdit = () => {
           const found = companiesRes.data.content?.find(
             (c) => c.id === detail.customerCompanyId
           );
-          if (found) setSelectedCompany(found);
+
+          if (found) {
+            setSelectedCompany(found);
+          } else {
+            // 비활성/미노출 고객사도 선택 상태로 표시
+            const fallbackCompany = {
+              id: detail.customerCompanyId,
+              name: detail.customerCompanyName ?? "고객사",
+              businessNumber: null,
+              representative: null,
+              email: null,
+              address: null,
+              memo: null,
+              status: "UNKNOWN",
+              companyType: "CLIENT",
+              createdAt: "",
+              updatedAt: "",
+              deletedAt: null,
+            };
+            setSelectedCompany(fallbackCompany);
+            setCompanies((prev) => {
+              const exists = prev.some((c) => c.id === fallbackCompany.id);
+              return exists ? prev : [...prev, fallbackCompany];
+            });
+          }
         }
         setContractAmount(
           detail.contractAmount ? String(detail.contractAmount) : ""
@@ -611,23 +643,25 @@ const AdminProjectEdit = () => {
                 <CmdPopoverContent className="p-0 w-[320px]">
                   <Command>
                     <CommandInput placeholder="고객사 검색..." />
-                    <CommandEmpty>검색 결과 없음</CommandEmpty>
-                    <CommandGroup>
-                      {companies.map((company) => (
-                        <CommandItem
-                          key={company.id}
-                          value={company.name}
-                          onSelect={() => {
-                            setSelectedCompany(company);
-                            setCustomerCompanyId(String(company.id));
-                            setSelectedClientCompany(company.name);
-                            setCompanySelectOpen(false);
-                          }}
-                        >
-                          {company.name}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    <CommandList className="max-h-72 overflow-auto">
+                      <CommandEmpty>검색 결과 없음</CommandEmpty>
+                      <CommandGroup>
+                        {companies.map((company) => (
+                          <CommandItem
+                            key={company.id}
+                            value={company.name}
+                            onSelect={() => {
+                              setSelectedCompany(company);
+                              setCustomerCompanyId(String(company.id));
+                              setSelectedClientCompany(company.name);
+                              setCompanySelectOpen(false);
+                            }}
+                          >
+                            {company.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
                   </Command>
                 </CmdPopoverContent>
               </CmdPopover>
@@ -651,7 +685,10 @@ const AdminProjectEdit = () => {
 
             <div>
               <Label>프로젝트 단계</Label>
-              <Select value={phase} onValueChange={(v) => setPhase(v as ProjectPhase)}>
+              <Select
+                value={phase}
+                onValueChange={(v) => setPhase(v as ProjectPhase)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -711,7 +748,10 @@ const AdminProjectEdit = () => {
                     <span className="text-sm truncate">
                       {newContractFile.name}
                     </span>
-                    <Badge variant="secondary" className="text-xs flex-shrink-0">
+                    <Badge
+                      variant="secondary"
+                      className="text-xs flex-shrink-0"
+                    >
                       {(newContractFile.size / 1024).toFixed(1)} KB
                     </Badge>
                   </div>
@@ -850,6 +890,7 @@ const AdminProjectEdit = () => {
         users={filteredUsers}
         selectedClientCompany={selectedClientCompany}
         setSelectedClientCompany={setSelectedClientCompany}
+        clientCompanies={selectedCompany ? [selectedCompany.name] : []}
       />
     </div>
   );
@@ -991,6 +1032,10 @@ const StageSection = ({
           <Plus className="h-4 w-4 mr-1" /> 단계 추가
         </Button>
       </div>
+      <p className="text-xs text-blue-600">
+        단계는 최소 1개 이상 유지해주세요. 기본 단계를 모두 삭제했다면 새 단계를
+        추가해야 합니다. 삭제하고 수정할 시에는 기본 단계로 들어갑니다.
+      </p>
 
       <DndContext
         sensors={sensors}

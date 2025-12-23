@@ -5,6 +5,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Upload, Loader2, ArrowDown, ArrowUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +45,7 @@ const BulkMemberUpload = () => {
 
   // 회사 목록
   const [companies, setCompanies] = useState<any[]>([]);
+  const [companySelectOpen, setCompanySelectOpen] = useState(false);
 
   // 드래그 상태
   const [isDragging, setIsDragging] = useState(false);
@@ -58,7 +71,11 @@ const BulkMemberUpload = () => {
       try {
         const response = await adminApi.getCompanies(0, 9999, "", "ACTIVE");
         if (response.success) {
-          setCompanies(response.data.content);
+          // Sort companies alphabetically by name (한글/영문 모두 지원)
+          const sortedCompanies = response.data.content.sort((a, b) =>
+            a.name.localeCompare(b.name, 'ko')
+          );
+          setCompanies(sortedCompanies);
         }
       } catch (error) {
         console.error("회사 목록 로딩 실패:", error);
@@ -307,26 +324,46 @@ const BulkMemberUpload = () => {
 
           <div className="space-y-2">
             <Label>소속 회사</Label>
-            <Select value={company} onValueChange={setCompany}>
-              <SelectTrigger>
-                <SelectValue placeholder="회사 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {companies.map((comp) => (
-                  <SelectItem key={comp.id} value={comp.id.toString()}>
-                    {comp.name}
-                    {comp.companyType && (
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({comp.companyType === 'AGENCY' ? '에이전시' : '고객사'})
-                      </span>
-                    )}
-                    {!comp.companyType && (
-                      <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={companySelectOpen} onOpenChange={setCompanySelectOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-between"
+                >
+                  {company
+                    ? companies.find((c) => c.id.toString() === company)?.name || "회사 선택"
+                    : "회사 선택"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+                <Command>
+                  <CommandInput placeholder="회사 검색..." />
+                  <CommandEmpty>검색 결과 없음</CommandEmpty>
+                  <CommandGroup className="max-h-[300px] overflow-y-auto">
+                    {companies.map((comp) => (
+                      <CommandItem
+                        key={comp.id}
+                        value={comp.name}
+                        onSelect={() => {
+                          setCompany(comp.id.toString());
+                          setCompanySelectOpen(false);
+                        }}
+                      >
+                        {comp.name}
+                        {comp.companyType && (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({comp.companyType === 'AGENCY' ? '에이전시' : '고객사'})
+                          </span>
+                        )}
+                        {!comp.companyType && (
+                          <span className="text-xs text-destructive ml-2">(유형 미설정)</span>
+                        )}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-2">
@@ -421,17 +458,21 @@ const BulkMemberUpload = () => {
               </div>
             </div>
 
-            {/* 안내 */}
-            <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground space-y-1">
-              <p>※ CSV 파일은 '이름, 이메일, 전화번호' 열이 필요합니다. (전화번호는 선택사항)</p>
-              <p>※ 회원 종류와 소속 회사는 전체에 일괄 적용됩니다.</p>
-              <p>※ 모든 회원에게 동일한 임시 비밀번호가 적용됩니다.</p>
-              <p>※ 목록 중 이미 가입된 이메일이 하나라도 포함되어 있으면 일괄 등록을 진행할 수 없습니다.</p>
-            </div>
-
           </CardContent>
         </Card>
       )}
+
+      {/* 주의사항 */}
+      <Card>
+        <CardContent className="py-6">
+          <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground space-y-1">
+            <p>※ CSV 파일은 '이름, 이메일, 전화번호' 열이 필요합니다. (전화번호는 선택사항)</p>
+            <p>※ 회원 종류와 소속 회사는 전체에 일괄 적용됩니다.</p>
+            <p>※ 모든 회원에게 동일한 임시 비밀번호가 적용됩니다.</p>
+            <p>※ 목록 중 이미 가입된 이메일이 하나라도 포함되어 있으면 일괄 등록을 진행할 수 없습니다.</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 버튼 */}
       <div className="flex justify-end gap-2">
