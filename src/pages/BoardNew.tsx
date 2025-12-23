@@ -166,6 +166,9 @@ export default function BoardNew() {
   useEffect(() => {
     const fetchPost = async () => {
       if (isEditMode && id && postId) {
+        // steps가 로드될 때까지 대기
+        if (isLoadingSteps) return;
+
         // 수정 모드: 기존 게시글 데이터 로드
         try {
           const post = await getPost(Number(id), Number(postId));
@@ -241,7 +244,7 @@ export default function BoardNew() {
     };
 
     fetchPost();
-  }, [isEditMode, id, postId, location.key, toast, navigate]);
+  }, [isEditMode, id, postId, location.key, isLoadingSteps, toast, navigate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -754,7 +757,17 @@ export default function BoardNew() {
                   <Select
                     value={formData.status}
                     onValueChange={(value) => {
-                      setFormData(prev => ({ ...prev, status: value, step: "" })); // phase 변경 시 step 초기화
+                      setFormData(prev => {
+                        // phase 변경 시, 현재 선택된 step이 새 phase에 속하지 않으면 초기화
+                        const currentStepBelongsToNewPhase = steps.some(
+                          step => step.id.toString() === prev.step && step.phase === value
+                        );
+                        return {
+                          ...prev,
+                          status: value,
+                          step: currentStepBelongsToNewPhase ? prev.step : ""
+                        };
+                      });
                       setErrors(prev => ({ ...prev, status: undefined })); // 에러 제거
                     }}
                   >
