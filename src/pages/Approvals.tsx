@@ -131,8 +131,8 @@ export default function Approvals() {
   const { data: members = [], isLoading: membersLoading } = useQuery({
     queryKey: ["project-members", projectId],
     queryFn: () => fetchProjectMembers(projectId),
-    enabled: Boolean(projectId && userId),
-  });
+    enabled: Boolean(projectId && userId) && !isSystemAdmin, 
+  }); 
   const myProjectRole =
     members.find((m) => m?.userId === userId || (m as any)?.user?.id === userId)?.projectRole?.toUpperCase?.() || "";
   const canManageStep = isSystemAdmin || (isAgency && myProjectRole === "ADMIN");
