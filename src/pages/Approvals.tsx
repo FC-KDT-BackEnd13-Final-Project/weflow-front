@@ -48,6 +48,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import axios from "axios";
+import { fetchProjectMembers } from "@/apis/projectMembers";
 
 const getDefaultPhaseByTab = (tab: string): StepPhase => {
   if (tab === "IN_PROGRESS") return "IN_PROGRESS";
@@ -110,11 +111,9 @@ export default function Approvals() {
   const navigate = useNavigate();
   const user = useUserStore((s) => s.user);
   const userRole = (user?.role || "").toUpperCase();
-  const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
+  const userId = user?.id;
   const isSystemAdmin = userRole === "SYSTEM_ADMIN";
   const isAgency = userRole === "AGENCY";
-  const canManageStep = isSystemAdmin || (isAgency && projectRole === "ADMIN");
-  console.log({ userRole, projectRole, canManageStep, user });
   const canCreateRequest = isSystemAdmin || isAgency;
   const stepTooltipMessage = {
     cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
@@ -129,6 +128,14 @@ export default function Approvals() {
   const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
   const parsedProjectId = Number(id);
   const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
+  const { data: members = [], isLoading: membersLoading } = useQuery({
+    queryKey: ["project-members", projectId],
+    queryFn: () => fetchProjectMembers(projectId),
+    enabled: Boolean(projectId && userId),
+  });
+  const myProjectRole =
+    members.find((m) => m?.userId === userId || (m as any)?.user?.id === userId)?.projectRole?.toUpperCase?.() || "";
+  const canManageStep = isSystemAdmin || (isAgency && myProjectRole === "ADMIN");
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const tabParam = searchParams.get("tab") ?? "ALL";
   const currentPhase = ["ALL", "CONTRACT", "IN_PROGRESS", "DELIVERY", "MAINTENANCE"].includes(tabParam) ? tabParam : "ALL";
@@ -631,7 +638,7 @@ export default function Approvals() {
                             </span>
                           )}
                         </div>
-                        {canManageStep ? (
+                        {canManageStep && (
                           <DropdownMenu
                             open={openMenuStepId === step.id}
                             onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
@@ -683,7 +690,7 @@ export default function Approvals() {
                               </TooltipProvider>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        ) : null}
+                        )}
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <CardTitle className="text-lg">{step.title}</CardTitle>
