@@ -173,6 +173,17 @@ export default function BoardNew() {
         try {
           const post = await getPost(Number(id), Number(postId));
 
+          // CLOSED 상태 게시글은 수정 불가
+          if (post.openStatus === "CLOSED") {
+            toast({
+              title: "수정 불가",
+              description: "종료된 게시글은 수정할 수 없습니다.",
+              variant: "destructive",
+            });
+            navigate(`/project/${id}/board/${postId}`);
+            return;
+          }
+
           setFormData({
             title: post.title,
             content: post.content,
@@ -667,7 +678,10 @@ export default function BoardNew() {
         navigate(`/project/${id}/board/${response.postId}`);
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글은 수정할 수 없습니다."
+        : error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
 
       toast({
         title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
