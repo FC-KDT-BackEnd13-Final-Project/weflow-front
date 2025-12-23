@@ -132,7 +132,7 @@ export default function Checklist() {
     return () => controller.abort();
   }, [id]);
 
-  const canCreateChecklist = user?.role === "AGENCY" || "SYSTEM_ADMIN";
+  const canCreateChecklist = user?.role === "AGENCY" || user?.role === "SYSTEM_ADMIN";
 
   const stepNames = steps.map((step) => step.title);
   const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];
