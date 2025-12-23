@@ -1031,14 +1031,16 @@ export default function BoardNew() {
                     <MessageSquare className="h-4 w-4" />
                     질문 생성
                   </Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={addQuestion}
-                    className="gap-2"
-                  >
-                    <Plus className="h-4 w-4" /> 질문 추가
-                  </Button>
+                  {questions.length === 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={addQuestion}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" /> 질문 추가
+                    </Button>
+                  )}
                 </div>
 
                 <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
@@ -1140,13 +1142,6 @@ export default function BoardNew() {
                           <Button type="button" variant="outline" size="sm" onClick={() => handleAddOption(question.id)}>
                             + 옵션 추가
                           </Button>
-                          <div
-                            className="h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-[10px] text-muted-foreground"
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={() => handleOptionDropToEnd(question.id)}
-                          >
-                            하단으로 드래그
-                          </div>
                         </div>
                       )}
 
@@ -1157,13 +1152,17 @@ export default function BoardNew() {
                       )}
                     </div>
                   ))}
-                  <div
-                    className="h-8 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-xs text-muted-foreground"
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={handleQuestionDropToEnd}
-                  >
-                    카드 하단으로 드래그
-                  </div>
+                  {questions.length > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={addQuestion}
+                      className="gap-2 w-full"
+                      variant="outline"
+                    >
+                      <Plus className="h-4 w-4" /> 질문 추가
+                    </Button>
+                  )}
                 </div>
               </div>
 
