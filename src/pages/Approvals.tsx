@@ -546,6 +546,17 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
     },
     onError: (error: unknown) => {
+      if (
+        axios.isAxiosError(error) &&
+        (error.response?.data as { code?: string; message?: string } | undefined)?.code === "STEP_004"
+      ) {
+        toast({
+          title: "단계 삭제 불가",
+          description: "게시글이나 체크리스트가 있는 단계는 삭제할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 삭제 실패",
