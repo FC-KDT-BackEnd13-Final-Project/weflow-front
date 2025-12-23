@@ -578,11 +578,16 @@ export default function BoardDetail() {
       toast({
         title: "댓글이 삭제되었습니다.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("댓글 삭제 실패:", error);
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글의 댓글은 삭제할 수 없습니다."
+        : error.response?.data?.message || "댓글 삭제 중 오류가 발생했습니다.";
+
       toast({
         title: "댓글 삭제 실패",
-        description: "댓글 삭제 중 오류가 발생했습니다.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -812,8 +817,8 @@ export default function BoardDetail() {
   // 수정 가능 여부: 작성자 본인이고, OPEN 상태이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
   const canEdit = isAuthor && post.openStatus === "OPEN" && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
 
-  // 삭제 가능 여부: 작성자 본인만 가능
-  const canDelete = isAuthor;
+  // 삭제 가능 여부: 작성자 본인이고, OPEN 상태일 때만 가능
+  const canDelete = isAuthor && post.openStatus === "OPEN";
 
   // 수정 불가 사유 메시지
   const getEditDisabledReason = () => {
@@ -821,6 +826,13 @@ export default function BoardDetail() {
     if (post.openStatus === "CLOSED") return "종료된 게시글은 수정할 수 없습니다.";
     if (post.comments.length > 0) return "댓글이 있는 게시글은 수정할 수 없습니다.";
     if (post.questions.some(q => q.answer !== null)) return "답변이 등록된 게시글은 수정할 수 없습니다.";
+    return null;
+  };
+
+  // 삭제 불가 사유 메시지
+  const getDeleteDisabledReason = () => {
+    if (!isAuthor) return null;
+    if (post.openStatus === "CLOSED") return "종료된 게시글은 삭제할 수 없습니다.";
     return null;
   };
 
@@ -836,11 +848,16 @@ export default function BoardDetail() {
         description: "게시글이 성공적으로 삭제되었습니다.",
       });
       navigate(`/project/${id}/board`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("게시글 삭제 실패:", error);
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글은 삭제할 수 없습니다."
+        : error.response?.data?.message || "게시글 삭제 중 오류가 발생했습니다.";
+
       toast({
         title: "게시글 삭제 실패",
-        description: "게시글 삭제 중 오류가 발생했습니다.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -850,11 +867,11 @@ export default function BoardDetail() {
     try {
       const downloadUrl = await getDownloadUrl(fileId);
       window.open(downloadUrl, '_blank');
-    } catch (error) {
+    } catch (error: any) {
       console.error("파일 다운로드 실패:", error);
       toast({
         title: "파일 다운로드 실패",
-        description: "파일 다운로드 중 오류가 발생했습니다.",
+        description: error.response?.data?.message || "파일 다운로드 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     }
@@ -933,15 +950,28 @@ export default function BoardDetail() {
                     )}
                   </Tooltip>
                 </TooltipProvider>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleDelete}
-                  disabled={!canDelete}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  삭제
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={handleDelete}
+                          disabled={!canDelete}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          삭제
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!canDelete && getDeleteDisabledReason() && (
+                      <TooltipContent>
+                        <p>{getDeleteDisabledReason()}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               </>
             )}
             <Button className="gap-2" onClick={handleReply}>

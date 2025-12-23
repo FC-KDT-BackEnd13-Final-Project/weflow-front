@@ -166,9 +166,23 @@ export default function BoardNew() {
   useEffect(() => {
     const fetchPost = async () => {
       if (isEditMode && id && postId) {
+        // steps가 로드될 때까지 대기
+        if (isLoadingSteps) return;
+
         // 수정 모드: 기존 게시글 데이터 로드
         try {
           const post = await getPost(Number(id), Number(postId));
+
+          // CLOSED 상태 게시글은 수정 불가
+          if (post.openStatus === "CLOSED") {
+            toast({
+              title: "수정 불가",
+              description: "종료된 게시글은 수정할 수 없습니다.",
+              variant: "destructive",
+            });
+            navigate(`/project/${id}/board/${postId}`);
+            return;
+          }
 
           setFormData({
             title: post.title,
@@ -241,7 +255,7 @@ export default function BoardNew() {
     };
 
     fetchPost();
-  }, [isEditMode, id, postId, location.key, toast, navigate]);
+  }, [isEditMode, id, postId, location.key, isLoadingSteps, toast, navigate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -664,7 +678,10 @@ export default function BoardNew() {
         navigate(`/project/${id}/board/${response.postId}`);
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글은 수정할 수 없습니다."
+        : error.response?.data?.message || error.message || `게시글 ${isEditMode ? '수정' : '작성'} 중 오류가 발생했습니다.`;
 
       toast({
         title: `게시글 ${isEditMode ? '수정' : '작성'} 실패`,
@@ -754,7 +771,17 @@ export default function BoardNew() {
                   <Select
                     value={formData.status}
                     onValueChange={(value) => {
-                      setFormData(prev => ({ ...prev, status: value, step: "" })); // phase 변경 시 step 초기화
+                      setFormData(prev => {
+                        // phase 변경 시, 현재 선택된 step이 새 phase에 속하지 않으면 초기화
+                        const currentStepBelongsToNewPhase = steps.some(
+                          step => step.id.toString() === prev.step && step.phase === value
+                        );
+                        return {
+                          ...prev,
+                          status: value,
+                          step: currentStepBelongsToNewPhase ? prev.step : ""
+                        };
+                      });
                       setErrors(prev => ({ ...prev, status: undefined })); // 에러 제거
                     }}
                   >
@@ -1018,14 +1045,16 @@ export default function BoardNew() {
                     <MessageSquare className="h-4 w-4" />
                     질문 생성
                   </Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={addQuestion}
-                    className="gap-2"
-                  >
-                    <Plus className="h-4 w-4" /> 질문 추가
-                  </Button>
+                  {questions.length === 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={addQuestion}
+                      className="gap-2"
+                    >
+                      <Plus className="h-4 w-4" /> 질문 추가
+                    </Button>
+                  )}
                 </div>
 
                 <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
@@ -1127,13 +1156,6 @@ export default function BoardNew() {
                           <Button type="button" variant="outline" size="sm" onClick={() => handleAddOption(question.id)}>
                             + 옵션 추가
                           </Button>
-                          <div
-                            className="h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-[10px] text-muted-foreground"
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={() => handleOptionDropToEnd(question.id)}
-                          >
-                            하단으로 드래그
-                          </div>
                         </div>
                       )}
 
@@ -1144,13 +1166,17 @@ export default function BoardNew() {
                       )}
                     </div>
                   ))}
-                  <div
-                    className="h-8 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-xs text-muted-foreground"
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={handleQuestionDropToEnd}
-                  >
-                    카드 하단으로 드래그
-                  </div>
+                  {questions.length > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={addQuestion}
+                      className="gap-2 w-full"
+                      variant="outline"
+                    >
+                      <Plus className="h-4 w-4" /> 질문 추가
+                    </Button>
+                  )}
                 </div>
               </div>
 
