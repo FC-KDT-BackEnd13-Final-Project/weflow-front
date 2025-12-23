@@ -47,6 +47,8 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import axios from "axios";
+import { fetchProjectMembers } from "@/apis/projectMembers";
 
 const getDefaultPhaseByTab = (tab: string): StepPhase => {
   if (tab === "IN_PROGRESS") return "IN_PROGRESS";
@@ -109,10 +111,9 @@ export default function Approvals() {
   const navigate = useNavigate();
   const user = useUserStore((s) => s.user);
   const userRole = (user?.role || "").toUpperCase();
-  const projectRole = (user as { projectRole?: string } | undefined)?.projectRole?.toUpperCase?.() || "";
+  const userId = user?.id;
   const isSystemAdmin = userRole === "SYSTEM_ADMIN";
   const isAgency = userRole === "AGENCY";
-  const canManageStep = isSystemAdmin || (isAgency && projectRole === "ADMIN");
   const canCreateRequest = isSystemAdmin || isAgency;
   const stepTooltipMessage = {
     cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
@@ -127,6 +128,14 @@ export default function Approvals() {
   const defaultProjectId = Number(import.meta.env.VITE_DEFAULT_PROJECT_ID ?? 1);
   const parsedProjectId = Number(id);
   const projectId = Number.isFinite(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : defaultProjectId;
+  const { data: members = [], isLoading: membersLoading } = useQuery({
+    queryKey: ["project-members", projectId],
+    queryFn: () => fetchProjectMembers(projectId),
+    enabled: Boolean(projectId && userId) && !isSystemAdmin, 
+  }); 
+  const myProjectRole =
+    members.find((m) => m?.userId === userId || (m as any)?.user?.id === userId)?.projectRole?.toUpperCase?.() || "";
+  const canManageStep = isSystemAdmin || (isAgency && myProjectRole === "ADMIN");
   const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
   const tabParam = searchParams.get("tab") ?? "ALL";
   const currentPhase = ["ALL", "CONTRACT", "IN_PROGRESS", "DELIVERY", "MAINTENANCE"].includes(tabParam) ? tabParam : "ALL";
@@ -150,6 +159,18 @@ export default function Approvals() {
   const [overId, setOverId] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const showStepForbiddenToast = (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 403) {
+      toast({
+        title: "권한 없음",
+        description: "프로젝트 관리자만 단계 관리가 가능합니다.",
+        variant: "destructive",
+      });
+      return true;
+    }
+    return false;
+  };
 
   const stepsQueryKey = useMemo(() => ["project-steps", projectId], [projectId]);
 
@@ -179,7 +200,9 @@ export default function Approvals() {
           current.id === step.id &&
           current.orderIndex === step.orderIndex &&
           current.status === step.status &&
-          current.phase === step.phase
+          current.phase === step.phase &&
+          current.title === step.title &&
+          (current.description ?? "") === (step.description ?? "")
         );
       });
     if (!isSameOrder || !isInitialized) {
@@ -345,9 +368,10 @@ export default function Approvals() {
         });
         setIsDirty(false);
       })
-      .catch(() => {
+      .catch((error) => {
         setOrderedSteps(previousSteps);
         setIsDirty(false);
+        if (showStepForbiddenToast(error)) return;
         toast({
           title: "순서 변경 실패",
           description: "진행 중이거나 완료된 단계는 순서를 변경할 수 없습니다.",
@@ -474,12 +498,22 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
       resetCreateStepDialog();
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        toast({
+          title: "단계 생성 실패",
+          description: "같은 이름의 단계는 생성할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 생성 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   const updateStepMutation = useMutation({
@@ -495,12 +529,14 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
       resetEditStepDialog();
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 수정 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   const deleteStepMutation = useMutation({
@@ -509,12 +545,25 @@ export default function Approvals() {
       toast({ title: "단계가 삭제되었습니다." });
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (
+        axios.isAxiosError(error) &&
+        (error.response?.data as { code?: string; message?: string } | undefined)?.code === "STEP_004"
+      ) {
+        toast({
+          title: "단계 삭제 불가",
+          description: "게시글이나 체크리스트가 있는 단계는 삭제할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 삭제 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   return (
@@ -610,7 +659,7 @@ export default function Approvals() {
                             </span>
                           )}
                         </div>
-                        {canManageStep ? (
+                        {canManageStep && (
                           <DropdownMenu
                             open={openMenuStepId === step.id}
                             onOpenChange={(open) => setOpenMenuStepId(open ? step.id : null)}
@@ -662,7 +711,7 @@ export default function Approvals() {
                               </TooltipProvider>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        ) : null}
+                        )}
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <CardTitle className="text-lg">{step.title}</CardTitle>
@@ -811,15 +860,6 @@ export default function Approvals() {
               <Label>단계명</Label>
               <Input value={editingStepTitle} onChange={(e) => setEditingStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
             </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={editingStepDescription}
-                onChange={(e) => setEditingStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={resetEditStepDialog}>
@@ -858,15 +898,6 @@ export default function Approvals() {
             <div className="space-y-2">
               <Label>단계명</Label>
               <Input value={newStepTitle} onChange={(e) => setNewStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
-            </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={newStepDescription}
-                onChange={(e) => setNewStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
             </div>
           </div>
           <DialogFooter>
