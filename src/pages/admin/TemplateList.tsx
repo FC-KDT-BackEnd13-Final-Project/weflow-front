@@ -74,6 +74,10 @@ const TemplateList = () => {
   const [page, setPage] = useState(0);
   const size = 10;
 
+  // 💡 [수정] 지금까지 로드된 모든 템플릿에서 발견된 카테고리를 저장합니다.
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+
+
   /* =========================
      Debounce된 검색어 또는 카테고리 변경 시 페이지 리셋
   ========================= */
@@ -106,24 +110,38 @@ const TemplateList = () => {
         });
 
         const data = response.data?.data;
+        let fetchedTemplates: ChecklistTemplateSummary[] = []; // 로드된 템플릿 임시 저장
 
         if (Array.isArray(data)) {
-          setTemplates(data);
+          fetchedTemplates = data;
           setTotalPages(1);
           setTotalElements(data.length);
-          return;
-        }
-
-        if (data?.content) {
-          setTemplates(data.content);
+        } else if (data?.content) {
+          fetchedTemplates = data.content;
           setTotalPages(data.totalPages ?? 1);
           setTotalElements(
             data.totalElements ?? data.content.length
           );
-          return;
+        } else {
+          throw new Error();
         }
 
-        throw new Error();
+        setTemplates(fetchedTemplates); // 템플릿 목록 상태 업데이트
+
+        // 💡 [수정] 새로 로드된 템플릿에서 카테고리를 추출하여 기존 카테고리 목록에 누적합니다.
+        const newCategories = fetchedTemplates
+          .map((t) => t.category)
+          .filter(Boolean) as string[];
+
+        setAllCategories((prevCategories) => {
+          const uniqueCategories = new Set([
+            ...prevCategories,
+            ...newCategories,
+          ]);
+          // 가독성을 위해 정렬
+          return Array.from(uniqueCategories).sort();
+        });
+
       } catch (e) {
         if (!controller.signal.aborted) {
           setError("템플릿 목록을 불러오는 중 오류가 발생했습니다.");
@@ -180,24 +198,20 @@ const TemplateList = () => {
       </div>
 
       {/* 카테고리 */}
-      {isLoading ? (
+      {/* 💡 [수정] 로딩 중이면서 템플릿 데이터가 없을 때만 스켈레톤 표시 */}
+      {isLoading && templates.length === 0 ? (
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-8 w-20" />
           ))}
         </div>
       ) : (
-        templates.length > 0 && (
+        // 💡 [수정] allCategories 상태를 사용하여 버튼 목록을 생성
+        (allCategories.length > 0 || selectedCategory === "전체") && (
           <div className="flex flex-wrap gap-2">
             {[
               "전체",
-              ...Array.from(
-                new Set(
-                  filteredTemplates
-                    .map((t) => t.category)
-                    .filter(Boolean)
-                )
-              ),
+              ...allCategories,
             ].map((category) => (
               <Button
                 key={category}
@@ -208,7 +222,7 @@ const TemplateList = () => {
                 }
                 size="sm"
                 onClick={() => setSelectedCategory(category)}
-                // 💡 로딩 중 카테고리 버튼 비활성화 유지
+                // 로딩 중에도 카테고리 버튼 비활성화 유지
                 disabled={isLoading}
               >
                 {category}
@@ -226,8 +240,6 @@ const TemplateList = () => {
           onChange={(e) =>
             setSearchInput(e.target.value)
           }
-        // 💡 로딩 상태에 관계없이 입력 활성화
-        // disabled={isLoading} 제거
         />
       </div>
 
@@ -344,7 +356,7 @@ const TemplateList = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  // 💡 로딩 중에도 페이지네이션 버튼은 비활성화 유지
+                  // 로딩 중에도 페이지네이션 버튼은 비활성화 유지
                   disabled={page === 0 || isLoading}
                   onClick={() =>
                     setPage((p) => Math.max(0, p - 1))
@@ -355,7 +367,7 @@ const TemplateList = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  // 💡 로딩 중에도 페이지네이션 버튼은 비활성화 유지
+                  // 로딩 중에도 페이지네이션 버튼은 비활성화 유지
                   disabled={page >= totalPages - 1 || isLoading}
                   onClick={() =>
                     setPage((p) =>
