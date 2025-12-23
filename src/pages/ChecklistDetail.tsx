@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,10 +94,10 @@ export default function ChecklistDetail() {
               })),
             answer: q.answer
               ? {
-                  selectedOptionId: q.answer.selectedOptionId ?? undefined,
-                  selectedOptionIds: q.answer.selectedOptionIds ?? undefined,
-                  answerText: q.answer.answerText ?? undefined,
-                }
+                selectedOptionId: q.answer.selectedOptionId ?? undefined,
+                selectedOptionIds: q.answer.selectedOptionIds ?? undefined,
+                answerText: q.answer.answerText ?? undefined,
+              }
               : undefined,
           }));
 
@@ -133,12 +133,13 @@ export default function ChecklistDetail() {
     const nextInput: Record<number, string> = {};
 
     detail.questions.forEach((q) => {
-      if (q.answer?.selectedOptionId !== undefined) {
+      // 🚨 [수정 1] 질문 유형에 따라 안전하게 답변을 초기화
+      if (q.questionType === "SINGLE" && q.answer?.selectedOptionId !== undefined) {
         nextSel[q.id] = q.answer.selectedOptionId;
-      }
-      if (q.answer?.selectedOptionIds !== undefined) {
+      } else if (q.questionType === "MULTI" && q.answer?.selectedOptionIds !== undefined) {
         nextSel[q.id] = q.answer.selectedOptionIds;
       }
+
       if (q.answer?.answerText !== undefined) {
         nextInput[q.id] = q.answer.answerText;
       }
@@ -148,6 +149,7 @@ export default function ChecklistDetail() {
     setCustomInputs(nextInput);
   }, [detail]);
 
+  // 🚨 [수정 2] canSubmitChecklist 논리 오류 수정
   const canSubmitChecklist = user?.role === "CLIENT" || user?.role === "SYSTEM_ADMIN";
   const canManageChecklist = user?.role === "AGENCY" || user?.role === "SYSTEM_ADMIN";
   const canEditCurrentChecklist = Boolean(
@@ -168,6 +170,7 @@ export default function ChecklistDetail() {
     const q = detail?.questions.find((item) => item.id === questionId);
     const selectedOpt = q?.options?.find((o) => o.id === numeric);
 
+    // 선택된 옵션에 hasInput이 없으면 입력 값 초기화
     if (!selectedOpt?.hasInput) {
       setCustomInputs((prev) => {
         const copy = { ...prev };
@@ -188,8 +191,10 @@ export default function ChecklistDetail() {
         : current.filter((id) => id !== optionId);
 
       const q = detail?.questions.find((item) => item.id === questionId);
+      // 현재 선택된 옵션들 중 하나라도 hasInput이 있는지 확인
       const hasInput = q?.options?.some((opt) => next.includes(opt.id) && opt.hasInput);
 
+      // hasInput을 가진 옵션이 선택되지 않았다면 customInput 초기화
       if (!hasInput) {
         setCustomInputs((prevInput) => {
           const copy = { ...prevInput };
@@ -212,6 +217,7 @@ export default function ChecklistDetail() {
     }));
   };
 
+  // 🚨 [수정 3] 답변 페이로드 구성 로직 수정: hasInput인 옵션에만 answerText를 첨부
   const buildAnswerPayload = () => {
     if (!detail) return [];
     const payload: Array<{ questionId: number; optionId: number | null; answerText: string | null }> = [];
@@ -220,6 +226,7 @@ export default function ChecklistDetail() {
       const selected = selectedAnswers[q.id];
       const memoInput = customInputs[q.id] ?? null;
 
+      // TEXT 타입: optionId 없이 answerText만 보냄
       if (q.questionType === "TEXT") {
         payload.push({
           questionId: q.id,
@@ -229,21 +236,31 @@ export default function ChecklistDetail() {
         return;
       }
 
+      // SINGLE 타입
       if (q.questionType === "SINGLE" && typeof selected === "number") {
+        const selectedOpt = q.options?.find(o => o.id === selected);
+        // hasInput이 있고 입력 내용이 있을 때만 answerText를 보냄
+        const answerTextToSend = (selectedOpt?.hasInput && memoInput) ? memoInput : null;
+
         payload.push({
           questionId: q.id,
           optionId: selected,
-          answerText: memoInput,
+          answerText: answerTextToSend,
         });
         return;
       }
 
+      // MULTI 타입
       if (q.questionType === "MULTI" && Array.isArray(selected)) {
         selected.forEach((optionId) => {
+          const selectedOpt = q.options?.find(o => o.id === optionId);
+          // 해당 옵션이 hasInput이 있고 입력 내용이 있을 때만 answerText를 보냄
+          const answerTextToSend = (selectedOpt?.hasInput && memoInput) ? memoInput : null;
+
           payload.push({
             questionId: q.id,
             optionId,
-            answerText: memoInput,
+            answerText: answerTextToSend,
           });
         });
       }
@@ -380,7 +397,7 @@ export default function ChecklistDetail() {
                   {detail.locked ? "제출 완료" : "작성 가능"}
                 </p>
                 {detail.stepName && (
-                  <p className="text-xs text-muted-foreground mt-1">단계: {detail.stepName}</p>
+                  <p className="text-sm text-muted-foreground mt-1">단계: {detail.stepName}</p>
                 )}
               </div>
 
@@ -456,14 +473,14 @@ export default function ChecklistDetail() {
                             return (
                               <div key={opt.id} className="space-y-2">
                                 <div className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`${q.id}-${opt.id}`}
-                                  checked={selected}
-                                  onCheckedChange={(checked) =>
-                                    handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
-                                  }
-                                  disabled={detail.locked || !canSubmitChecklist}
-                                />
+                                  <Checkbox
+                                    id={`${q.id}-${opt.id}`}
+                                    checked={selected}
+                                    onCheckedChange={(checked) =>
+                                      handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
+                                    }
+                                    disabled={detail.locked || !canSubmitChecklist}
+                                  />
                                   <Label
                                     htmlFor={`${q.id}-${opt.id}`}
                                     className={selected ? "font-medium" : ""}
@@ -495,7 +512,6 @@ export default function ChecklistDetail() {
                         />
                       )}
 
-                      {/* Additional Input */}
                     </CardContent>
                   </Card>
                 </div>
