@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus, Trash2, GripVertical } from "lucide-react";
+import { ArrowLeft, Paperclip, X, Link2, MessageSquare, Plus, Trash2, GripVertical, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { createPost, updatePost, getPost } from "@/apis/postApi";
@@ -97,6 +97,8 @@ export default function BoardNew() {
   const [steps, setSteps] = useState<StepResponse[]>([]);
   const [isLoadingSteps, setIsLoadingSteps] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   // 선택된 phase에 해당하는 step만 필터링
   const filteredSteps = steps.filter(step => {
@@ -533,7 +535,13 @@ export default function BoardNew() {
 
       // 파일 업로드
       const uploadedFiles: FileRequest[] = [];
-      for (const file of files) {
+      if (files.length > 0) {
+        setIsUploading(true);
+        setUploadProgress({ current: 0, total: files.length });
+      }
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         try {
           // 1. Presigned URL 요청
           const key = `post/${Date.now()}_${file.name}`;
@@ -552,10 +560,20 @@ export default function BoardNew() {
             filePath: presignedUrlResponse.key,
             contentType: file.type,
           });
+
+          // 진행률 업데이트
+          setUploadProgress({ current: i + 1, total: files.length });
         } catch (error) {
           console.error(`파일 업로드 실패 (${file.name}):`, error);
+          setIsUploading(false);
+          setUploadProgress({ current: 0, total: 0 });
           throw error;
         }
+      }
+
+      if (files.length > 0) {
+        setIsUploading(false);
+        setUploadProgress({ current: 0, total: 0 });
       }
 
       if (isEditMode && postId) {
@@ -680,6 +698,23 @@ export default function BoardNew() {
   return (
     <ProjectLayout>
       <div className="space-y-6 max-w-7xl mx-auto w-full">
+        {/* 파일 업로드 진행 상황 모달 */}
+        {isUploading && (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <p className="mt-4 text-lg font-medium text-foreground">첨부파일 업로드 중입니다...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {uploadProgress.current} / {uploadProgress.total} 개 업로드 중
+            </p>
+            <div className="w-64 h-2 bg-muted rounded-full mt-4 overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300 ease-out"
+                style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button
