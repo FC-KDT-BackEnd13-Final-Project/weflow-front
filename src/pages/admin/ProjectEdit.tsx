@@ -32,6 +32,12 @@ import {
 } from "@/apis/adminProjects";
 
 import { fetchAdminProjectSteps } from "@/apis/steps";
+import {
+  createStep,
+  updateStep,
+  deleteStep,
+  reorderStepsByPhase,
+} from "@/apis/step";
 import { normalizeStages } from "@/utils/normalizeStages";
 
 import { fetchAllUsers } from "@/apis/adminUsers";
@@ -68,6 +74,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { adminApi } from "@/apis/admin";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { getPosts } from "@/apis/postApi";
+import { getProjectStepRequests } from "@/apis/stepRequest";
 import {
   Popover as CmdPopover,
   PopoverContent as CmdPopoverContent,
@@ -115,9 +123,11 @@ const stageKey = (s: Stage) => s.key;
 const SortableStage = ({
   stage,
   onDelete,
+  locked = false,
 }: {
   stage: Stage;
   onDelete: (id: string) => void;
+  locked?: boolean;
 }) => {
   const sortableId = stage.key;
 
@@ -127,18 +137,25 @@ const SortableStage = ({
     });
 
   const style = { transform: CSS.Transform.toString(transform), transition };
+  const dragProps = locked ? {} : { ...attributes, ...listeners };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="flex items-center justify-between w-full
+      {...dragProps}
+      className={`flex items-center justify-between w-full
                  px-4 py-3 rounded-xl border bg-white shadow-sm
-                 hover:bg-accent cursor-grab transition"
+                 ${locked ? "bg-muted cursor-not-allowed" : "hover:bg-accent cursor-grab"} transition`}
     >
-      <span className="font-medium text-sm">{stage.name}</span>
+      <span className="font-medium text-sm flex items-center gap-2">
+        {stage.name}
+        {locked && (
+          <Badge variant="outline" className="text-[11px]">
+            잠금
+          </Badge>
+        )}
+      </span>
 
       <button
         type="button"
@@ -148,7 +165,8 @@ const SortableStage = ({
         }}
         onPointerDown={(e) => e.stopPropagation()}
         className="h-7 w-7 flex items-center justify-center rounded-md
-                   hover:bg-destructive/10 transition"
+                   hover:bg-destructive/10 transition disabled:opacity-40"
+        disabled={locked}
       >
         <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
       </button>
@@ -188,6 +206,9 @@ const AdminProjectEdit = () => {
     useState<AttachmentResponse | null>(null);
   const [newContractFile, setNewContractFile] = useState<File | null>(null);
   const [contractDeleting, setContractDeleting] = useState(false);
+  const initialStagesRef = useRef<Stage[]>([]);
+  const [stepsDirty, setStepsDirty] = useState(false);
+  const [lockedStepIds, setLockedStepIds] = useState<Set<number>>(new Set());
 
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -358,7 +379,56 @@ const AdminProjectEdit = () => {
         setMembers(mappedMembers);
         initialMemberIds.current = new Set(mappedMembers.map((m) => m.id));
 
-        setStages(normalizeStages(stepRes));
+        const normalized = normalizeStages(stepRes);
+        setStages(normalized);
+        initialStagesRef.current = normalized;
+
+        // 게시글/승인요청이 있는 stepId 수집 (최대 200개씩 페이징)
+        const collectLockedStepIds = async () => {
+          const postStepIds = new Set<number>();
+          try {
+            let page = 0;
+            let totalPages = 1;
+            while (page < totalPages && page < 5) {
+              const postList = await getPosts(projectId, {
+                page,
+                size: 200,
+                sortBy: "createdAt",
+                direction: "DESC",
+              });
+              postList.posts.forEach((p) => {
+                if (typeof p.stepId === "number") postStepIds.add(p.stepId);
+              });
+              totalPages = postList.pageInfo?.totalPages ?? 1;
+              page += 1;
+            }
+          } catch (err) {
+            console.error("게시글 조회 실패(잠금 판단)", err);
+          }
+
+          const stepReqIds = new Set<number>();
+          try {
+            let page = 0;
+            let totalPages = 1;
+            while (page < totalPages && page < 5) {
+              const stepReqs = await getProjectStepRequests(projectId, page, 200);
+              const items = stepReqs?.stepRequestSummaryResponses ?? [];
+              items.forEach((r: any) => {
+                if (typeof r.stepId === "number") stepReqIds.add(r.stepId);
+              });
+              const size = stepReqs.size || items.length || 1;
+              const total = stepReqs.totalCount ?? items.length;
+              totalPages = Math.max(1, Math.ceil(total / size));
+              page += 1;
+            }
+          } catch (err) {
+            console.error("승인 요청 조회 실패(잠금 판단)", err);
+          }
+
+          setLockedStepIds(new Set([...postStepIds, ...stepReqIds]));
+        };
+
+        collectLockedStepIds();
       } finally {
         setLoading(false);
       }
@@ -373,15 +443,16 @@ const AdminProjectEdit = () => {
   const handleAddStage = () => {
     if (!newStageName.trim()) return;
 
-    setStages([
-      ...stages,
+    setStages((prev) => [
+      ...prev,
       {
         key: `stage-${Date.now()}-${Math.random()}`,
         name: newStageName,
-        order: stages.length + 1,
+        order: prev.length + 1,
         phase: newStagePhase,
       },
     ]);
+    setStepsDirty(true);
 
     setNewStageName("");
     setNewStagePhase("CONTRACT");
@@ -389,8 +460,18 @@ const AdminProjectEdit = () => {
   };
 
   const handleDeleteStage = (key: string) => {
+    const target = stages.find((s) => stageKey(s) === key);
+    if (target?.id && lockedStepIds.has(target.id)) {
+      toast({
+        title: "해당 단계를 삭제할 수 없습니다.",
+        description: "이 단계에 게시글이나 승인 요청이 있어 삭제할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     const filtered = stages.filter((s) => stageKey(s) !== key);
     setStages(filtered.map((s, i) => ({ ...s, order: i + 1 })));
+    setStepsDirty(true);
   };
 
   const handleDragEnd = (e: any) => {
@@ -401,6 +482,20 @@ const AdminProjectEdit = () => {
     const newIndex = stages.findIndex((s) => stageKey(s) === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
+    const source = stages[oldIndex];
+    const target = stages[newIndex];
+    if (
+      (source?.id && lockedStepIds.has(source.id)) ||
+      (target?.id && lockedStepIds.has(target.id))
+    ) {
+      toast({
+        title: "잠금된 단계는 순서를 바꿀 수 없습니다.",
+        description: "게시글이나 승인 요청이 있는 단계는 이동/편집이 불가합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // phase 다르면 무시
     if (stages[oldIndex].phase !== stages[newIndex].phase) return;
 
@@ -410,6 +505,7 @@ const AdminProjectEdit = () => {
     }));
 
     setStages(reordered);
+    setStepsDirty(true);
   };
 
   const handleStatusChange = (next: ProjectStatus) => {
@@ -516,10 +612,105 @@ const AdminProjectEdit = () => {
   // -------------------------------
   // 저장
   // -------------------------------
+  const saveStages = async (orderedStages: Stage[]) => {
+    const initial = initialStagesRef.current;
+    const initialIdSet = new Set(
+      initial.map((s) => s.id).filter((id): id is number => Boolean(id))
+    );
+    const currentIdSet = new Set(
+      orderedStages.map((s) => s.id).filter((id): id is number => Boolean(id))
+    );
+
+    // 각 단계별 순서 (phase 기준) 계산
+    const phaseOrderMap = new Map<string, number>();
+    const phaseCounters: Record<string, number> = {};
+    orderedStages.forEach((s) => {
+      phaseCounters[s.phase] = (phaseCounters[s.phase] ?? 0) + 1;
+      phaseOrderMap.set(s.key, phaseCounters[s.phase]);
+    });
+
+    // 삭제 (잠금 단계는 건너뜀)
+    for (const id of initialIdSet) {
+      if (!currentIdSet.has(id)) {
+        if (lockedStepIds.has(id)) {
+          toast({
+            title: "삭제 불가",
+            description:
+              "게시글이나 승인 요청이 있는 단계는 삭제할 수 없습니다.",
+            variant: "destructive",
+          });
+          continue;
+        }
+        await deleteStep(id);
+      }
+    }
+
+    // 업데이트 (제목/phase 변경)
+    for (const stage of orderedStages) {
+      if (!stage.id) continue;
+      const prev = initial.find((s) => s.id === stage.id);
+      if (!prev) continue;
+      if (prev.name !== stage.name || prev.phase !== stage.phase) {
+        await updateStep(stage.id, {
+          title: stage.name,
+          phase: stage.phase,
+        });
+      }
+    }
+
+    // 생성 (id 없는 단계)
+    const createdIdMap = new Map<string, number>();
+    for (const stage of orderedStages) {
+      if (stage.id) continue;
+      const created = await createStep(projectId, {
+        title: stage.name,
+        phase: stage.phase,
+        orderIndex: phaseOrderMap.get(stage.key) ?? 1,
+      });
+      const newId = (created as any)?.id ?? (created as any)?.stepId ?? created;
+      if (typeof newId === "number") {
+        createdIdMap.set(stage.key, newId);
+        stage.id = newId;
+      }
+    }
+
+    // 리오더 (phase별)
+    const phases: Record<string, number[]> = {};
+    const perPhaseOrder: Record<string, number> = {};
+    orderedStages.forEach((s) => {
+      const id = s.id ?? createdIdMap.get(s.key);
+      if (typeof id !== "number") return;
+      perPhaseOrder[s.phase] = (perPhaseOrder[s.phase] ?? 0) + 1;
+      if (!phases[s.phase]) phases[s.phase] = [];
+      phases[s.phase].push(id);
+    });
+    for (const [phase, ids] of Object.entries(phases)) {
+      await reorderStepsByPhase(projectId, {
+        phase,
+        orderedStepIds: ids,
+      });
+    }
+
+    // 로컬 상태 동기화
+    const synced = orderedStages.map((s, idx) => ({
+      ...s,
+      order: idx + 1,
+      id: s.id ?? createdIdMap.get(s.key),
+    }));
+    setStages(synced);
+    initialStagesRef.current = synced;
+    setStepsDirty(false);
+  };
+
   const handleSubmit = async () => {
     if (!validateRequired()) return;
     try {
       const orderedStages = [...stages].sort((a, b) => a.order - b.order);
+
+      // 단계 변경이 있는 경우, 기존 stepId를 유지한 채 개별 API로 처리
+      if (stepsDirty) {
+        await saveStages(orderedStages);
+      }
 
       let uploadedContract: AttachmentResponse | null = null;
 
@@ -551,11 +742,6 @@ const AdminProjectEdit = () => {
         startDate: toLocal(startDate),
         endDateExpected: toLocal(endDate),
         endDate: toLocal(actualEndDate),
-        steps: orderedStages.map((s, idx) => ({
-          title: s.name,
-          phase: s.phase,
-          orderIndex: idx + 1,
-        })),
       });
 
       if (newContractFile && existingContractAttachment?.id) {
@@ -829,20 +1015,21 @@ const AdminProjectEdit = () => {
           />
 
           {/* 단계 */}
-          <StageSection
-            stages={stages}
-            setStages={setStages}
-            newStageName={newStageName}
-            setNewStageName={setNewStageName}
-            newStagePhase={newStagePhase}
-            setNewStagePhase={setNewStagePhase}
-            handleAddStage={handleAddStage}
-            handleDeleteStage={handleDeleteStage}
-            handleDragEnd={handleDragEnd}
-            isStageDialogOpen={isStageDialogOpen}
-            setIsStageDialogOpen={setIsStageDialogOpen}
-            sensors={sensors}
-          />
+      <StageSection
+        stages={stages}
+        setStages={setStages}
+        newStageName={newStageName}
+        setNewStageName={setNewStageName}
+        newStagePhase={newStagePhase}
+        setNewStagePhase={setNewStagePhase}
+        handleAddStage={handleAddStage}
+        handleDeleteStage={handleDeleteStage}
+        handleDragEnd={handleDragEnd}
+        isStageDialogOpen={isStageDialogOpen}
+        setIsStageDialogOpen={setIsStageDialogOpen}
+        sensors={sensors}
+        lockedStepIds={lockedStepIds}
+      />
 
           {/* 멤버 */}
           <MemberSection
@@ -992,6 +1179,7 @@ const StageSection = ({
   isStageDialogOpen,
   setIsStageDialogOpen,
   sensors,
+  lockedStepIds,
 }: {
   stages: Stage[];
   setStages: React.Dispatch<React.SetStateAction<Stage[]>>;
@@ -1005,6 +1193,7 @@ const StageSection = ({
   isStageDialogOpen: boolean;
   setIsStageDialogOpen: (v: boolean) => void;
   sensors: any;
+  lockedStepIds: Set<number>;
 }) => {
   const phases = [
     { key: "CONTRACT", label: "계약" },
@@ -1032,6 +1221,9 @@ const StageSection = ({
           <Plus className="h-4 w-4 mr-1" /> 단계 추가
         </Button>
       </div>
+      <p className="text-sm text-muted-foreground">
+        게시글/승인 요청이 있는 단계는 잠금 처리되어 이동/삭제할 수 없습니다.
+      </p>
       <p className="text-xs text-blue-600">
         단계는 최소 1개 이상 유지해주세요. 기본 단계를 모두 삭제했다면 새 단계를
         추가해야 합니다. 삭제하고 수정할 시에는 기본 단계로 들어갑니다.
@@ -1060,6 +1252,7 @@ const StageSection = ({
                       key={stage.key}
                       stage={stage}
                       onDelete={handleDeleteStage}
+                      locked={stage.id ? lockedStepIds.has(stage.id) : false}
                     />
                   ))}
 
