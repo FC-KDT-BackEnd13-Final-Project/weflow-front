@@ -47,6 +47,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import axios from "axios";
 
 const getDefaultPhaseByTab = (tab: string): StepPhase => {
   if (tab === "IN_PROGRESS") return "IN_PROGRESS";
@@ -113,6 +114,7 @@ export default function Approvals() {
   const isSystemAdmin = userRole === "SYSTEM_ADMIN";
   const isAgency = userRole === "AGENCY";
   const canManageStep = isSystemAdmin || (isAgency && projectRole === "ADMIN");
+  console.log({ userRole, projectRole, canManageStep, user });
   const canCreateRequest = isSystemAdmin || isAgency;
   const stepTooltipMessage = {
     cannotEdit: "진행 중인 단계는 수정할 수 없습니다.",
@@ -150,6 +152,18 @@ export default function Approvals() {
   const [overId, setOverId] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const showStepForbiddenToast = (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 403) {
+      toast({
+        title: "권한 없음",
+        description: "프로젝트 관리자만 단계 관리가 가능합니다.",
+        variant: "destructive",
+      });
+      return true;
+    }
+    return false;
+  };
 
   const stepsQueryKey = useMemo(() => ["project-steps", projectId], [projectId]);
 
@@ -345,9 +359,10 @@ export default function Approvals() {
         });
         setIsDirty(false);
       })
-      .catch(() => {
+      .catch((error) => {
         setOrderedSteps(previousSteps);
         setIsDirty(false);
+        if (showStepForbiddenToast(error)) return;
         toast({
           title: "순서 변경 실패",
           description: "진행 중이거나 완료된 단계는 순서를 변경할 수 없습니다.",
@@ -474,12 +489,14 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
       resetCreateStepDialog();
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 생성 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   const updateStepMutation = useMutation({
@@ -495,12 +512,14 @@ export default function Approvals() {
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
       resetEditStepDialog();
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 수정 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   const deleteStepMutation = useMutation({
@@ -509,12 +528,14 @@ export default function Approvals() {
       toast({ title: "단계가 삭제되었습니다." });
       queryClient.invalidateQueries({ queryKey: ["project-steps", projectId] });
     },
-    onError: (error: unknown) =>
+    onError: (error: unknown) => {
+      if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 삭제 실패",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
-      }),
+      });
+    },
   });
 
   return (
