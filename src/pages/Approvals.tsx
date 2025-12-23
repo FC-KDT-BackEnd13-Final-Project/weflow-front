@@ -200,7 +200,9 @@ export default function Approvals() {
           current.id === step.id &&
           current.orderIndex === step.orderIndex &&
           current.status === step.status &&
-          current.phase === step.phase
+          current.phase === step.phase &&
+          current.title === step.title &&
+          (current.description ?? "") === (step.description ?? "")
         );
       });
     if (!isSameOrder || !isInitialized) {
@@ -497,6 +499,14 @@ export default function Approvals() {
       resetCreateStepDialog();
     },
     onError: (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        toast({
+          title: "단계 생성 실패",
+          description: "같은 이름의 단계는 생성할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (showStepForbiddenToast(error)) return;
       toast({
         title: "단계 생성 실패",
@@ -839,15 +849,6 @@ export default function Approvals() {
               <Label>단계명</Label>
               <Input value={editingStepTitle} onChange={(e) => setEditingStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
             </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={editingStepDescription}
-                onChange={(e) => setEditingStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={resetEditStepDialog}>
@@ -886,15 +887,6 @@ export default function Approvals() {
             <div className="space-y-2">
               <Label>단계명</Label>
               <Input value={newStepTitle} onChange={(e) => setNewStepTitle(e.target.value)} placeholder="단계명을 입력하세요" />
-            </div>
-            <div className="space-y-2">
-              <Label>설명 (선택)</Label>
-              <Textarea
-                value={newStepDescription}
-                onChange={(e) => setNewStepDescription(e.target.value)}
-                className="min-h-[120px]"
-                placeholder="단계 설명을 입력하세요"
-              />
             </div>
           </div>
           <DialogFooter>
