@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
@@ -6,59 +6,153 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { checklistsApi } from "@/apis/checklists";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
-type ChecklistCategory = "전체" | "요구사항 정의" | "화면 설계" | "디자인" | "개발" | "검수";
+type ChecklistCategory = string;
 type StatusFilter = "전체" | "완료" | "대기";
 
 interface ChecklistItem {
   id: number;
   title: string;
   category: ChecklistCategory;
-  status: "complete" | "pending";
+  locked: boolean;
   count: number;
+  stepId?: number;
 }
 
-export const mockChecklists: ChecklistItem[] = [
-  {
-    id: 1,
-    title: "기획 단계 사전 질문지",
-    category: "요구사항 정의",
-    status: "complete",
-    count: 12,
-  },
-  {
-    id: 2,
-    title: "디자인 가이드 입력",
-    category: "화면 설계",
-    status: "pending",
-    count: 9,
-  },
-  {
-    id: 3,
-    title: "개발 환경 요구사항",
-    category: "개발",
-    status: "pending",
-    count: 10,
-  },
-];
+interface ProjectStep {
+  id: number;
+  title: string;
+  description?: string;
+  status: string;
+  orderIndex: number;
+}
 
-const categories: ChecklistCategory[] = ["전체", "요구사항 정의", "화면 설계", "디자인", "개발", "검수"];
+// 체크리스트 항목 스켈레톤 컴포넌트 정의
+const ChecklistItemSkeleton = () => (
+  <Card className="p-4">
+    <div className="flex items-center gap-3">
+      <Skeleton className="h-6 w-16 rounded-full" /> {/* Badge */}
+      <div className="flex-1 space-y-1">
+        <Skeleton className="h-5 w-3/4" /> {/* Title */}
+        <Skeleton className="h-3 w-1/4" /> {/* Count */}
+      </div>
+    </div>
+  </Card>
+);
 
 export default function Checklist() {
   const [selectedCategory, setSelectedCategory] = useState<ChecklistCategory>("전체");
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("전체");
+  const [checklists, setChecklists] = useState<ChecklistItem[]>([]);
+  const [steps, setSteps] = useState<ProjectStep[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isStepLoading, setIsStepLoading] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [size] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useCurrentUser();
 
-  let filteredChecklists = selectedCategory === "전체" 
-    ? mockChecklists 
-    : mockChecklists.filter(item => item.category === selectedCategory);
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    const fetchChecklists = async () => {
+      try {
+        setIsLoading(true);
+        setFetchError(null);
+        const response = await checklistsApi.getList(id!, {
+          signal: controller.signal,
+          params: { page, size },
+        });
+        const responseData = response.data?.data;
+        const mapItems = (list: any[]) =>
+          list.map((item: any) => ({
+            id: item.checklistId,
+            title: item.title,
+            category: item.stepName,
+            locked: Boolean(item.locked),
+            count: item.questionCount,
+            stepId: item.stepId,
+          })) as ChecklistItem[];
 
-  if (selectedStatus === "완료") {
-    filteredChecklists = filteredChecklists.filter(item => item.status === "complete");
-  } else if (selectedStatus === "대기") {
-    filteredChecklists = filteredChecklists.filter(item => item.status === "pending");
-  }
+        if (Array.isArray(responseData)) {
+          setChecklists(mapItems(responseData));
+          setTotalPages(1);
+          setTotalElements(responseData.length);
+        } else if (responseData?.content) {
+          setChecklists(mapItems(responseData.content));
+          setTotalPages(responseData.totalPages ?? 1);
+          setTotalElements(responseData.totalElements ?? responseData.content.length);
+        } else {
+          throw new Error("잘못된 응답 형식입니다.");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setFetchError("체크리스트를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
+      }
+    };
+    fetchChecklists();
+    return () => controller.abort();
+  }, [id, page, size]);
+
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    const fetchSteps = async () => {
+      try {
+        setIsStepLoading(true);
+        setStepError(null);
+        const response = await checklistsApi.fetchProjectSteps(id!, { signal: controller.signal });
+        const stepData = response.data?.data?.steps ?? response.data?.data;
+        if (Array.isArray(stepData)) {
+          const sorted = [...stepData].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+          setSteps(sorted);
+        } else {
+          throw new Error("잘못된 단계 응답입니다.");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setStepError("단계 정보를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsStepLoading(false);
+      }
+    };
+    fetchSteps();
+    return () => controller.abort();
+  }, [id]);
+
+  const canCreateChecklist = user?.role === "AGENCY" || user?.role === "SYSTEM_ADMIN";
+
+  const stepNames = steps.map((step) => step.title);
+  const categoryTabs: ChecklistCategory[] = ["전체", ...stepNames.filter((name, index) => stepNames.indexOf(name) === index)];
+
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCategory, selectedStatus]);
+
+  const filteredChecklists = useMemo(() => {
+    const base =
+      selectedCategory === "전체"
+        ? checklists
+        : checklists.filter((item) => item.category === selectedCategory);
+
+    return base.filter((item) => {
+      if (selectedStatus === "완료") return item.locked === true;
+      if (selectedStatus === "대기") return item.locked === false;
+      return true;
+    });
+  }, [checklists, selectedCategory, selectedStatus]);
 
   const handleViewDetail = (checklistId: number) => {
     navigate(`/project/${id}/checklist/${checklistId}`);
@@ -74,22 +168,48 @@ export default function Checklist() {
   return (
     <ProjectLayout>
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">체크리스트</h1>
-        
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-3xl font-bold tracking-tight">체크리스트</h1>
+          {canCreateChecklist && (
+            <Button
+              size="sm"
+              className="sm:w-auto"
+              onClick={() => navigate(`/project/${id}/checklist/create`)}
+            >
+              체크리스트 추가
+            </Button>
+          )}
+        </div>
+
         <Card>
           <CardHeader className="pb-3">
             <div className="flex flex-wrap gap-2 mt-3">
-              {categories.map((category) => (
-                <Button
-                  key={category}
-                  variant={selectedCategory === category ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category)}
-                  className="text-xs"
-                >
-                  {category}
-                </Button>
-              ))}
+              {isStepLoading ? (
+                // 단계 로딩 중일 때 카테고리 탭 스켈레톤
+                <>
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-8 w-20" />
+                  <Skeleton className="h-8 w-14" />
+                </>
+              ) : categoryTabs.length > 0 ? (
+                categoryTabs.map((category) => (
+                  <Button
+                    key={category}
+                    variant={selectedCategory === category ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(category)}
+                    className="text-xs"
+                  >
+                    {category}
+                  </Button>
+                ))
+              ) : (
+                <span className="text-xs text-muted-foreground">단계 정보가 없습니다.</span>
+              )}
+
+              {stepError && !isStepLoading && (
+                <span className="text-xs text-destructive">{stepError}</span>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -100,16 +220,39 @@ export default function Checklist() {
                   onClick={() => setSelectedStatus(status)}
                   className={cn(
                     "text-sm transition-colors pb-1 border-b-2",
-                    selectedStatus === status 
-                      ? "text-primary border-primary font-semibold" 
+                    selectedStatus === status
+                      ? "text-primary border-primary font-semibold"
                       : "text-muted-foreground border-transparent hover:text-foreground"
                   )}
+                  disabled={isLoading}
                 >
                   {status}
                 </button>
               ))}
             </div>
-            {filteredChecklists.map((item) => (
+
+            {isLoading && (
+              // 체크리스트 로딩 중일 때 항목 스켈레톤 표시
+              <div className="space-y-3">
+                {Array.from({ length: size }).map((_, i) => (
+                  <ChecklistItemSkeleton key={i} />
+                ))}
+              </div>
+            )}
+
+            {fetchError && !isLoading && (
+              <div className="text-sm text-destructive py-6 text-center">
+                {fetchError}
+              </div>
+            )}
+
+            {!isLoading && !fetchError && filteredChecklists.length === 0 && (
+              <div className="text-sm text-muted-foreground py-6 text-center">
+                조건에 맞는 체크리스트가 없습니다.
+              </div>
+            )}
+
+            {!isLoading && !fetchError && filteredChecklists.length > 0 && filteredChecklists.map((item) => (
               <Card
                 key={item.id}
                 role="button"
@@ -125,11 +268,12 @@ export default function Checklist() {
                         variant="outline"
                         className={cn(
                           "rounded-full px-2 py-0.5 whitespace-nowrap",
-                          item.status === "complete" && "bg-status-complete-bg text-status-complete border-status-complete",
-                          item.status === "pending" && "bg-blue-50 text-blue-600 border-blue-200"
+                          item.locked
+                            ? "bg-status-complete-bg text-status-complete border-status-complete"
+                            : "bg-blue-50 text-blue-600 border-blue-200"
                         )}
                       >
-                        {item.status === "complete" ? "완료" : "대기"}
+                        {item.locked ? "완료" : "대기"}
                       </Badge>
                       <div className="flex-1">
                         <h3 className="font-medium">{item.title}</h3>
@@ -140,6 +284,43 @@ export default function Checklist() {
                 </CardContent>
               </Card>
             ))}
+
+            {/* 페이지네이션 스켈레톤/UI */}
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between pt-4">
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-4 w-48" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-9 w-16" />
+                    <Skeleton className="h-9 w-16" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    총 {totalElements.toLocaleString()}개 · {Math.min(page + 1, totalPages)}/{totalPages} 페이지
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page === 0}
+                      onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                    >
+                      이전
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                    >
+                      다음
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

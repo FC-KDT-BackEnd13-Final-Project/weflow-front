@@ -1,274 +1,645 @@
-import { useParams } from "react-router-dom";
-import { ProjectLayout } from "@/components/layout/ProjectLayout";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Calendar, Bell, XCircle } from "lucide-react";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, AlertCircle, Calendar, User, Layers3, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import api from "@/apis/api";
+import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useUserStore } from "@/stores/user";
 
-const projectInfo = {
-  name: "WeFlow 플랫폼 고도화",
-  plan: "웹/앱 통합 구축",
-  currentStage: "화면 설계",
-  progress: 62,
-  dueDate: "2024.12.31",
-  daysLeft: 41,
-  owner: "홍길동 PM",
-  client: "하이넥스트",
-  nextApproval: "디자인",
-};
-
-const stageFlow = [
-  { label: "요구사항 정의", status: "done" },
-  { label: "화면 설계", status: "in-progress" },
-  { label: "디자인", status: "pending" },
-  { label: "퍼블리싱", status: "pending" },
-  { label: "개발", status: "pending" },
-  { label: "검수", status: "pending" },
-];
-
-const approvals = [
-  { title: "요구사항 정의", status: "완료", color: "bg-emerald-100 text-emerald-700", desc: "11.12 승인" },
-  { title: "화면 설계", status: "진행중", color: "bg-blue-100 text-blue-700", desc: "승인 요청 1건" },
-  { title: "디자인", status: "대기", color: "bg-slate-200 text-slate-700", desc: "예정 12월 초" },
-];
-
-const activities = [
-  { id: 1, content: "김지현님이 화면 설계 피드백을 남겼습니다.", time: "오늘 오전 10:12" },
-  { id: 2, content: "홍길동님이 요구사항 정의 단계를 승인했습니다.", time: "어제 오후 4:37" },
-  { id: 3, content: "디자인 킥오프 회의록이 업로드되었습니다.", time: "11.21 13:02" },
-];
-
-const stepRequests = [
-  {
-    id: 501,
-    title: "디자인 시안 승인 요청드립니다",
-    status: "REQUESTED",
-    requestedBy: "김서현(디자이너)",
-    createdAt: "2025-02-05T11:00:00"
-  },
-  {
-    id: 502,
-    title: "퍼블리싱 QA 요청",
-    status: "DRAFT",
-    requestedBy: "이현우(개발리드)",
-    createdAt: "2025-02-04T16:30:00"
+declare global {
+  interface Window {
+    Chart?: any;
   }
-];
+}
 
-const requestStatusMap: Record<string, { label: string; className: string }> = {
-  REQUESTED: { label: "승인 대기", className: "bg-blue-100 text-blue-700" },
-  APPROVED: { label: "승인 완료", className: "bg-emerald-100 text-emerald-700" },
-  REJECTED: { label: "반려", className: "bg-red-100 text-red-700" },
-  DRAFT: { label: "작성중", className: "bg-slate-200 text-slate-700" }
+const chartJsCdnUrl = "https://cdn.jsdelivr.net/npm/chart.js";
+let chartScriptPromise: Promise<void> | null = null;
+
+const loadChartJs = () => {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.Chart) return Promise.resolve();
+  if (chartScriptPromise) return chartScriptPromise;
+
+  chartScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${chartJsCdnUrl}"]`);
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve());
+      existingScript.addEventListener("error", reject);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = chartJsCdnUrl;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+
+  return chartScriptPromise;
 };
 
-const formatRequestDate = (dateString: string) =>
-  new Date(dateString).toLocaleString("ko-KR", {
+interface SummaryChartProps {
+  labels: string[];
+  values: number[];
+}
+
+function SummaryChart({ labels, values }: SummaryChartProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const chartInstance = useRef<any>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const renderChart = async () => {
+      try {
+        await loadChartJs();
+        if (!isMounted || !canvasRef.current || !window.Chart) return;
+        const Chart = window.Chart;
+
+        if (chartInstance.current) {
+          chartInstance.current.destroy();
+        }
+
+        chartInstance.current = new Chart(canvasRef.current, {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [
+              {
+                data: values,
+                backgroundColor: ["#4C6FFF", "#22C55E", "#F97316"],
+                borderWidth: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: {
+                  usePointStyle: true,
+                },
+              },
+            },
+          },
+        });
+      } catch (error) {
+        console.error("Chart.js 로딩 실패:", error);
+      }
+    };
+
+    renderChart();
+    return () => {
+      isMounted = false;
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+        chartInstance.current = null;
+      }
+    };
+  }, [labels, values]);
+
+  return <canvas ref={canvasRef} className="mx-auto max-w-[280px]" />;
+}
+
+interface DashboardImportantProject {
+  projectId: number;
+  name: string;
+  status: string;
+  progress?: number;
+}
+
+interface DashboardApproval {
+  id: number;
+  title: string;
+  projectId?: number;
+  projectName?: string;
+  stepTitle?: string;
+  stepId?: number;
+  phase?: string;
+  createdAt?: string;
+}
+
+interface DashboardNotification {
+  id: number;
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  targetUrl?: string;
+}
+
+interface DashboardSummary {
+  inProgressProjectCount: number;
+  unreadNotificationCount: number;
+  pendingApprovalCount: number;
+  importantProjects: DashboardImportantProject[];
+  upcomingApprovals: DashboardApproval[];
+  recentNotifications: DashboardNotification[];
+}
+
+const statusProgressMap: Record<string, number> = {
+  CONTRACT: 10,
+  IN_PROGRESS: 50,
+  DELIVERY: 80,
+  MAINTENANCE: 90,
+  CLOSED: 100,
+};
+
+const formatDateLabel = (value: string) =>
+  new Date(value).toLocaleString("ko-KR", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false
+    hour12: false,
   });
 
+const SummarySkeleton = () => (
+  <div className="flex flex-col items-center gap-4 w-full">
+    <Skeleton className="mx-auto w-[280px] h-[150px] rounded-full" />
+    <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="rounded-md border p-3">
+          <Skeleton className="h-3 w-3/4 mb-1" />
+          <Skeleton className="h-5 w-1/3" />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ProjectItemSkeleton = () => (
+  <div className="flex flex-col gap-3 rounded-lg border p-4">
+    <div className="flex justify-between items-center">
+      <Skeleton className="h-5 w-3/5" />
+      <Skeleton className="h-5 w-1/6" />
+    </div>
+    <Skeleton className="h-2 w-full" />
+    <Skeleton className="h-3 w-1/4" />
+  </div>
+);
+
+const ApprovalItemSkeleton = () => (
+  <div className="rounded border p-3 text-sm">
+    <Skeleton className="h-5 w-full mb-1" />
+    <Skeleton className="h-4 w-1/2 mt-1" />
+    <div className="mt-2 flex items-center justify-between text-xs">
+      <Skeleton className="h-3 w-1/4" />
+      <Skeleton className="h-3 w-1/4" />
+    </div>
+  </div>
+);
+
+const NotificationItemSkeleton = () => (
+  <div className="rounded border p-3">
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3.5 w-3.5" />
+          <Skeleton className="h-4 w-2/5" />
+        </div>
+        <Skeleton className="h-4 w-full mt-1" />
+        <Skeleton className="h-3 w-1/5 mt-2" />
+      </div>
+      <div className="flex flex-col items-end gap-2">
+        <Skeleton className="h-5 w-10" />
+        <Skeleton className="h-4 w-4" />
+      </div>
+    </div>
+  </div>
+);
+
 export default function Dashboard() {
-  const { id } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const userRole = useUserStore((s) => s.user?.role);
+
+  const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
+  const [mutatingNotificationIds, setMutatingNotificationIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (userRole === "SYSTEM_ADMIN") {
+      navigate("/admin/dashboard", { replace: true });
+      return;
+    }
+  }, [userRole, navigate]);
+
+  useEffect(() => {
+    if (userRole === "SYSTEM_ADMIN") return;
+
+    const controller = new AbortController();
+
+    const fetchDashboard = async () => {
+      try {
+        setIsLoadingDashboard(true);
+        setDashboardError(null);
+        const response = await api.get("/api/dashboard/me", { signal: controller.signal });
+        const data = response.data?.data;
+        if (!data) {
+          throw new Error("대시보드 정보를 찾을 수 없습니다.");
+        }
+        const formatted: DashboardSummary = {
+          inProgressProjectCount: data.inProgressProjectCount ?? 0,
+          unreadNotificationCount: data.unreadNotificationCount ?? 0,
+          pendingApprovalCount: data.pendingApprovalCount ?? 0,
+          importantProjects: Array.isArray(data.importantProjects)
+            ? data.importantProjects.map((project: any) => ({
+              projectId: project.projectId,
+              name: project.name,
+              status: project.status,
+              progress:
+                typeof project.progress === "number"
+                  ? project.progress
+                  : statusProgressMap[project.status] ?? undefined,
+            }))
+            : [],
+          upcomingApprovals: Array.isArray(data.upcomingApprovals)
+            ? data.upcomingApprovals.map((approval: any) => ({
+              id: approval.id,
+              title: approval.title,
+              projectId: approval.projectId ?? approval.project?.id,
+              projectName: approval.projectName ?? approval.project?.name,
+              stepTitle: approval.stepTitle,
+              stepId: approval.stepId,
+              phase: approval.phase,
+              createdAt: approval.createdAt ?? approval.requestedAt ?? approval.created_at,
+            }))
+            : [],
+          recentNotifications: Array.isArray(data.recentNotifications)
+            ? data.recentNotifications.map((notice: any) => ({
+              id: notice.id,
+              title: notice.title,
+              message: notice.message ?? notice.content ?? "",
+              createdAt: notice.createdAt,
+              read: Boolean(notice.read),
+              targetUrl: notice.target?.url,
+            }))
+            : [],
+        };
+        setDashboardData(formatted);
+        setNotifications(formatted.recentNotifications);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setDashboardError("대시보드 정보를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingDashboard(false);
+        }
+      }
+    };
+
+    fetchDashboard();
+    return () => controller.abort();
+  }, [userRole]);
+
+  const stats = useMemo(
+    () => [
+      {
+        label: "진행 중 프로젝트",
+        value: dashboardData?.inProgressProjectCount ?? 0,
+        description: "현재 진행 중인 프로젝트 수",
+      },
+      {
+        label: "대기 중 승인",
+        value: dashboardData?.pendingApprovalCount ?? 0,
+        description: "승인 담당자 확인 필요",
+      },
+      {
+        label: "읽지 않은 알림",
+        value: dashboardData?.unreadNotificationCount ?? 0,
+        description: "확인하지 않은 알림 수",
+      },
+    ],
+    [dashboardData]
+  );
+
+  const importantProjects = dashboardData?.importantProjects ?? [];
+  const approvals = dashboardData?.upcomingApprovals ?? [];
+  const chartDataset = useMemo(
+    () => ({
+      labels: ["진행 프로젝트", "읽지 않은 알림", "승인 대기"],
+      values: [
+        dashboardData?.inProgressProjectCount ?? 0,
+        dashboardData?.unreadNotificationCount ?? 0,
+        dashboardData?.pendingApprovalCount ?? 0,
+      ],
+    }),
+    [dashboardData]
+  );
+  const isNotificationMutating = (id: number) => mutatingNotificationIds.has(id);
+
+  const setNotificationMutating = (id: number, active: boolean) => {
+    setMutatingNotificationIds((prev) => {
+      const next = new Set(prev);
+      if (active) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const updateUnreadCount = (prevCount: number, wasRead: boolean, willBeRead: boolean) => {
+    let next = prevCount;
+    if (wasRead && !willBeRead) {
+      next += 1;
+    } else if (!wasRead && willBeRead) {
+      next = Math.max(0, next - 1);
+    }
+    return next;
+  };
+
+  const changeNotificationReadState = async (
+    notification: DashboardNotification,
+    nextRead: boolean
+  ) => {
+    if (notification.read === nextRead) return;
+    setNotificationMutating(notification.id, true);
+    try {
+      await api.patch(`/api/notifications/${notification.id}/${nextRead ? "read" : "unread"}`);
+      setNotifications((prev) =>
+        prev.map((item) =>
+          item.id === notification.id ? { ...item, read: nextRead } : item
+        )
+      );
+      setDashboardData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          unreadNotificationCount: updateUnreadCount(
+            prev.unreadNotificationCount,
+            notification.read,
+            nextRead
+          ),
+          recentNotifications: prev.recentNotifications.map((item) =>
+            item.id === notification.id ? { ...item, read: nextRead } : item
+          ),
+        };
+      });
+    } catch {
+      toast({
+        title: "알림 상태 변경 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setNotificationMutating(notification.id, false);
+    }
+  };
+
+  const handleDeleteNotification = async (event: React.MouseEvent, notification: DashboardNotification) => {
+    event.stopPropagation();
+    setNotificationMutating(notification.id, true);
+    try {
+      await api.delete(`/api/notifications/${notification.id}`);
+      setNotifications((prev) => prev.filter((item) => item.id !== notification.id));
+      setDashboardData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          unreadNotificationCount: notification.read
+            ? prev.unreadNotificationCount
+            : Math.max(0, prev.unreadNotificationCount - 1),
+          recentNotifications: prev.recentNotifications.filter(
+            (item) => item.id !== notification.id
+          ),
+        };
+      });
+      toast({
+        title: "알림이 삭제되었습니다.",
+      });
+    } catch {
+      toast({
+        title: "알림 삭제 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setNotificationMutating(notification.id, false);
+    }
+  };
+
+  const handleNotificationClick = (notification: DashboardNotification) => {
+    if (!notification.read) {
+      void changeNotificationReadState(notification, true);
+    }
+    navigate(`/notifications/${notification.id}`);
+  };
+
+  if (userRole === "SYSTEM_ADMIN") {
+    return null;
+  }
 
   return (
-    <ProjectLayout>
+    <AppLayout>
       <div className="space-y-6">
-        {/* Hero */}
-        <Card className="bg-gradient-to-br from-sky-50 via-white to-indigo-50 text-slate-900 border border-slate-200">
-          <CardHeader className="space-y-4">
-            <div className="flex items-center justify-between gap-6">
-              <div>
-                <p className="text-sm uppercase tracking-wider text-slate-500">프로젝트 #{id}</p>
-                <h1 className="text-3xl font-semibold mt-2">{projectInfo.name}</h1>
-                <p className="text-sm text-slate-600 mt-1">{projectInfo.plan}</p>
-              </div>
-              <Badge className="bg-sky-100 text-sky-700 text-xs px-3 py-1 rounded-full">
-                현재 단계 · {projectInfo.currentStage}
-              </Badge>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-              <div className="flex items-center gap-2 text-slate-700">
-                <Calendar className="h-4 w-4 text-slate-500" />
-                <div>
-                  <p className="text-xs text-slate-500">남은 기간</p>
-                  <p className="font-medium">{projectInfo.daysLeft}일 · {projectInfo.dueDate}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <User className="h-4 w-4 text-slate-500" />
-                <div>
-                  <p className="text-xs text-slate-500">PM</p>
-                  <p className="font-medium">{projectInfo.owner}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Layers3 className="h-4 w-4 text-slate-500" />
-                <div>
-                  <p className="text-xs text-slate-500">고객사</p>
-                  <p className="font-medium">{projectInfo.client}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <CheckCircle2 className="h-4 w-4 text-slate-500" />
-                <div>
-                  <p className="text-xs text-slate-500">다음 승인 대상</p>
-                  <p className="font-medium">{projectInfo.nextApproval}</p>
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-600 mb-2">전체 진행률</p>
-            <Progress value={projectInfo.progress} className="h-2 bg-slate-200" />
-            <div className="flex justify-between text-xs text-slate-500 mt-2">
-              <span>{projectInfo.progress}% 완료</span>
-              <span>업무 안정 권장 80%</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">전체 진행률</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{projectInfo.progress}%</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">완료된 단계</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-status-complete" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">2 / 6</div>
-              <p className="text-xs text-muted-foreground mt-1">화면 설계 단계 진행중</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">남은 기간</CardTitle>
-              <AlertCircle className="h-4 w-4 text-status-pending" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{projectInfo.daysLeft}일</div>
-              <p className="text-xs text-muted-foreground mt-1">{projectInfo.dueDate} 마감</p>
-            </CardContent>
-          </Card>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight">DashBoard</h1>
+          </div>
+          <p className="text-muted-foreground text-sm">조직에 속한 프로젝트 전체 현황과 승인, 리소스를 한눈에 확인하세요.</p>
         </div>
 
-        {/* Stage Timeline */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">단계 진행 현황</CardTitle>
+          <CardHeader className="flex flex-col gap-1">
+            <CardTitle>업무 현황 요약</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-4 md:grid-cols-6">
-                {stageFlow.map(stage => (
-                  <div
-                    key={stage.label}
-                    className={cn(
-                      "rounded-xl border p-3 text-center text-sm",
-                      stage.status === "done" && "bg-emerald-50 border-emerald-100 text-emerald-800",
-                      stage.status === "in-progress" && "bg-blue-50 border-blue-100 text-blue-700 ring-1 ring-blue-200",
-                      stage.status === "pending" && "bg-muted border-dashed text-muted-foreground"
-                    )}
-                  >
-                    <p className="font-semibold">{stage.label}</p>
-                    <p className="text-xs mt-1">
-                      {stage.status === "done" && "완료"}
-                      {stage.status === "in-progress" && "진행중"}
-                      {stage.status === "pending" && "대기"}
-                    </p>
+          <CardContent className="flex flex-col items-center gap-4">
+            {isLoadingDashboard ? (
+              <SummarySkeleton />
+            ) : (
+              <>
+                <SummaryChart labels={chartDataset.labels} values={chartDataset.values} />
+                <div className="grid gap-2 text-sm w-full sm:grid-cols-3">
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">진행 중 프로젝트</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[0]}</p>
                   </div>
-                ))}
-              </div>
-              <div className="grid gap-4 md:grid-cols-1">
-                <Card className="bg-muted/60 border-dashed">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">승인 단계 요약</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {approvals.map((approval) => (
-                      <div key={approval.title} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-sm">{approval.title}</p>
-                          <p className="text-xs text-muted-foreground">{approval.desc}</p>
-                        </div>
-                        <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", approval.color)}>
-                          {approval.status}
-                        </span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Approval Requests */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">최근 승인 요청</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {stepRequests.map((request) => {
-              const status = requestStatusMap[request.status] || requestStatusMap.REQUESTED;
-              return (
-                <div key={request.id} className="rounded-lg border bg-muted/20 p-4">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div>
-                      <p className="font-semibold">{request.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {request.requestedBy} · {formatRequestDate(request.createdAt)}
-                      </p>
-                    </div>
-                    <span className={cn("text-xs font-semibold px-3 py-1 rounded-full", status.className)}>
-                      {status.label}
-                    </span>
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">읽지 않은 알림</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[1]}</p>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">승인 대기</p>
+                    <p className="text-lg font-semibold">{chartDataset.values[2]}</p>
                   </div>
                 </div>
-              );
-            })}
-            {stepRequests.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-6 border rounded-lg">
-                표시할 승인 요청이 없습니다.
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
 
-        {/* Activity */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base">최근 활동</CardTitle>
-              <p className="text-sm text-muted-foreground">프로젝트 구성원 소식</p>
-            </div>
-            <button className="text-sm text-primary flex items-center gap-1">
-              더보기 <ArrowRight className="h-4 w-4" />
-            </button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {activities.map(activity => (
-              <div key={activity.id} className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
-                <p className="text-sm">{activity.content}</p>
-                <span className="text-xs text-muted-foreground">{activity.time}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="grid gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>중요 프로젝트</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => navigate("/projects")}>
+                전체 보기
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoadingDashboard ? (
+                Array.from({ length: 3 }).map((_, i) => <ProjectItemSkeleton key={i} />)
+              ) : dashboardError ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">{dashboardError}</div>
+              ) : importantProjects.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">표시할 프로젝트가 없습니다.</div>
+              ) : (
+                importantProjects.map((project) => (
+                  <div
+                    key={project.projectId}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/project/${project.projectId}/dashboard`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(`/project/${project.projectId}/dashboard`);
+                      }
+                    }}
+                    className="flex flex-col gap-3 rounded-lg border p-4 cursor-pointer hover:border-primary/40 hover:bg-muted/50 transition"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold">{project.name}</p>
+                      </div>
+                      <Badge variant="outline">{project.status ?? "확인 필요"}</Badge>
+                    </div>
+                    {typeof project.progress === "number" ? (
+                      <>
+                        <Progress value={project.progress} />
+                        <div className="text-xs text-muted-foreground">진행률 {project.progress}%</div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">진행률 정보 없음</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>승인 대기</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoadingDashboard ? (
+                Array.from({ length: 2 }).map((_, i) => <ApprovalItemSkeleton key={i} />)
+              ) : dashboardError ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">{dashboardError}</div>
+              ) : approvals.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">예정된 승인 요청이 없습니다.</div>
+              ) : (
+                approvals.map((approval) => (
+                  <div
+                    key={approval.id}
+                    className="rounded border p-3 text-sm cursor-pointer hover:bg-muted/50"
+                    onClick={() =>
+                      approval.projectId
+                        ? navigate(`/project/${approval.projectId}/approvals/${approval.id}`)
+                        : undefined
+                    }
+                  >
+                    <p className="text-base font-semibold leading-6 text-foreground line-clamp-2 break-words">
+                      {approval.title}
+                    </p>
+                    <div className="mt-1 text-sm text-foreground font-medium">
+                      {approval.projectName ?? "프로젝트 정보 없음"}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="inline-block h-3 w-3" />
+                        {approval.createdAt ? formatDateLabel(approval.createdAt) : "-"}
+                      </span>
+                      <span className="text-foreground/80">{approval.stepTitle ?? "단계 미정"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>최근 알림</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {isLoadingDashboard ? (
+                Array.from({ length: 4 }).map((_, i) => <NotificationItemSkeleton key={i} />)
+              ) : notifications.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8 border rounded">
+                  새로운 알림이 없습니다.
+                </div>
+              ) : (
+                notifications.map((notice) => (
+                  <div
+                    key={notice.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleNotificationClick(notice)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleNotificationClick(notice);
+                      }
+                    }}
+                    className={`rounded border p-3 cursor-pointer transition hover:border-primary/40 hover:bg-muted/50 ${notice.read ? "bg-muted/40" : ""
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+                          <p className="font-medium">{notice.title}</p>
+                        </div>
+                        <p className="text-muted-foreground text-sm mt-1">{notice.message}</p>
+                        <p className="text-xs text-muted-foreground mt-2">{formatDateLabel(notice.createdAt)}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 text-xs">
+                        <Badge
+                          variant="outline"
+                          className={
+                            notice.read
+                              ? "border-gray-200 text-muted-foreground bg-transparent"
+                              : "border-primary/40 text-primary bg-primary/5"
+                          }
+                        >
+                          {notice.read ? "읽음" : "읽지 않음"}
+                        </Badge>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                          onClick={(event) => handleDeleteNotification(event, notice)}
+                          disabled={isNotificationMutating(notice.id)}
+                          aria-label="알림 삭제"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </ProjectLayout>
+    </AppLayout>
   );
 }

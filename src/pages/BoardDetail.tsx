@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,24 +7,29 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download } from "lucide-react";
+import { ArrowLeft, Paperclip, Link2, MessageSquare, Clock3, Download, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   boardStatusLabels,
   boardStatusStyles,
-  BoardPostStatus,
-  BoardApprovalStatus,
+  BoardQuestionStatus,
 } from "@/constants/boardStatus";
+import { getPost, deletePost, answerQuestion, closePost } from "@/apis/postApi";
+import { getDownloadUrl } from "@/apis/attachmentApi";
+import { getComments, createComment, createReply, deleteComment as deleteCommentApi, getReplies } from "@/apis/commentApi";
+import { useUserStore } from "@/stores/user";
+import type { CommentResponse, ReplyDto } from "@/types/comment";
 
-type ApiPostStatus = "IN_PROGRESS" | "COMPLETED";
+type ApiPostApprovalStatus = "NORMAL" | "WAITING_ANSWER" | "ANSWERED";
+type ApiPostOpenStatus = "OPEN" | "CLOSED";
+type ApiProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
 
 interface AuthorInfo {
   memberId: number;
@@ -57,38 +62,37 @@ interface RespondentInfo {
 }
 
 interface QuestionAnswer {
-  response: "YES" | "NO" | "ETC";
+  selectedOptionIds: number[];
+  textInput: string;
   respondent: RespondentInfo;
   respondedAt: string;
 }
 
+interface QuestionOption {
+  optionId: number;
+  optionText: string;
+  hasInput: boolean;
+}
+
+type QuestionType = "SINGLE" | "MULTI" | "TEXT";
+
 interface PostQuestion {
   questionId: number;
   content: string;
-  buttonLabels: {
-    yes: string;
-    no: string;
-  };
+  questionType: QuestionType;
+  options: QuestionOption[];
   answer: QuestionAnswer | null;
   answerAction?: "confirm" | "reject";
-}
-
-interface PostComment {
-  id: string;
-  author: string;
-  role: string;
-  createdAt: string;
-  content: string;
-  replies?: PostComment[];
 }
 
 interface BoardPostDetail {
   id: number;
   title: string;
   content: string;
-  status: ApiPostStatus;
+  status: ApiPostApprovalStatus;
+  openStatus: ApiPostOpenStatus;
   author: AuthorInfo;
-  projectStatus: ApiPostStatus;
+  projectPhase: ApiProjectPhase;
   step: StepInfo;
   files: Attachment[];
   links: LinkItem[];
@@ -97,164 +101,20 @@ interface BoardPostDetail {
   isEdited: boolean;
   createdAt: string;
   updatedAt: string;
-  comments: PostComment[];
+  comments: CommentResponse[];
 }
 
-const mockPostDetails: BoardPostDetail[] = [
-  {
-    id: 42,
-    title: "디자인 시안 검토 요청",
-    content: "메인 페이지 디자인 시안입니다. 검토 부탁드립니다.",
-    status: "IN_PROGRESS",
-    projectStatus: "IN_PROGRESS",
-    author: {
-      memberId: 3,
-      name: "이개발",
-      role: "DEVELOPER",
-      companyName: "비엔시스템",
-    },
-    step: {
-      stepId: 3,
-      stepName: "디자인",
-    },
-    files: [
-      {
-        fileId: 10,
-        fileName: "메인페이지_시안_v1.png",
-        fileSize: 2048000,
-        downloadUrl: "/api/files/10/download",
-      },
-    ],
-    links: [
-      {
-        linkId: 5,
-        url: "https://figma.com/file/xxx",
-        title: "Figma 디자인 링크",
-      },
-    ],
-    questions: [
-      {
-        questionId: 1,
-        content: "메인 배너 색상 이대로 진행할까요?",
-        buttonLabels: {
-          yes: "승인",
-          no: "수정요청",
-        },
-        answer: {
-          response: "YES",
-          respondent: {
-            memberId: 5,
-            name: "김고객",
-          },
-          respondedAt: "2025-01-16T14:00:00",
-        },
-        answerAction: "confirm",
-      },
-      {
-        questionId: 2,
-        content: "서브 페이지도 같은 스타일로 진행할까요?",
-        buttonLabels: {
-          yes: "네",
-          no: "아니오",
-        },
-        answer: null,
-      },
-    ],
-    parentPost: null,
-    isEdited: false,
-    createdAt: "2025-01-16T10:30:00",
-    updatedAt: "2025-01-16T10:30:00",
-    comments: [
-      {
-        id: "c-1",
-        author: "김고객",
-        role: "고객사",
-        createdAt: "2025-01-16 12:00",
-        content: "메인 배너 이미지는 조금 더 따뜻한 색감으로 부탁드립니다.",
-      },
-      {
-        id: "c-2",
-        author: "이개발",
-        role: "DEVELOPER",
-        createdAt: "2025-01-16 12:20",
-        content: "네, 수정 시안 바로 공유드리겠습니다.",
-      },
-    ],
-  },
-  {
-    id: 43,
-    title: "요구사항 정리본 공유",
-    content: "최신 요구사항 정리본입니다. 변경 사항 참고 부탁드립니다.",
-    status: "COMPLETED",
-    projectStatus: "COMPLETED",
-    author: {
-      memberId: 4,
-      name: "박PM",
-      role: "PM",
-      companyName: "위플로우",
-    },
-    step: {
-      stepId: 1,
-      stepName: "요구사항 정의",
-    },
-    files: [
-      {
-        fileId: 11,
-        fileName: "요구사항정리_v4.xlsx",
-        fileSize: 512000,
-        downloadUrl: "/api/files/11/download",
-      },
-    ],
-    links: [
-      {
-        linkId: 6,
-        url: "https://docs.google.com/document/d/req",
-        title: "회의록 링크",
-      },
-    ],
-    questions: [
-      {
-        questionId: 3,
-        content: "관리자 메뉴에서 통계 항목 5개로 확정할까요?",
-        buttonLabels: {
-          yes: "가능",
-          no: "재논의",
-        },
-        answer: {
-          response: "NO",
-          respondent: {
-            memberId: 6,
-            name: "최고객",
-          },
-          respondedAt: "2025-01-15T09:30:00",
-        },
-        answerAction: "reject",
-      },
-    ],
-    parentPost: null,
-    isEdited: true,
-    createdAt: "2025-01-15T08:00:00",
-    updatedAt: "2025-01-15T10:10:00",
-    comments: [
-      {
-        id: "c-3",
-        author: "최고객",
-        role: "고객사",
-        createdAt: "2025-01-15 09:35",
-        content: "통계 항목은 7개로 늘려주세요.",
-      },
-    ],
-  },
-];
 
-const apiStatusToBoardStatus: Record<ApiPostStatus, BoardPostStatus> = {
-  IN_PROGRESS: "progress",
-  COMPLETED: "complete",
+const projectPhaseLabels: Record<ApiProjectPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
 };
 
-const projectStatusLabels: Record<ApiPostStatus, string> = {
-  IN_PROGRESS: "진행중",
-  COMPLETED: "완료",
+const postOpenStatusLabels: Record<ApiPostOpenStatus, string> = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
 };
 
 const formatDateTime = (value: string) => {
@@ -274,30 +134,157 @@ export default function BoardDetail() {
   const navigate = useNavigate();
   const { id, postId } = useParams();
   const { toast } = useToast();
+  const { user } = useUserStore();
   const [newComment, setNewComment] = useState("");
-  const [questionSelections, setQuestionSelections] = useState<Record<number, "confirm" | "reject">>({});
-  const [actionDialog, setActionDialog] = useState<{ questionId: number; action: "confirm" | "reject" } | null>(null);
-  const [actionComment, setActionComment] = useState("");
-  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
-  const [visibleReplyForms, setVisibleReplyForms] = useState<Record<string, boolean>>({});
+  const [replyInputs, setReplyInputs] = useState<Record<number, string>>({});
+  const [visibleReplyForms, setVisibleReplyForms] = useState<Record<number, boolean>>({});
+  const [post, setPost] = useState<BoardPostDetail | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isSubmittingReply, setIsSubmittingReply] = useState<Record<number, boolean>>({});
+  const [expandedReplies, setExpandedReplies] = useState<Record<number, ReplyDto[]>>({});
+  const [loadingReplies, setLoadingReplies] = useState<Record<number, boolean>>({});
+  const replyTextareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
-  const post = useMemo(() => {
-    if (!postId) return undefined;
-    return mockPostDetails.find((item) => item.id.toString() === postId);
-  }, [postId]);
+  // 질문 답변 상태
+  interface QuestionAnswerState {
+    selectedOptions: number[]; // 선택된 옵션 ID들
+    textInput: string; // 주관식 답변 또는 기타 입력
+  }
+  const [questionAnswers, setQuestionAnswers] = useState<Record<number, QuestionAnswerState>>({});
 
+  // 백엔드에서 게시글 상세 조회 및 댓글 조회
   useEffect(() => {
-    if (!post) return;
-    const initialSelections: Record<number, "confirm" | "reject"> = {};
-    post.questions.forEach((question) => {
-      const derivedAction = question.answerAction
-        ?? (question.answer ? (question.answer.response === "NO" ? "reject" : "confirm") : undefined);
-      if (derivedAction) {
-        initialSelections[question.questionId] = derivedAction;
+    const fetchPostAndComments = async () => {
+      if (!id || !postId) return;
+
+      setIsLoading(true);
+      try {
+        // 게시글과 댓글을 병렬로 조회
+        const [postResponse, commentsResponse] = await Promise.all([
+          getPost(Number(id), Number(postId)),
+          getComments(Number(postId)),
+        ]);
+
+        // 백엔드 데이터를 프론트 형식으로 변환
+        const convertedPost: BoardPostDetail = {
+          id: postResponse.postId,
+          title: postResponse.title,
+          content: postResponse.content,
+          status: postResponse.status as ApiPostApprovalStatus,
+          openStatus: postResponse.openStatus as ApiPostOpenStatus,
+          author: {
+            memberId: postResponse.author.memberId,
+            name: postResponse.author.name,
+            role: postResponse.author.role,
+            companyName: postResponse.author.companyName,
+          },
+          projectPhase: postResponse.projectPhase as ApiProjectPhase,
+          step: {
+            stepId: postResponse.step.stepId,
+            stepName: postResponse.step.stepName,
+          },
+          files: postResponse.files.map(file => ({
+            fileId: file.fileId,
+            fileName: file.fileName,
+            fileSize: file.fileSize,
+            downloadUrl: file.downloadUrl,
+          })),
+          links: postResponse.links.map(link => ({
+            linkId: link.linkId,
+            url: link.url,
+            title: link.title,
+          })),
+          questions: postResponse.questions.map(q => {
+            // questionType이 있는지 확인, 없으면 기본값 TEXT
+            const questionType = (q.questionType as QuestionType) || 'TEXT';
+            // options가 배열인지 확인
+            const options = Array.isArray(q.options) ? q.options : [];
+
+            return {
+              questionId: q.questionId,
+              content: q.content,
+              questionType,
+              options,
+              answer: q.answer ? {
+                selectedOptionIds: q.answer.selectedOptionIds || [],
+                textInput: q.answer.textInput || '',
+                respondent: {
+                  memberId: q.answer.respondent.memberId,
+                  name: q.answer.respondent.name,
+                },
+                respondedAt: q.answer.respondedAt,
+              } : null,
+            };
+          }),
+          parentPost: postResponse.parentPost?.postId || null,
+          isEdited: postResponse.isEdited,
+          createdAt: postResponse.createdAt,
+          updatedAt: postResponse.updatedAt,
+          comments: commentsResponse.comments, // 댓글 목록 설정
+        };
+
+        setPost(convertedPost);
+
+        // 모든 레벨의 답장을 재귀적으로 로드하는 함수
+        const loadAllRepliesRecursively = async (replies: ReplyDto[], expandedData: Record<number, ReplyDto[]>) => {
+          for (const reply of replies) {
+            try {
+              const repliesResponse = await getReplies(reply.commentId, 0, 100);
+              if (repliesResponse.replies.length > 0) {
+                expandedData[reply.commentId] = repliesResponse.replies;
+                // 재귀적으로 하위 답장도 로드
+                await loadAllRepliesRecursively(repliesResponse.replies, expandedData);
+              }
+            } catch (error) {
+              console.error(`댓글 ${reply.commentId}의 답장 로드 실패:`, error);
+            }
+          }
+        };
+
+        // 답장이 있는 모든 댓글의 전체 답장 목록 자동 로드 (재귀적)
+        const commentsWithReplies = commentsResponse.comments.filter(c => c.replyCount > 0);
+        if (commentsWithReplies.length > 0) {
+          const expandedRepliesData: Record<number, ReplyDto[]> = {};
+
+          for (const comment of commentsWithReplies) {
+            try {
+              const repliesResponse = await getReplies(comment.commentId, 0, 100);
+              expandedRepliesData[comment.commentId] = repliesResponse.replies;
+
+              // 재귀적으로 하위 답장들도 로드
+              await loadAllRepliesRecursively(repliesResponse.replies, expandedRepliesData);
+            } catch (error) {
+              console.error(`댓글 ${comment.commentId}의 답장 로드 실패:`, error);
+            }
+          }
+
+          setExpandedReplies(expandedRepliesData);
+        }
+      } catch (error) {
+        console.error("게시글 또는 댓글 조회 실패:", error);
+        toast({
+          title: "게시글 조회 실패",
+          description: "게시글을 불러올 수 없습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
-    });
-    setQuestionSelections(initialSelections);
-  }, [post]);
+    };
+
+    fetchPostAndComments();
+  }, [id, postId]);
+
+  if (isLoading) {
+    return (
+      <ProjectLayout>
+        <div className="max-w-2xl mx-auto py-16 text-center space-y-4">
+          <p className="text-lg font-medium text-foreground">게시글을 불러오는 중...</p>
+        </div>
+      </ProjectLayout>
+    );
+  }
 
   if (!post) {
     return (
@@ -313,24 +300,179 @@ export default function BoardDetail() {
     );
   }
 
-  const postStatusVariant = apiStatusToBoardStatus[post.status] ?? "progress";
-  const projectStatusLabelText = projectStatusLabels[post.projectStatus] ?? post.projectStatus;
-  const overallQuestionStatus: BoardApprovalStatus = post.questions.some((q) => q.answer?.response === "NO")
-    ? "rejected"
-    : post.questions.every((q) => q.answer)
-      ? "approved"
-      : "request";
+  const projectPhaseLabelText = projectPhaseLabels[post.projectPhase];
+  const postOpenStatusLabelText = postOpenStatusLabels[post.openStatus];
 
-  const handleAddComment = () => {
-    if (!newComment.trim()) return;
+  // 질문 답변 상태: 모든 질문에 답변이 있으면 answered, 아니면 waiting
+  const overallQuestionStatus: BoardQuestionStatus | null =
+    post.questions.length > 0
+      ? (post.questions.every((q) => q.answer) ? "answered" : "waiting")
+      : null;
 
-    toast({
-      title: "댓글이 작성되었습니다."
-    });
-    setNewComment("");
+  // 작성자의 role을 CLIENT/AGENCY/ADMIN으로 매핑
+  const getAuthorUserRole = (authorRole: string): "CLIENT" | "AGENCY" | "ADMIN" => {
+    if (authorRole === "CLIENT") return "CLIENT";
+    if (authorRole === "ADMIN") return "ADMIN";
+    return "AGENCY"; // DEVELOPER, PM 등은 모두 AGENCY로 간주
   };
 
-  const toggleReplyForm = (commentId: string) => {
+  // 현재 사용자가 질문에 답변할 수 있는지 체크
+  const canAnswerQuestion = () => {
+    if (!user || !post) return false;
+
+    // 자문자답 방지: 작성자 본인이면 답변 불가
+    if (user.id === post.author.memberId) return false;
+
+    const authorUserRole = getAuthorUserRole(post.author.role);
+    const currentUserRole = user.projectRole === "ADMIN" ? "ADMIN" : user.userRole;
+
+    // 관리자는 모든 게시글에 답변 가능 (자신이 작성한 게시글 제외)
+    if (currentUserRole === "ADMIN") return true;
+
+    // 작성자가 관리자면 AGENCY, CLIENT 모두 답변 가능
+    if (authorUserRole === "ADMIN") return true;
+
+    // 작성자와 다른 역할인 경우에만 답변 가능
+    return currentUserRole !== authorUserRole;
+  };
+
+  // 질문 옵션 선택 핸들러
+  const handleOptionSelect = (questionId: number, optionId: number, questionType: string) => {
+    setQuestionAnswers(prev => {
+      const current = prev[questionId] || { selectedOptions: [], textInput: '' };
+
+      if (questionType === 'SINGLE') {
+        // 객관식: 하나만 선택
+        return {
+          ...prev,
+          [questionId]: {
+            ...current,
+            selectedOptions: [optionId],
+          }
+        };
+      } else {
+        // 복수선택: 토글
+        const isSelected = current.selectedOptions.includes(optionId);
+        return {
+          ...prev,
+          [questionId]: {
+            ...current,
+            selectedOptions: isSelected
+              ? current.selectedOptions.filter(id => id !== optionId)
+              : [...current.selectedOptions, optionId],
+          }
+        };
+      }
+    });
+  };
+
+  // 질문 텍스트 입력 핸들러
+  const handleQuestionTextChange = (questionId: number, text: string) => {
+    setQuestionAnswers(prev => ({
+      ...prev,
+      [questionId]: {
+        ...(prev[questionId] || { selectedOptions: [], textInput: '' }),
+        textInput: text,
+      }
+    }));
+  };
+
+  // 모든 질문 답변 제출
+  const handleSubmitAllAnswers = async () => {
+    if (!id || !postId || !post) return;
+
+    // 답변 가능한 질문들 필터링 (답변이 아직 없는 질문)
+    const unansweredQuestions = post.questions.filter(q => !q.answer && canAnswerQuestion());
+
+    // 각 질문에 대한 답변이 있는지 확인
+    const invalidQuestions = unansweredQuestions.filter(q => {
+      const answer = questionAnswers[q.questionId];
+      if (!answer) return true;
+
+      // 객관식/복수선택은 최소 1개 선택 필요
+      if (q.questionType !== "TEXT" && answer.selectedOptions.length === 0) return true;
+
+      // 주관식은 텍스트 입력 필요
+      if (q.questionType === "TEXT" && !answer.textInput.trim()) return true;
+
+      return false;
+    });
+
+    if (invalidQuestions.length > 0) {
+      toast({
+        title: "답변 미작성",
+        description: "모든 질문에 답변을 작성해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (unansweredQuestions.length === 0) {
+      toast({
+        title: "답변 불가",
+        description: "제출할 답변이 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // 모든 질문에 대한 답변을 순차적으로 제출
+      for (const question of unansweredQuestions) {
+        const answer = questionAnswers[question.questionId];
+        await answerQuestion(Number(id), Number(postId), question.questionId, {
+          selectedOptionIds: answer.selectedOptions,
+          textInput: answer.textInput || '',
+        });
+      }
+
+      toast({
+        title: "답변 제출 완료",
+        description: "모든 답변이 성공적으로 제출되었습니다.",
+      });
+
+      // 게시글 다시 조회하여 답변 반영
+      window.location.reload();
+    } catch (error) {
+      console.error('답변 제출 실패:', error);
+      toast({
+        title: "답변 제출 실패",
+        description: "답변 제출 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !postId || isSubmittingComment) return;
+
+    setIsSubmittingComment(true);
+    try {
+      await createComment(Number(postId), { content: newComment.trim() });
+
+      // 댓글 목록 다시 조회
+      const commentsResponse = await getComments(Number(postId));
+      setPost(prev => prev ? { ...prev, comments: commentsResponse.comments } : prev);
+
+      toast({
+        title: "댓글이 작성되었습니다."
+      });
+      setNewComment("");
+    } catch (error) {
+      console.error("댓글 작성 실패:", error);
+      toast({
+        title: "댓글 작성 실패",
+        description: "댓글 작성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const toggleReplyForm = (commentId: number) => {
+    const isOpening = !visibleReplyForms[commentId];
+
     setVisibleReplyForms(prev => ({
       ...prev,
       [commentId]: !prev[commentId],
@@ -339,79 +481,298 @@ export default function BoardDetail() {
       ...prev,
       [commentId]: prev[commentId] ?? "",
     }));
+
+    // 폼을 여는 경우 다음 렌더링 후 포커스
+    if (isOpening) {
+      setTimeout(() => {
+        replyTextareaRefs.current[commentId]?.focus();
+      }, 0);
+    }
   };
 
-  const handleReplyInputChange = (commentId: string, value: string) => {
+  const handleReplyInputChange = (commentId: number, value: string) => {
     setReplyInputs(prev => ({
       ...prev,
       [commentId]: value,
     }));
   };
 
-  const handleReplySubmit = (commentId: string) => {
+  const handleReplySubmit = async (commentId: number) => {
     const content = (replyInputs[commentId] ?? "").trim();
-    if (!content) return;
-    toast({
-      title: "답글이 작성되었습니다.",
-      description: content,
-    });
-    setReplyInputs(prev => ({
-      ...prev,
-      [commentId]: "",
-    }));
+    if (!content || !postId || isSubmittingReply[commentId]) return;
+
+    setIsSubmittingReply(prev => ({ ...prev, [commentId]: true }));
+    try {
+      await createReply(commentId, { content });
+
+      // 댓글 목록 다시 조회
+      const commentsResponse = await getComments(Number(postId));
+      setPost(prev => prev ? { ...prev, comments: commentsResponse.comments } : prev);
+
+      // 답글을 작성한 댓글의 전체 답글 목록을 로드하여 새로 작성한 답글 표시
+      const response = await getReplies(commentId, 0, 100);
+      setExpandedReplies(prev => ({ ...prev, [commentId]: response.replies }));
+
+      toast({
+        title: "답장이 작성되었습니다.",
+      });
+      setReplyInputs(prev => ({
+        ...prev,
+        [commentId]: "",
+      }));
+      setVisibleReplyForms(prev => ({
+        ...prev,
+        [commentId]: false,
+      }));
+    } catch (error) {
+      console.error("답장 작성 실패:", error);
+      toast({
+        title: "답장 작성 실패",
+        description: "답장 작성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingReply(prev => ({ ...prev, [commentId]: false }));
+    }
+  };
+
+  const handleReplyCancel = (commentId: number) => {
     setVisibleReplyForms(prev => ({
       ...prev,
       [commentId]: false,
     }));
-  };
-
-  const handleReplyCancel = (commentId: string) => {
-    setVisibleReplyForms(prev => ({
-      ...prev,
-      [commentId]: false,
-    }));
     setReplyInputs(prev => ({
       ...prev,
       [commentId]: "",
     }));
   };
 
-  const renderComments = (comments: PostComment[], depth = 0) =>
+  const handleDeleteComment = async (commentId: number) => {
+    if (!window.confirm("정말로 이 댓글을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    try {
+      await deleteCommentApi(commentId);
+
+      // 댓글 목록 다시 조회
+      const commentsResponse = await getComments(Number(postId!));
+      setPost(prev => prev ? { ...prev, comments: commentsResponse.comments } : prev);
+
+      // 확장된 답글들 다시 로드 (삭제 반영)
+      const expandedCommentIds = Object.keys(expandedReplies).map(Number);
+      for (const id of expandedCommentIds) {
+        try {
+          const response = await getReplies(id, 0, 100);
+          setExpandedReplies(prev => ({ ...prev, [id]: response.replies }));
+        } catch (error) {
+          // 댓글이 삭제되었거나 접근 불가한 경우 제거
+          setExpandedReplies(prev => {
+            const newExpanded = { ...prev };
+            delete newExpanded[id];
+            return newExpanded;
+          });
+        }
+      }
+
+      toast({
+        title: "댓글이 삭제되었습니다.",
+      });
+    } catch (error: any) {
+      console.error("댓글 삭제 실패:", error);
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글의 댓글은 삭제할 수 없습니다."
+        : error.response?.data?.message || "댓글 삭제 중 오류가 발생했습니다.";
+
+      toast({
+        title: "댓글 삭제 실패",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleLoadMoreReplies = async (commentId: number) => {
+    if (loadingReplies[commentId]) return;
+
+    setLoadingReplies(prev => ({ ...prev, [commentId]: true }));
+    try {
+      const response = await getReplies(commentId, 0, 100); // 페이지 0, 최대 100개
+      setExpandedReplies(prev => ({ ...prev, [commentId]: response.replies }));
+    } catch (error) {
+      console.error("답장 조회 실패:", error);
+      toast({
+        title: "답장 조회 실패",
+        description: "답장 조회 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingReplies(prev => ({ ...prev, [commentId]: false }));
+    }
+  };
+
+  // 대댓글 재귀 렌더링 (depth 추적)
+  const renderReply = (reply: ReplyDto, depth: number): React.ReactNode => (
+    <div key={reply.commentId} className="space-y-2">
+      <div className="rounded-lg border p-3 bg-background">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-1">
+          <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+            <span className="font-semibold text-foreground">{reply.author.name}</span>
+            <Badge variant="secondary" className="text-xs">
+              {reply.author.role}
+            </Badge>
+            <span>{reply.author.companyName}</span>
+            <span className="flex items-center gap-1">
+              <Clock3 className="h-3 w-3" />
+              {formatDateTime(reply.createdAt)}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            {user && user.id === reply.author.memberId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-destructive hover:text-destructive h-6 px-2"
+                onClick={() => handleDeleteComment(reply.commentId)}
+              >
+                삭제
+              </Button>
+            )}
+            {depth < 2 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-6 px-2"
+                onClick={() => toggleReplyForm(reply.commentId)}
+              >
+                {visibleReplyForms[reply.commentId] ? "답장 닫기" : "답장"}
+              </Button>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-foreground whitespace-pre-line">{reply.content}</p>
+      </div>
+
+      {/* 답장 폼 (2단계 미만인 경우만) */}
+      {depth < 2 && visibleReplyForms[reply.commentId] && (
+        <div className="ml-6 space-y-2">
+          <Textarea
+            ref={(el) => {
+              replyTextareaRefs.current[reply.commentId] = el;
+            }}
+            value={replyInputs[reply.commentId] ?? ""}
+            onChange={(event) => handleReplyInputChange(reply.commentId, event.target.value)}
+            placeholder="답장을 입력하세요"
+            className="min-h-[80px]"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleReplyCancel(reply.commentId)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => handleReplySubmit(reply.commentId)}
+              disabled={!(replyInputs[reply.commentId] ?? "").trim() || isSubmittingReply[reply.commentId]}
+            >
+              {isSubmittingReply[reply.commentId] ? "등록 중..." : "답장 등록"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 확장된 대댓글 표시 (재귀) */}
+      {expandedReplies[reply.commentId] && expandedReplies[reply.commentId].length > 0 && (
+        <div className="ml-6 space-y-2">
+          {expandedReplies[reply.commentId].map((childReply) => renderReply(childReply, depth + 1))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderComments = (comments: CommentResponse[]) =>
     comments.map((comment) => (
       <div
-        key={comment.id}
-        className={cn(
-          "rounded-lg border p-4 space-y-2 bg-muted/30",
-          depth > 0 ? "ml-6 mt-2" : ""
-        )}
+        key={comment.commentId}
+        className="rounded-lg border p-4 space-y-2 bg-muted/30"
       >
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-foreground">{comment.author}</span>
+            <span className="font-semibold text-foreground">{comment.author.name}</span>
             <Badge variant="secondary" className="text-xs">
-              {comment.role}
+              {comment.author.role}
             </Badge>
+            <span className="text-xs text-muted-foreground">{comment.author.companyName}</span>
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock3 className="h-3.5 w-3.5" />
-              {comment.createdAt}
+              {formatDateTime(comment.createdAt)}
             </span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs"
-            onClick={() => toggleReplyForm(comment.id)}
-          >
-            {visibleReplyForms[comment.id] ? "답글 닫기" : "답글"}
-          </Button>
+          <div className="flex gap-2">
+            {user && user.id === comment.author.memberId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-destructive hover:text-destructive"
+                onClick={() => handleDeleteComment(comment.commentId)}
+              >
+                삭제
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => toggleReplyForm(comment.commentId)}
+            >
+              {visibleReplyForms[comment.commentId] ? "답장 닫기" : `답장${comment.replyCount > 0 ? ` (${comment.replyCount})` : ""}`}
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-foreground whitespace-pre-line">{comment.content}</p>
-        {visibleReplyForms[comment.id] && (
+
+        {/* 대댓글 표시 */}
+        {comment.replyCount > 0 && (
+          <div className="ml-6 mt-2 space-y-2">
+            {/* 확장된 대댓글이 있으면 전체 표시, 없으면 미리보기 3개 */}
+            {expandedReplies[comment.commentId] ? (
+              expandedReplies[comment.commentId].map((reply) => renderReply(reply, 1))
+            ) : (
+              <>
+                {comment.replies.map((reply) => renderReply(reply, 1))}
+                {comment.replyCount > 3 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => handleLoadMoreReplies(comment.commentId)}
+                    disabled={loadingReplies[comment.commentId]}
+                  >
+                    {loadingReplies[comment.commentId]
+                      ? "로딩 중..."
+                      : `+${comment.replyCount - 3}개의 답장 더보기`}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {visibleReplyForms[comment.commentId] && (
           <div className="space-y-2">
             <Textarea
-              value={replyInputs[comment.id] ?? ""}
-              onChange={(event) => handleReplyInputChange(comment.id, event.target.value)}
-              placeholder="답글을 입력하세요"
+              ref={(el) => {
+                replyTextareaRefs.current[comment.commentId] = el;
+              }}
+              value={replyInputs[comment.commentId] ?? ""}
+              onChange={(event) => handleReplyInputChange(comment.commentId, event.target.value)}
+              placeholder="답장을 입력하세요"
               className="min-h-[80px]"
             />
             <div className="flex justify-end gap-2">
@@ -419,87 +780,234 @@ export default function BoardDetail() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleReplyCancel(comment.id)}
+                onClick={() => handleReplyCancel(comment.commentId)}
               >
                 취소
               </Button>
               <Button
                 type="button"
                 size="sm"
-                onClick={() => handleReplySubmit(comment.id)}
-                disabled={!(replyInputs[comment.id] ?? "").trim()}
+                onClick={() => handleReplySubmit(comment.commentId)}
+                disabled={!(replyInputs[comment.commentId] ?? "").trim() || isSubmittingReply[comment.commentId]}
               >
-                답글 등록
+                {isSubmittingReply[comment.commentId] ? "등록 중..." : "답장 등록"}
               </Button>
             </div>
           </div>
         )}
-        {comment.replies && comment.replies.length > 0 && renderComments(comment.replies, depth + 1)}
       </div>
     ));
 
-  const openQuestionAction = (questionId: number, action: "confirm" | "reject") => {
-    if (!post) return;
-    const question = post.questions.find((item) => item.questionId === questionId);
-    if (!question || question.answer) return;
-
-    setActionDialog({ questionId, action });
-    setActionComment("");
-  };
-
-  const handleSubmitQuestionAction = () => {
-    if (!actionDialog || !actionComment.trim()) return;
-    const trimmedComment = actionComment.trim();
-    setQuestionSelections((prev) => ({
-      ...prev,
-      [actionDialog.questionId]: actionDialog.action,
-    }));
-
-    toast({
-      title: `${actionDialogLabel} 처리 완료`,
-      description: trimmedComment,
+  const handleReply = () => {
+    navigate(`/project/${id}/board/new`, {
+      state: {
+        parentPostId: post.id,
+        parentTitle: post.title,
+      },
     });
-
-    setActionDialog(null);
-    setActionComment("");
   };
 
-  const activeDialogQuestion = actionDialog
-    ? post.questions.find((question) => question.questionId === actionDialog.questionId)
-    : null;
-  const actionDialogLabel = actionDialog
-    ? actionDialog.action === "confirm"
-      ? activeDialogQuestion?.buttonLabels.yes ?? "승인"
-      : activeDialogQuestion?.buttonLabels.no ?? "반려"
-    : "";
+  const handleEdit = () => {
+    navigate(`/project/${id}/board/${postId}/edit`);
+  };
+
+  // 작성자 본인 여부
+  const isAuthor = user?.id === post.author.memberId;
+
+  // 수정 가능 여부: 작성자 본인이고, OPEN 상태이고, 댓글이 없고, 질문에 답변이 없을 때만 가능
+  const canEdit = isAuthor && post.openStatus === "OPEN" && post.comments.length === 0 && !post.questions.some(q => q.answer !== null);
+
+  // 삭제 가능 여부: 작성자 본인이고, OPEN 상태일 때만 가능
+  const canDelete = isAuthor && post.openStatus === "OPEN";
+
+  // 수정 불가 사유 메시지
+  const getEditDisabledReason = () => {
+    if (!isAuthor) return null;
+    if (post.openStatus === "CLOSED") return "종료된 게시글은 수정할 수 없습니다.";
+    if (post.comments.length > 0) return "댓글이 있는 게시글은 수정할 수 없습니다.";
+    if (post.questions.some(q => q.answer !== null)) return "답변이 등록된 게시글은 수정할 수 없습니다.";
+    return null;
+  };
+
+  // 삭제 불가 사유 메시지
+  const getDeleteDisabledReason = () => {
+    if (!isAuthor) return null;
+    if (post.openStatus === "CLOSED") return "종료된 게시글은 삭제할 수 없습니다.";
+    return null;
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("정말로 이 게시글을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    try {
+      await deletePost(Number(id), Number(postId));
+      toast({
+        title: "게시글 삭제 완료",
+        description: "게시글이 성공적으로 삭제되었습니다.",
+      });
+      navigate(`/project/${id}/board`);
+    } catch (error: any) {
+      console.error("게시글 삭제 실패:", error);
+      const errorCode = error.response?.data?.errorCode;
+      const errorMessage = errorCode === "POST_ALREADY_CLOSED"
+        ? "종료된 게시글은 삭제할 수 없습니다."
+        : error.response?.data?.message || "게시글 삭제 중 오류가 발생했습니다.";
+
+      toast({
+        title: "게시글 삭제 실패",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownload = async (fileId: number) => {
+    try {
+      const downloadUrl = await getDownloadUrl(fileId);
+      window.open(downloadUrl, '_blank');
+    } catch (error: any) {
+      console.error("파일 다운로드 실패:", error);
+      toast({
+        title: "파일 다운로드 실패",
+        description: error.response?.data?.message || "파일 다운로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleClosePost = async () => {
+    if (!id || !postId || !post) return;
+
+    if (!window.confirm("정말로 이 게시글을 종료하시겠습니까?\n종료된 게시글은 다시 열 수 없습니다.")) {
+      return;
+    }
+
+    try {
+      await closePost(Number(id), Number(postId));
+
+      toast({
+        title: "게시글 종료 완료",
+        description: "게시글이 성공적으로 종료되었습니다.",
+      });
+
+      // 게시글 다시 조회
+      window.location.reload();
+    } catch (error) {
+      console.error("게시글 종료 실패:", error);
+      toast({
+        title: "게시글 종료 실패",
+        description: "게시글 종료 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <ProjectLayout>
-      <div className="space-y-6 max-w-5xl mx-auto">
-        <Button
-          variant="ghost"
-          className="-ml-2 w-fit"
-          onClick={() => navigate(`/project/${id}/board`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          목록으로
-        </Button>
+      <div className="space-y-6 max-w-7xl mx-auto w-full">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            className="-ml-2 w-fit"
+            onClick={() => navigate(`/project/${id}/board`)}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            목록으로
+          </Button>
+          <div className="flex gap-2">
+            {isAuthor && (
+              <>
+                {post.openStatus === "OPEN" && (
+                  <Button
+                    variant="destructive"
+                    className="gap-2"
+                    onClick={handleClosePost}
+                  >
+                    Close
+                  </Button>
+                )}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={handleEdit}
+                          disabled={!canEdit}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          수정
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!canEdit && getEditDisabledReason() && (
+                      <TooltipContent>
+                        <p>{getEditDisabledReason()}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          variant="outline"
+                          className="gap-2"
+                          onClick={handleDelete}
+                          disabled={!canDelete}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          삭제
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    {!canDelete && getDeleteDisabledReason() && (
+                      <TooltipContent>
+                        <p>{getDeleteDisabledReason()}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              </>
+            )}
+            <Button className="gap-2" onClick={handleReply}>
+              <MessageSquare className="h-4 w-4" />
+              답글 작성
+            </Button>
+          </div>
+        </div>
 
         <Card>
           <CardHeader className="space-y-2 border-b">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className={cn("border", boardStatusStyles[postStatusVariant])}>
-                {boardStatusLabels[postStatusVariant]}
-              </Badge>
-              <Badge variant="outline">{projectStatusLabelText}</Badge>
-              <Badge variant="outline">{post.step.stepName}</Badge>
-              <div
-                className={cn(
-                  "inline-flex px-3 py-1 rounded-full text-xs font-medium border",
-                  boardStatusStyles[overallQuestionStatus]
+            <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="bg-blue-50">
+                  {projectPhaseLabelText}
+                </Badge>
+                <Badge variant="outline" className="bg-purple-50">
+                  {post.step.stepName}
+                </Badge>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {post.questions.length > 0 && overallQuestionStatus && (
+                  <Badge className={cn("border", boardStatusStyles[overallQuestionStatus])}>
+                    {boardStatusLabels[overallQuestionStatus]}
+                  </Badge>
                 )}
-              >
-                {boardStatusLabels[overallQuestionStatus]}
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    post.openStatus === "OPEN"
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-gray-50 text-gray-700 border-gray-200"
+                  )}
+                >
+                  {postOpenStatusLabelText}
+                </Badge>
               </div>
             </div>
             <CardTitle className="text-2xl">{post.title}</CardTitle>
@@ -512,14 +1020,18 @@ export default function BoardDetail() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground mb-1">단계</p>
+                <p className="text-xs text-muted-foreground mb-1">프로젝트 단계 (Phase)</p>
+                <p className="font-medium">{projectPhaseLabelText}</p>
+              </div>
+              <div className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground mb-1">세부 단계 (Step)</p>
                 <p className="font-medium">{post.step.stepName}</p>
               </div>
               <div className="rounded-lg border p-4">
-                <p className="text-xs text-muted-foreground mb-1">상태</p>
-                <p className="font-medium">{projectStatusLabelText}</p>
+                <p className="text-xs text-muted-foreground mb-1">게시글 상태</p>
+                <p className="font-medium">{postOpenStatusLabelText}</p>
               </div>
             </div>
 
@@ -552,16 +1064,14 @@ export default function BoardDetail() {
                             <p className="text-xs text-muted-foreground">{formatFileSize(file.fileSize)}</p>
                           </div>
                         </div>
-                        <Button asChild variant="ghost" size="icon">
-                          <a
-                            href={file.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`${file.fileName} 다운로드`}
-                          >
-                            <Download className="h-4 w-4" />
-                            <span className="sr-only">다운로드</span>
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownload(file.fileId)}
+                          aria-label={`${file.fileName} 다운로드`}
+                        >
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only">다운로드</span>
                         </Button>
                       </div>
                     ))}
@@ -584,10 +1094,10 @@ export default function BoardDetail() {
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                        className="block rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
                       >
-                        <span className="truncate font-medium">{link.title}</span>
-                        <span className="text-xs text-muted-foreground ml-3">{link.url}</span>
+                        <div className="font-medium break-all line-clamp-2">{link.title}</div>
+                        <div className="text-xs text-muted-foreground mt-1 break-all line-clamp-1">{link.url}</div>
                       </a>
                     ))}
                   </div>
@@ -602,79 +1112,187 @@ export default function BoardDetail() {
                   질문 및 답변
                 </Label>
                 {post.questions.length > 0 ? (
-                  <div className="mt-2 space-y-4">
-                    {post.questions.map((question) => {
-                      const isAnswered = Boolean(question.answer);
-                      const selectedAction = questionSelections[question.questionId];
-                      const answeredResponse = question.answer?.response;
-                      const questionStatus: BoardApprovalStatus = answeredResponse
-                        ? answeredResponse === "NO"
-                          ? "rejected"
-                          : "approved"
-                        : "request";
-                      const confirmLabel = question.buttonLabels.yes;
-                      const rejectLabel = question.buttonLabels.no;
-                      return (
-                        <div key={question.questionId} className="rounded-lg border p-4 space-y-3 bg-muted/20">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="font-semibold text-sm text-foreground">{question.content}</p>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={cn("border", boardStatusStyles[questionStatus])}
-                            >
-                              {boardStatusLabels[questionStatus]}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant={selectedAction === "confirm" ? "default" : "outline"}
-                              className={cn(
-                                "flex-1 min-w-[120px] transition-colors",
-                                selectedAction === "confirm"
-                                  ? "ring-2 ring-primary hover:bg-primary/90"
-                                  : "border-primary/40 text-primary hover:bg-primary/10"
-                              )}
-                              disabled={isAnswered}
-                              aria-pressed={selectedAction === "confirm"}
-                              onClick={() => openQuestionAction(question.questionId, "confirm")}
-                            >
-                              {confirmLabel}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant={selectedAction === "reject" ? "destructive" : "outline"}
-                              className={cn(
-                                "flex-1 min-w-[120px] transition-colors",
-                                selectedAction === "reject"
-                                  ? "ring-2 ring-destructive hover:bg-destructive/90 text-white"
-                                  : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              )}
-                              disabled={isAnswered}
-                              aria-pressed={selectedAction === "reject"}
-                              onClick={() => openQuestionAction(question.questionId, "reject")}
-                            >
-                              {rejectLabel}
-                            </Button>
-                          </div>
-                          {question.answer ? (
-                            <div className="rounded-md border bg-background p-3 space-y-2">
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                <span>응답 {question.answer.response}</span>
-                                <span>by {question.answer.respondent.name}</span>
-                                <span>{formatDateTime(question.answer.respondedAt)}</span>
+                  <>
+                    <div className="mt-2 space-y-4">
+                      {post.questions.map((question, qIndex) => {
+                        const questionTypeLabel =
+                          question.questionType === "SINGLE" ? "객관식 (1개 선택)" :
+                          question.questionType === "MULTI" ? "복수선택" :
+                          "주관식";
+
+                        return (
+                          <div key={question.questionId} className="rounded-lg border p-4 space-y-3 bg-muted/20">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-medium text-muted-foreground">질문 #{qIndex + 1}</span>
+                                  <Badge variant="secondary" className="text-xs">
+                                    {questionTypeLabel}
+                                  </Badge>
+                                </div>
+                                <p className="font-semibold text-sm text-foreground">{question.content}</p>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">아직 답변이 등록되지 않았습니다.</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+
+                            {/* 답변이 이미 있는 경우 */}
+                            {question.answer ? (
+                              <>
+                                {/* 옵션 표시 (참고용) */}
+                                {(question.questionType === "SINGLE" || question.questionType === "MULTI") && question.options.length > 0 && (
+                                  <div className="space-y-2 pl-4">
+                                    <p className="text-xs font-medium text-muted-foreground">보기:</p>
+                                    {question.options.map((option, idx) => {
+                                      const isSelected = question.answer?.selectedOptionIds?.includes(option.optionId);
+
+                                      return (
+                                        <div key={option.optionId} className="flex items-center gap-2 text-sm">
+                                          <span className="text-muted-foreground">{idx + 1}.</span>
+                                          <span className={isSelected ? "font-semibold text-primary" : ""}>
+                                            {option.optionText}
+                                            {isSelected && " ✓"}
+                                          </span>
+                                          {option.hasInput && question.questionType === "SINGLE" && (
+                                            <Badge variant="outline" className="text-xs ml-2">기타 입력 가능</Badge>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                <div className="rounded-md border bg-background p-3 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    <span className="font-medium">답변자:</span>
+                                    <span>{question.answer.respondent.name}</span>
+                                    <span>{formatDateTime(question.answer.respondedAt)}</span>
+                                  </div>
+                                  {question.answer?.textInput && (
+                                    <div className="mt-2 pt-2 border-t">
+                                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                                        {question.questionType === "TEXT" ? "답변 내용:" : "기타 의견:"}
+                                      </p>
+                                      <p className="text-sm whitespace-pre-line">{question.answer.textInput}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            ) : canAnswerQuestion() ? (
+                              /* 답변 가능한 경우 답변 UI 표시 */
+                              <div className="space-y-3">
+                                {/* 객관식 (라디오 버튼) */}
+                                {question.questionType === "SINGLE" && question.options.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 선택하세요:</p>
+                                    {question.options.map((option) => {
+                                      const answerState = questionAnswers[question.questionId];
+                                      const isSelected = answerState?.selectedOptions.includes(option.optionId);
+                                      return (
+                                        <div key={option.optionId} className="flex items-start gap-2">
+                                          <input
+                                            type="radio"
+                                            id={`q${question.questionId}-opt${option.optionId}`}
+                                            name={`question-${question.questionId}`}
+                                            checked={isSelected}
+                                            onChange={() => handleOptionSelect(question.questionId, option.optionId, question.questionType)}
+                                            className="mt-1"
+                                          />
+                                          <label
+                                            htmlFor={`q${question.questionId}-opt${option.optionId}`}
+                                            className="flex-1 cursor-pointer"
+                                          >
+                                            {option.optionText}
+                                            {option.hasInput && isSelected && (
+                                              <Textarea
+                                                placeholder="기타 의견을 입력하세요"
+                                                value={answerState?.textInput || ''}
+                                                onChange={(e) => handleQuestionTextChange(question.questionId, e.target.value)}
+                                                className="mt-2 min-h-[60px]"
+                                              />
+                                            )}
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* 복수선택 (체크박스) */}
+                                {question.questionType === "MULTI" && question.options.length > 0 && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 선택하세요 (복수 가능):</p>
+                                    {question.options.map((option) => {
+                                      const answerState = questionAnswers[question.questionId];
+                                      const isSelected = answerState?.selectedOptions.includes(option.optionId);
+                                      return (
+                                        <div key={option.optionId} className="flex items-center gap-2">
+                                          <input
+                                            type="checkbox"
+                                            id={`q${question.questionId}-opt${option.optionId}`}
+                                            checked={isSelected}
+                                            onChange={() => handleOptionSelect(question.questionId, option.optionId, question.questionType)}
+                                          />
+                                          <label
+                                            htmlFor={`q${question.questionId}-opt${option.optionId}`}
+                                            className="cursor-pointer"
+                                          >
+                                            {option.optionText}
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* 주관식 (텍스트 입력) */}
+                                {question.questionType === "TEXT" && (
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">답변을 입력하세요:</p>
+                                    <Textarea
+                                      placeholder="답변을 입력하세요"
+                                      value={questionAnswers[question.questionId]?.textInput || ''}
+                                      onChange={(e) => handleQuestionTextChange(question.questionId, e.target.value)}
+                                      className="min-h-[100px]"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              /* 답변 권한이 없는 경우 */
+                              <div className="rounded-md border bg-muted/50 p-3">
+                                {(question.questionType === "SINGLE" || question.questionType === "MULTI") && question.options.length > 0 && (
+                                  <div className="space-y-2 mb-3">
+                                    <p className="text-xs font-medium text-muted-foreground">보기:</p>
+                                    {question.options.map((option, idx) => (
+                                      <div key={option.optionId} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <span>{idx + 1}.</span>
+                                        <span>{option.optionText}</span>
+                                        {option.hasInput && question.questionType === "SINGLE" && (
+                                          <Badge variant="outline" className="text-xs ml-2">기타 입력 가능</Badge>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {question.questionType === "TEXT" && (
+                                  <p className="text-xs text-muted-foreground italic mb-3">주관식 답변이 필요합니다.</p>
+                                )}
+                                <p className="text-sm text-muted-foreground text-center">아직 답변이 등록되지 않았습니다.</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 통합 답변 제출 버튼 */}
+                    {canAnswerQuestion() && post.questions.some(q => !q.answer) && (
+                      <div className="mt-4 flex justify-end">
+                        <Button onClick={handleSubmitAllAnswers} size="lg">
+                          모든 답변 제출
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <p className="mt-2 text-sm text-muted-foreground">등록된 질문이 없습니다.</p>
                 )}
@@ -711,70 +1329,14 @@ export default function BoardDetail() {
                 className="min-h-[120px]"
               />
               <div className="flex justify-end">
-                <Button type="button" onClick={handleAddComment} disabled={!newComment.trim()}>
-                  댓글 작성
+                <Button type="button" onClick={handleAddComment} disabled={!newComment.trim() || isSubmittingComment}>
+                  {isSubmittingComment ? "작성 중..." : "댓글 작성"}
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      <Dialog
-        open={Boolean(actionDialog)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setActionDialog(null);
-            setActionComment("");
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
-              {actionDialogLabel || "처리 의견 작성"}
-            </DialogTitle>
-          </DialogHeader>
-          {activeDialogQuestion && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {activeDialogQuestion.content}
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="action-comment">
-                  의견 / 사유
-                </Label>
-                <Textarea
-                  id="action-comment"
-                  placeholder={`${actionDialog?.action === "confirm" ? "승인 의견" : "반려 사유"}를 입력하세요`}
-                  value={actionComment}
-                  onChange={(event) => setActionComment(event.target.value)}
-                  className="min-h-[120px]"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setActionDialog(null);
-                setActionComment("");
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSubmitQuestionAction}
-              disabled={!actionDialog || !actionComment.trim()}
-            >
-              제출
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ProjectLayout>
   );
 }

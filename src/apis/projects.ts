@@ -1,0 +1,70 @@
+import api from "./api";
+
+export type ProjectStatus =
+  | "CONTRACT"
+  | "IN_PROGRESS"
+  | "DELIVERY"
+  | "MAINTENANCE"
+  | "CLOSED";
+
+export type ProjectPhase = "CONTRACT" | "IN_PROGRESS" | "DELIVERY" | "MAINTENANCE";
+
+export type ProjectRole = "ADMIN" | "MEMBER";
+
+export interface ApiResponse<T> {
+  success: boolean;
+  message: string;
+  data: T;
+}
+
+/* ===========================
+      Project Responses
+=========================== */
+
+export interface ProjectSummaryResponse {
+  projectId: number;
+  name: string;
+  status: ProjectStatus;
+  projectRole?: ProjectRole | null;
+  customerCompanyName?: string | null;
+  phase?: ProjectPhase | null;
+  projectPhase?: ProjectPhase | null;
+  endDateExpected?: string | null;
+  endDate?: string | null;
+  expectedEndDate?: string | null; // 백엔드 DTO 명이 다를 수 있어 여유 필드 추가
+  isMember?: boolean | null;
+  member?: boolean | null;
+  expirationDate?: string | null;
+}
+
+export interface ProjectDetailResponse {
+  id: number;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  startDate: string | null;
+  endDateExpected: string | null;
+  contractAmount: number | null;
+}
+
+export interface ProjectListResponse {
+  totalCount: number;
+  page: number;
+  size: number;
+  projects: ProjectSummaryResponse[];
+}
+
+/* ===========================
+      API CALL HELPERS
+=========================== */
+
+const unwrap = async <T>(promise: Promise<{ data: ApiResponse<T> }>) => {
+  const response = await promise;
+  return response.data.data;
+};
+
+export const fetchMyProjects = () =>
+  unwrap<ProjectListResponse>(api.get("/api/projects/my"));
+
+export const fetchProjectDetail = (projectId: number) =>
+  unwrap<ProjectDetailResponse>(api.get(`/api/projects/${projectId}`));

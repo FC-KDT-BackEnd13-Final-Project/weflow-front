@@ -4,19 +4,60 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { authApi } from "@/apis/auth";
+import { useToast } from "@/hooks/use-toast";
+import { useUserStore } from "@/stores/user";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const setUser = useUserStore((s) => s.setUser);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate login
-    setTimeout(() => {
-      navigate("/projects");
-    }, 1000);
+
+    try {
+      const response = await authApi.login({ email, password });
+
+      if (response.success) {
+        localStorage.setItem("accessToken", response.data.accessToken);
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+        const me = await authApi.getMe();
+        setUser(me.data);
+
+        toast({
+          title: "로그인 성공",
+          description: response.message,
+        });
+
+        // 최초 로그인 시 비밀번호 변경 강제
+        if (response.data.user.isTemporaryPassword) {
+          navigate("/first-password-change");
+          return;
+        }
+
+        // 역할에 따라 다른 페이지로 이동
+        const userRole = response.data.user.role;
+        if (userRole === "SYSTEM_ADMIN") {
+          navigate("/admin/dashboard");
+        } else {
+          // AGENCY, CLIENT
+          navigate("/dashboard");
+        }
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "로그인 실패",
+        description: error.response?.data?.message || "이메일 또는 비밀번호를 확인해주세요.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -30,84 +71,37 @@ export default function Login() {
           <CardDescription>프로젝트 관리 시스템</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">로그인</TabsTrigger>
-              <TabsTrigger value="signup">회원가입</TabsTrigger>
-            </TabsList>
-            <TabsContent value="login" className="space-y-4 mt-4">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">이메일</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">비밀번호</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "로그인 중..." : "로그인"}
-                </Button>
-              </form>
-            </TabsContent>
-            <TabsContent value="signup" className="space-y-4 mt-4">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">이름</Label>
-                  <Input
-                    id="signup-name"
-                    type="text"
-                    placeholder="홍길동"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">이메일</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">비밀번호</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    placeholder="••••••••"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company">회사명</Label>
-                  <Input
-                    id="company"
-                    type="text"
-                    placeholder="회사명 입력"
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  회원가입
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">이메일</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">비밀번호</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading}
+            >
+              {isLoading ? "로그인 중..." : "로그인"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
     </div>

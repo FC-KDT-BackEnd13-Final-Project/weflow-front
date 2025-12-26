@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ProjectLayout } from "@/components/layout/ProjectLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,9 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockChecklists } from "./Checklist";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { checklistsApi } from "@/apis/checklists";
 
-type QuestionType = "SINGLE" | "MULTI" | "TEXT";
+type ChecklistQuestionType = "SINGLE" | "MULTI" | "TEXT";
 
 interface ChecklistOption {
   id: number;
@@ -30,226 +32,294 @@ interface ChecklistAnswer {
 interface ChecklistQuestion {
   id: number;
   questionText: string;
-  questionType: QuestionType;
-  options: ChecklistOption[];
+  questionType: ChecklistQuestionType;
+  options?: ChecklistOption[];
   answer?: ChecklistAnswer;
 }
 
 interface ChecklistDetailResponse {
   checklistId: number;
   title: string;
+  description?: string;
   locked: boolean;
   questions: ChecklistQuestion[];
+  stepName?: string;
+  stepId?: number;
+  questionCount?: number;
+  createdById?: number;
 }
-
-const mockChecklistDetails: Record<number, ChecklistDetailResponse> = {
-  1: {
-    checklistId: 1,
-    title: "기획 단계 사전 질문지",
-    locked: true,
-    questions: [
-      {
-        id: 101,
-        questionText: "Q1. 필수 기능의 우선순위를 선택해주세요.",
-        questionType: "SINGLE",
-        options: [
-          { id: 2001, optionText: "핵심 기능만 먼저 개발(MVP 우선)", hasInput: false },
-          { id: 2002, optionText: "완성형 기능을 한 번에 구축", hasInput: false },
-          { id: 2003, optionText: "기타 (직접 입력)", hasInput: true },
-        ],
-        answer: {
-          selectedOptionId: 2001,
-        },
-      },
-      {
-        id: 102,
-        questionText: "Q2. 타겟 사용자층을 선택해주세요.",
-        questionType: "SINGLE",
-        options: [
-          { id: 2010, optionText: "일반 소비자(B2C)", hasInput: false },
-          { id: 2011, optionText: "기업 고객(B2B)", hasInput: false },
-          { id: 2012, optionText: "내부 직원용", hasInput: false },
-          { id: 2013, optionText: "기타(직접 입력)", hasInput: true },
-        ],
-        answer: {
-          selectedOptionId: 2010,
-        },
-      },
-      {
-        id: 103,
-        questionText: "Q3. 참고하고 싶은 레퍼런스 사이트가 있나요?",
-        questionType: "SINGLE",
-        options: [
-          { id: 2020, optionText: "있음", hasInput: false },
-          { id: 2021, optionText: "없음", hasInput: false },
-          { id: 2022, optionText: "기타(직접 입력)", hasInput: true },
-        ],
-        answer: {
-          selectedOptionId: 2022,
-          answerText: "adload.com",
-        },
-      },
-    ],
-  },
-  2: {
-    checklistId: 2,
-    title: "디자인 가이드 입력",
-    locked: false,
-    questions: [
-      {
-        id: 201,
-        questionText: "Q1. 브랜드 컬러 가이드는 준비되어 있나요?",
-        questionType: "SINGLE",
-        options: [
-          { id: 3001, optionText: "있음 (HEX/RGB 제공 가능)", hasInput: false },
-          { id: 3002, optionText: "일부 있음 (기본 색상만 존재)", hasInput: false },
-          { id: 3003, optionText: "없음 (새로 제안 원함)", hasInput: true },
-        ],
-      },
-      {
-        id: 202,
-        questionText: "Q2. 전체 UI 스타일 방향을 선택해주세요.",
-        questionType: "MULTI",
-        options: [
-          { id: 3010, optionText: "심플·미니멀 스타일", hasInput: false },
-          { id: 3011, optionText: "기업(B2B) 포털 스타일", hasInput: false },
-          { id: 3012, optionText: "기타(직접 입력)", hasInput: true },
-        ],
-        answer: {
-          selectedOptionIds: [3010, 3012],
-          answerText: "",
-        },
-      },
-      {
-        id: 203,
-        questionText: "Q3. 추가로 공유하고 싶은 디자인 참고 사항이 있나요?",
-        questionType: "TEXT",
-        options: [],
-        answer: {
-          answerText: "",
-        },
-      },
-    ],
-  },
-  3: {
-    checklistId: 3,
-    title: "개발 환경 요구사항",
-    locked: true,
-    questions: [],
-  },
-};
 
 export default function ChecklistDetail() {
   const { id, checklistId } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const checklist = mockChecklists.find(item => item.id === Number(checklistId));
-  const detail = mockChecklistDetails[Number(checklistId)];
-  const questions = detail?.questions || [];
+  const [detail, setDetail] = useState<ChecklistDetailResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number | number[] | undefined>>({});
   const [customInputs, setCustomInputs] = useState<Record<number, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user } = useCurrentUser();
 
+  // 1) API로 상세 조회
   useEffect(() => {
-    const answers: Record<number, number | number[]> = {};
-    const inputs: Record<number, string> = {};
+    if (!checklistId) return;
 
-    questions.forEach((question) => {
-      if (question.answer?.selectedOptionId) {
-        answers[question.id] = question.answer.selectedOptionId;
+    const controller = new AbortController();
+
+    const fetchDetail = async () => {
+      try {
+        setIsLoading(true);
+        setFetchError(null);
+
+        const response = await checklistsApi.getDetail(checklistId);
+
+        const d = response.data?.data;
+        if (!d) throw new Error("잘못된 응답입니다.");
+
+        const normalizedQuestions: ChecklistQuestion[] = [...(d.questions ?? [])]
+          .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+          .map((q: any) => ({
+            id: q.questionId,
+            questionText: q.questionText,
+            questionType: q.questionType,
+            options: (q.options ?? [])
+              .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+              .map((opt: any) => ({
+                id: opt.optionId,
+                optionText: opt.optionText,
+                hasInput: opt.hasInput,
+              })),
+            answer: q.answer
+              ? {
+                selectedOptionId: q.answer.selectedOptionId ?? undefined,
+                selectedOptionIds: q.answer.selectedOptionIds ?? undefined,
+                answerText: q.answer.answerText ?? undefined,
+              }
+              : undefined,
+          }));
+
+        setDetail({
+          checklistId: d.checklistId,
+          title: d.title,
+          description: d.description,
+          locked: d.locked === true,
+          questions: normalizedQuestions,
+          stepName: d.stepName,
+          stepId: d.stepId,
+          questionCount: d.questionCount,
+          createdById: d.createdById,
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setFetchError("체크리스트 상세를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
       }
-      if (question.answer?.selectedOptionIds) {
-        answers[question.id] = question.answer.selectedOptionIds;
+    };
+
+    fetchDetail();
+    return () => controller.abort();
+  }, [checklistId]);
+
+  // 2) detail 업데이트되면 답변 초기화 (1회)
+  useEffect(() => {
+    if (!detail) return;
+
+    const nextSel: Record<number, number | number[]> = {};
+    const nextInput: Record<number, string> = {};
+
+    detail.questions.forEach((q) => {
+      // 🚨 [수정 1] 질문 유형에 따라 안전하게 답변을 초기화
+      if (q.questionType === "SINGLE" && q.answer?.selectedOptionId !== undefined) {
+        nextSel[q.id] = q.answer.selectedOptionId;
+      } else if (q.questionType === "MULTI" && q.answer?.selectedOptionIds !== undefined) {
+        nextSel[q.id] = q.answer.selectedOptionIds;
       }
-      if (question.answer?.answerText) {
-        inputs[question.id] = question.answer.answerText;
+
+      if (q.answer?.answerText !== undefined) {
+        nextInput[q.id] = q.answer.answerText;
       }
     });
 
-    setSelectedAnswers(answers);
-    setCustomInputs(inputs);
-  }, [questions]);
+    setSelectedAnswers(nextSel);
+    setCustomInputs(nextInput);
+  }, [detail]);
 
+  // 🚨 [수정 2] canSubmitChecklist 논리 오류 수정
+  const canSubmitChecklist = user?.role === "CLIENT" || user?.role === "SYSTEM_ADMIN";
+  const canManageChecklist = user?.role === "AGENCY" || user?.role === "SYSTEM_ADMIN";
+  const canEditCurrentChecklist = Boolean(
+    detail && canManageChecklist && (user?.role === "SYSTEM_ADMIN" || user?.id === detail.createdById)
+  );
+
+  // 3) SINGLE 선택
   const handleSingleOptionChange = (questionId: number, value: string) => {
-    if (detail?.locked) return;
+    if (detail?.locked || !canSubmitChecklist) return;
 
-    const numericValue = Number(value);
-    setSelectedAnswers((prev) => ({ ...prev, [questionId]: numericValue }));
-    const question = questions.find(q => q.id === questionId);
-    const selectedOption = question?.options.find(option => option.id === numericValue);
-    if (!selectedOption?.hasInput) {
+    const numeric = Number(value);
+
+    setSelectedAnswers((prev) => ({
+      ...prev,
+      [questionId]: numeric,
+    }));
+
+    const q = detail?.questions.find((item) => item.id === questionId);
+    const selectedOpt = q?.options?.find((o) => o.id === numeric);
+
+    // 선택된 옵션에 hasInput이 없으면 입력 값 초기화
+    if (!selectedOpt?.hasInput) {
       setCustomInputs((prev) => {
-        const updated = { ...prev };
-        delete updated[questionId];
-        return updated;
+        const copy = { ...prev };
+        delete copy[questionId];
+        return copy;
       });
     }
   };
 
+  // 4) MULTI 선택 처리
   const handleMultiOptionToggle = (questionId: number, optionId: number, checked: boolean) => {
-    if (detail?.locked) return;
+    if (detail?.locked || !canSubmitChecklist) return;
 
     setSelectedAnswers((prev) => {
-      const current = Array.isArray(prev[questionId]) ? prev[questionId] as number[] : [];
-      let nextOptions: number[];
+      const current = Array.isArray(prev[questionId]) ? (prev[questionId] as number[]) : [];
+      const next = checked
+        ? current.includes(optionId) ? current : [...current, optionId]
+        : current.filter((id) => id !== optionId);
 
-      if (checked) {
-        nextOptions = current.includes(optionId) ? current : [...current, optionId];
-      } else {
-        nextOptions = current.filter((id) => id !== optionId);
-      }
+      const q = detail?.questions.find((item) => item.id === questionId);
+      // 현재 선택된 옵션들 중 하나라도 hasInput이 있는지 확인
+      const hasInput = q?.options?.some((opt) => next.includes(opt.id) && opt.hasInput);
 
-      const question = questions.find((q) => q.id === questionId);
-      const hasInputSelected = question?.options.some(opt => nextOptions.includes(opt.id) && opt.hasInput);
-
-      if (!hasInputSelected) {
-        setCustomInputs((prevInputs) => {
-          const updated = { ...prevInputs };
-          delete updated[questionId];
-          return updated;
+      // hasInput을 가진 옵션이 선택되지 않았다면 customInput 초기화
+      if (!hasInput) {
+        setCustomInputs((prevInput) => {
+          const copy = { ...prevInput };
+          delete copy[questionId];
+          return copy;
         });
       }
 
-      return { ...prev, [questionId]: nextOptions };
+      return { ...prev, [questionId]: next };
     });
   };
 
+  // 5) INPUT 변경
   const handleCustomInputChange = (questionId: number, value: string) => {
-    if (detail?.locked) return;
-    setCustomInputs((prev) => ({ ...prev, [questionId]: value }));
+    if (detail?.locked || !canSubmitChecklist) return;
+
+    setCustomInputs((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
   };
 
-  const shouldShowAdditionalInput = (question: ChecklistQuestion) => {
-    if (question.questionType === "TEXT") {
-      return true;
-    }
+  // 🚨 [수정 3] 답변 페이로드 구성 로직 수정: hasInput인 옵션에만 answerText를 첨부
+  const buildAnswerPayload = () => {
+    if (!detail) return [];
+    const payload: Array<{ questionId: number; optionId: number | null; answerText: string | null }> = [];
 
-    if (question.questionType === "SINGLE") {
-      const selected = selectedAnswers[question.id];
-      const selectedOption = question.options.find(opt => opt.id === selected);
-      return !!selectedOption?.hasInput;
-    }
+    detail.questions.forEach((q) => {
+      const selected = selectedAnswers[q.id];
+      const memoInput = customInputs[q.id] ?? null;
 
-    if (question.questionType === "MULTI") {
-      const selected = selectedAnswers[question.id];
-      if (Array.isArray(selected)) {
-        return question.options.some(opt => selected.includes(opt.id) && opt.hasInput);
+      // TEXT 타입: optionId 없이 answerText만 보냄
+      if (q.questionType === "TEXT") {
+        payload.push({
+          questionId: q.id,
+          optionId: null,
+          answerText: memoInput,
+        });
+        return;
       }
-    }
 
-    return false;
+      // SINGLE 타입
+      if (q.questionType === "SINGLE" && typeof selected === "number") {
+        const selectedOpt = q.options?.find(o => o.id === selected);
+        // hasInput이 있고 입력 내용이 있을 때만 answerText를 보냄
+        const answerTextToSend = (selectedOpt?.hasInput && memoInput) ? memoInput : null;
+
+        payload.push({
+          questionId: q.id,
+          optionId: selected,
+          answerText: answerTextToSend,
+        });
+        return;
+      }
+
+      // MULTI 타입
+      if (q.questionType === "MULTI" && Array.isArray(selected)) {
+        selected.forEach((optionId) => {
+          const selectedOpt = q.options?.find(o => o.id === optionId);
+          // 해당 옵션이 hasInput이 있고 입력 내용이 있을 때만 answerText를 보냄
+          const answerTextToSend = (selectedOpt?.hasInput && memoInput) ? memoInput : null;
+
+          payload.push({
+            questionId: q.id,
+            optionId,
+            answerText: answerTextToSend,
+          });
+        });
+      }
+    });
+
+    return payload;
   };
 
-  if (!checklist || !detail) {
+  const handleSubmitAnswers = async () => {
+    if (!detail || detail.locked || isSubmitting || !canSubmitChecklist) return;
+    const answers = buildAnswerPayload();
+    if (answers.length === 0) {
+      toast({
+        title: "답변을 선택해주세요.",
+        description: "제출할 항목을 선택하거나 입력해야 합니다.",
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await checklistsApi.submitAnswers({
+        checklistId: detail.checklistId,
+        answers,
+      });
+      toast({
+        title: "체크리스트 제출 완료",
+        description: "답변이 정상적으로 제출되었습니다.",
+      });
+      navigate(`/project/${id}/checklist`);
+    } catch (error) {
+      toast({
+        title: "제출에 실패했습니다.",
+        description: "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 6) 추가 입력창 보여줄지?
+  // 로딩 화면
+  if (isLoading) {
     return (
       <ProjectLayout>
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">체크리스트를 찾을 수 없습니다.</p>
-          <Button 
-            variant="outline" 
-            className="mt-4"
-            onClick={() => navigate(`/project/${id}/checklist`)}
-          >
-            목록으로 돌아가기
+        <div className="py-12 text-center text-muted-foreground">체크리스트 로딩 중...</div>
+      </ProjectLayout>
+    );
+  }
+
+  // 에러 화면
+  if (fetchError || !detail) {
+    return (
+      <ProjectLayout>
+        <div className="py-12 text-center">
+          <p className="text-muted-foreground">{fetchError ?? "체크리스트를 찾을 수 없습니다."}</p>
+          <Button variant="outline" className="mt-4" onClick={() => navigate(`/project/${id}/checklist`)}>
+            돌아가기
           </Button>
         </div>
       </ProjectLayout>
@@ -259,7 +329,8 @@ export default function ChecklistDetail() {
   return (
     <ProjectLayout>
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -269,110 +340,181 @@ export default function ChecklistDetail() {
             <ArrowLeft className="h-4 w-4" />
             목록으로
           </Button>
+          {canEditCurrentChecklist && (
+            <div className="flex gap-2">
+              {!detail.locked && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate(`/project/${id}/checklist/create`, {
+                        state: { checklist: detail },
+                      })
+                    }
+                  >
+                    체크리스트 수정
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={async () => {
+                      if (!window.confirm("이 체크리스트를 삭제하시겠습니까?")) return;
+                      try {
+                        await checklistsApi.deleteChecklist(detail.checklistId);
+                        toast({
+                          title: "체크리스트가 삭제되었습니다.",
+                        });
+                        navigate(`/project/${id}/checklist`);
+                      } catch {
+                        toast({
+                          title: "삭제에 실패했습니다.",
+                          description: "잠시 후 다시 시도해주세요.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    체크리스트 삭제
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
+        {/* 본문 */}
         <Card>
           <CardHeader className="border-b">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl">{checklist.title}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">질문 {checklist.count}개</p>
+                <CardTitle className="text-xl">{detail.title}</CardTitle>
+                {detail.description && (
+                  <p className="text-sm text-muted-foreground mt-1">{detail.description}</p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">
+                  질문 {detail.questionCount ?? detail.questions.length}개 ·{" "}
+                  {detail.locked ? "제출 완료" : "작성 가능"}
+                </p>
+                {detail.stepName && (
+                  <p className="text-sm text-muted-foreground mt-1">단계: {detail.stepName}</p>
+                )}
               </div>
+
               <Badge
                 variant="outline"
                 className={cn(
                   "rounded-full px-3 py-1",
-                  checklist.status === "complete" && "bg-status-complete-bg text-status-complete border-status-complete",
-                  checklist.status === "pending" && "bg-blue-50 text-blue-600 border-blue-200"
+                  detail.locked
+                    ? "bg-status-complete-bg text-status-complete border-status-complete"
+                    : "bg-blue-50 text-blue-600 border-blue-200"
                 )}
               >
-                {checklist.status === "complete" && "완료"}
-                {checklist.status === "pending" && "대기"}
+                {detail.locked ? "완료" : "대기"}
               </Badge>
             </div>
           </CardHeader>
+
           <CardContent className="p-6 space-y-6">
-            {questions.length > 0 ? (
-              questions.map((question) => (
-                <Card key={question.id} className="border-2">
-                  <CardContent className="p-4">
-                    <h4 className="font-medium mb-4">{question.questionText}</h4>
+            {detail.questions.length > 0 ? (
+              detail.questions.map((q) => (
+                <div key={q.id}>
+                  <Card className="border-2">
+                    <CardContent className="p-4">
 
-                    {question.questionType === "SINGLE" && (
-                      <RadioGroup
-                        value={selectedAnswers[question.id]?.toString() || ""}
-                        onValueChange={(value) => handleSingleOptionChange(question.id, value)}
-                        className="space-y-3"
-                      >
-                        {question.options.map((option) => (
-                          <div key={option.id} className="flex items-center space-x-2">
-                            <RadioGroupItem 
-                              value={option.id.toString()} 
-                              id={`${question.id}-${option.id}`}
-                              className={cn(
-                                selectedAnswers[question.id] === option.id && "border-foreground"
-                              )}
-                              disabled={detail?.locked}
-                            />
-                            <Label 
-                              htmlFor={`${question.id}-${option.id}`}
-                              className={cn(
-                                "cursor-pointer",
-                                selectedAnswers[question.id] === option.id && "font-medium"
-                              )}
-                            >
-                              {option.optionText}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    )}
+                      <h4 className="font-medium mb-4">{q.questionText}</h4>
 
-                    {question.questionType === "MULTI" && (
-                      <div className="space-y-3">
-                        {question.options.map((option) => {
-                          const selected = Array.isArray(selectedAnswers[question.id]) && (selectedAnswers[question.id] as number[]).includes(option.id);
-                          return (
-                            <div key={option.id} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={`${question.id}-${option.id}`}
-                                checked={selected}
-                                onCheckedChange={(checked) => handleMultiOptionToggle(question.id, option.id, Boolean(checked))}
-                                disabled={detail?.locked}
-                              />
-                              <Label
-                                htmlFor={`${question.id}-${option.id}`}
-                                className={cn("cursor-pointer", selected && "font-medium")}
-                              >
-                                {option.optionText}
-                              </Label>
+                      {/* SINGLE */}
+                      {q.questionType === "SINGLE" && (q.options?.length ?? 0) > 0 && (
+                        <RadioGroup
+                          value={String(selectedAnswers[q.id] ?? "")}
+                          onValueChange={(v) => handleSingleOptionChange(q.id, v)}
+                          className="space-y-3"
+                        >
+                          {(q.options ?? []).map((opt) => (
+                            <div key={opt.id} className="space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(opt.id)}
+                                  id={`${q.id}-${opt.id}`}
+                                  disabled={detail.locked || !canSubmitChecklist}
+                                />
+                                <Label
+                                  htmlFor={`${q.id}-${opt.id}`}
+                                  className={cn(
+                                    "cursor-pointer",
+                                    selectedAnswers[q.id] === opt.id && "font-medium"
+                                  )}
+                                >
+                                  {opt.optionText}
+                                </Label>
+                              </div>
+                              {opt.hasInput && selectedAnswers[q.id] === opt.id && (
+                                <Input
+                                  value={customInputs[q.id] ?? ""}
+                                  placeholder="내용을 입력해주세요"
+                                  onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
+                                  readOnly={detail.locked || !canSubmitChecklist}
+                                />
+                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          ))}
+                        </RadioGroup>
+                      )}
 
-                    {question.questionType === "TEXT" && (
-                      <Textarea
-                        value={customInputs[question.id] || ""}
-                        onChange={(event) => handleCustomInputChange(question.id, event.target.value)}
-                        placeholder="내용을 입력해주세요"
-                        className="mt-3"
-                        readOnly={detail?.locked}
-                      />
-                    )}
+                      {/* MULTI */}
+                      {q.questionType === "MULTI" && (q.options?.length ?? 0) > 0 && (
+                        <div className="space-y-3">
+                          {(q.options ?? []).map((opt) => {
+                            const selected =
+                              Array.isArray(selectedAnswers[q.id]) &&
+                              (selectedAnswers[q.id] as number[]).includes(opt.id);
 
-                    {question.questionType !== "TEXT" && shouldShowAdditionalInput(question) && (
-                      <Input 
-                        value={customInputs[question.id] || ""} 
-                        className="mt-3" 
-                        placeholder="내용을 입력해주세요"
-                        onChange={(event) => handleCustomInputChange(question.id, event.target.value)}
-                        readOnly={detail?.locked}
-                      />
-                    )}
-                  </CardContent>
-                </Card>
+                            return (
+                              <div key={opt.id} className="space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`${q.id}-${opt.id}`}
+                                    checked={selected}
+                                    onCheckedChange={(checked) =>
+                                      handleMultiOptionToggle(q.id, opt.id, Boolean(checked))
+                                    }
+                                    disabled={detail.locked || !canSubmitChecklist}
+                                  />
+                                  <Label
+                                    htmlFor={`${q.id}-${opt.id}`}
+                                    className={selected ? "font-medium" : ""}
+                                  >
+                                    {opt.optionText}
+                                  </Label>
+                                </div>
+                                {opt.hasInput && selected && (
+                                  <Input
+                                    value={customInputs[q.id] ?? ""}
+                                    placeholder="내용을 입력해주세요"
+                                    onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
+                                    readOnly={detail.locked || !canSubmitChecklist}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* TEXT */}
+                      {q.questionType === "TEXT" && (
+                        <Textarea
+                          value={customInputs[q.id] ?? ""}
+                          onChange={(e) => handleCustomInputChange(q.id, e.target.value)}
+                          className="mt-3"
+                          readOnly={detail.locked || !canSubmitChecklist}
+                        />
+                      )}
+
+                    </CardContent>
+                  </Card>
+                </div>
               ))
             ) : (
               <div className="text-center py-12 text-muted-foreground">
@@ -381,6 +523,26 @@ export default function ChecklistDetail() {
             )}
           </CardContent>
         </Card>
+
+        {!detail.locked && (
+          <div className="flex justify-end">
+            <div className="flex flex-col items-end gap-2">
+              {!canSubmitChecklist && (
+                <p className="text-xs text-muted-foreground">
+                  고객사만 답변을 작성하고 제출할 수 있습니다.
+                </p>
+              )}
+              <Button
+                size="lg"
+                className="px-8"
+                disabled={isSubmitting || !canSubmitChecklist}
+                onClick={handleSubmitAnswers}
+              >
+                {isSubmitting ? "제출 중..." : "제출하기"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </ProjectLayout>
   );

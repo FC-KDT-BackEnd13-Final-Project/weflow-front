@@ -1,46 +1,297 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Plus, Search, Filter } from "lucide-react";
+import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ProjectStatus,
+  fetchMyProjects,
+  ProjectSummaryResponse,
+  fetchProjectDetail,
+  ProjectRole,
+  ProjectPhase,
+} from "@/apis/projects";
+import { useUserStore } from "@/stores/user";
+import { Skeleton } from "@/components/ui/skeleton"; // Skeleton UI 임포트 추가
 
-const mockProjects = [
-  {
-    id: 1,
-    name: "쇼핑몰 리뉴얼 프로젝트",
-    client: "ABC 커머스",
-    status: "progress" as const,
-    progress: 65,
-    dueDate: "2024.12.31",
-    team: 5,
-  },
-  {
-    id: 2,
-    name: "기업 홈페이지 제작",
-    client: "XYZ 그룹",
-    status: "pending" as const,
-    progress: 20,
-    dueDate: "2025.01.15",
-    team: 3,
-  },
-  {
-    id: 3,
-    name: "모바일 앱 개발",
-    client: "스타트업 DEF",
-    status: "complete" as const,
-    progress: 100,
-    dueDate: "2024.11.30",
-    team: 8,
-  },
-];
+const statusLabelMap: Record<ProjectStatus, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행중",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+  CLOSED: "종료",
+};
+
+const statusBadgeMap: Record<
+  ProjectStatus,
+  "pending" | "progress" | "complete" | "rejected" | "approved" | "request"
+> = {
+  CONTRACT: "pending",
+  IN_PROGRESS: "progress",
+  DELIVERY: "progress",
+  MAINTENANCE: "progress",
+  CLOSED: "complete",
+};
+
+const projectPhaseLabelMap: Record<ProjectPhase, string> = {
+  CONTRACT: "계약",
+  IN_PROGRESS: "진행",
+  DELIVERY: "납품",
+  MAINTENANCE: "유지보수",
+};
+
+const projectPhaseBadgeMap: Record<ProjectPhase, string> = {
+  CONTRACT: "bg-blue-50 text-blue-700 border-blue-100",
+  IN_PROGRESS: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  DELIVERY: "bg-amber-50 text-amber-700 border-amber-100",
+  MAINTENANCE: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
+// 프로젝트 카드 스켈레톤 컴포넌트 정의
+const ProjectCardSkeleton = () => (
+  <Card className="h-full">
+    <CardHeader>
+      <div className="flex items-start justify-between">
+        <div className="space-y-1 flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-6 w-3/5" />
+            <Skeleton className="h-6 w-1/5" />
+          </div>
+          <Skeleton className="h-4 w-1/4" />
+        </div>
+        <Skeleton className="h-6 w-1/6 ml-auto" />
+      </div>
+    </CardHeader>
+    <CardContent className="space-y-3">
+      <div className="flex items-center justify-between text-sm">
+        <Skeleton className="h-4 w-1/4" />
+        <Skeleton className="h-4 w-1/3" />
+      </div>
+      <div className="flex items-center justify-between text-sm">
+        <Skeleton className="h-4 w-1/4" />
+        <Skeleton className="h-4 w-1/6" />
+      </div>
+      <div className="flex items-center justify-between text-sm">
+        <Skeleton className="h-4 w-1/4" />
+        <Skeleton className="h-4 w-1/5" />
+      </div>
+    </CardContent>
+  </Card>
+);
 
 export default function Projects() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const userRole = useUserStore((s) => s.user?.role)?.toUpperCase();
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "ALL">(
+    "ALL"
+  );
+  const [projects, setProjects] = useState<ProjectSummaryResponse[]>([]);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const getMembershipState = (
+    project: ProjectSummaryResponse
+  ): "joined" | "not-joined" | "unknown" => {
+    if (userRole === "SYSTEM_ADMIN") return "joined";
+    if (userRole === "CLIENT") return "joined";
+    const isMemberValue = project.member ?? project.isMember;
+    if (isMemberValue === true) return "joined";
+    if (isMemberValue === false) return "not-joined";
+    if (project.projectRole) return "joined";
+    if (userRole === "AGENCY") return "unknown";
+    return "not-joined";
+  };
+
+  const enrichProjects = async (items: ProjectSummaryResponse[]) => {
+    if (!userRole) return;
+    const targets = items.filter((p) => {
+      if (userRole === "AGENCY") {
+        const isMemberValue = p.member ?? p.isMember;
+        if (isMemberValue !== true) return false;
+      }
+      return (
+        !(
+          p.endDateExpected ??
+          p.expectedEndDate ??
+          p.expirationDate ??
+          p.endDate
+        ) ||
+        !(p.projectPhase ?? p.phase)
+      );
+    });
+    if (targets.length === 0) return;
+
+    const results = await Promise.allSettled(
+      targets.map((p) => fetchProjectDetail(p.projectId))
+    );
+
+    const updates = new Map<number, Partial<ProjectSummaryResponse>>();
+    results.forEach((res, idx) => {
+      if (res.status !== "fulfilled") return;
+      const projectId = targets[idx].projectId;
+      updates.set(projectId, {
+        endDateExpected:
+          res.value.endDateExpected ??
+          (res.value as any)?.expectedEndDate ??
+          null,
+        expectedEndDate:
+          (res.value as any)?.expectedEndDate ??
+          res.value.endDateExpected ??
+          null,
+        expirationDate:
+          (res.value as any)?.expirationDate ??
+          (res.value as any)?.expectedEndDate ??
+          res.value.endDateExpected ??
+          null,
+        endDate: (res.value as any)?.endDate ?? null,
+        projectPhase:
+          (res.value as any)?.phase ??
+          targets[idx].projectPhase ??
+          targets[idx].phase ??
+          null,
+        phase: (res.value as any)?.phase ?? null,
+      });
+    });
+
+    if (updates.size === 0) return;
+    setProjects((prev) =>
+      prev.map((p) =>
+        updates.has(p.projectId) ? { ...p, ...updates.get(p.projectId)! } : p
+      )
+    );
+  };
+
+  const loadProjects = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await fetchMyProjects();
+      const items = data.projects ?? [];
+      setProjects(items);
+      setTotalCount(data.totalCount ?? 0);
+      setPage(data.page);
+      setSize(data.size);
+      if (userRole) {
+        await enrichProjects(items);
+      }
+    } catch (err) {
+      setError("프로젝트 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((project) => {
+      const matchesSearch = project.name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesStatus =
+        statusFilter === "ALL" || project.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [projects, searchQuery, statusFilter]);
+
+  const filteredAndSortedProjects = useMemo(() => {
+    const statusPriority = (status?: ProjectStatus | string | null) => {
+      if (status === "OPEN") return 0; // 진행
+      if (status === "CLOSED") return 1; // 종료
+      return 2;
+    };
+
+    const membershipPriority = (project: ProjectSummaryResponse) => {
+      const state = getMembershipState(project);
+      if (state === "joined") return 0;
+      if (state === "unknown") return 1;
+      return 2; // not-joined 맨 뒤
+    };
+
+    return [...filteredProjects].sort((a, b) => {
+      const memDiff = membershipPriority(a) - membershipPriority(b);
+      if (memDiff !== 0) return memDiff;
+      return statusPriority(a.status) - statusPriority(b.status);
+    });
+  }, [filteredProjects, userRole]);
+
+  // 필터 변경 시 첫 페이지로 이동
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, statusFilter]);
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return "미정";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "미정";
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())}`;
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / size));
+  const currentPage = Math.min(page, totalPages - 1);
+  const paginatedProjects = filteredAndSortedProjects.slice(
+    currentPage * size,
+    currentPage * size + size
+  );
+
+  const handleCardClick = async (project: ProjectSummaryResponse) => {
+    const membershipState = getMembershipState(project);
+    const isSystemAdmin = userRole === "SYSTEM_ADMIN";
+
+    if (isSystemAdmin || membershipState === "joined") {
+      navigate(`/project/${project.projectId}/dashboard`);
+      return;
+    }
+
+    if (userRole === "AGENCY") {
+      if (membershipState === "not-joined" || membershipState === "unknown") {
+        toast({
+          title: "접근 불가",
+          description: "참여 중인 프로젝트만 볼 수 있습니다.",
+        });
+        return;
+      }
+      navigate(`/project/${project.projectId}/dashboard`);
+      return;
+    }
+
+    if (userRole === "CLIENT") {
+      navigate(`/project/${project.projectId}/dashboard`);
+      return;
+    }
+
+    // AGENCY는 목록은 전체지만 대시보드는 본인 프로젝트만 입장 가능 -> 없는 경우 상세 호출로 검증
+    toast({
+      title: "접근 불가",
+      description: "참여 중인 프로젝트만 볼 수 있습니다.",
+    });
+  };
 
   return (
     <AppLayout>
@@ -49,12 +300,10 @@ export default function Projects() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">프로젝트</h1>
-            <p className="text-muted-foreground mt-1">진행 중인 프로젝트를 관리하세요</p>
+            <p className="text-muted-foreground mt-1">
+              진행 중인 프로젝트를 관리하세요
+            </p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            새 프로젝트
-          </Button>
         </div>
 
         {/* Search and Filter */}
@@ -66,57 +315,199 @@ export default function Projects() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              disabled={loading} // 로딩 중 검색 비활성화
             />
           </div>
-          <Button variant="outline" className="gap-2">
-            <Filter className="h-4 w-4" />
-            필터
-          </Button>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) =>
+              setStatusFilter(value as ProjectStatus | "ALL")
+            }
+            disabled={loading} // 로딩 중 필터 비활성화
+          >
+            <SelectTrigger className="w-full md:w-[220px]">
+              <SelectValue placeholder="상태 전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">전체</SelectItem>
+              {Object.entries(statusLabelMap).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Projects Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockProjects.map((project) => (
-            <Card
-              key={project.id}
-              className="card-hover cursor-pointer"
-              onClick={() => navigate(`/project/${project.id}/dashboard`)}
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-lg">{project.name}</CardTitle>
-                  <StatusBadge status={project.status}>
-                    {project.status === "progress" && "진행중"}
-                    {project.status === "pending" && "대기"}
-                    {project.status === "complete" && "완료"}
-                  </StatusBadge>
-                </div>
-                <CardDescription>{project.client}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-muted-foreground">진행률</span>
-                    <span className="font-medium">{project.progress}%</span>
+        {/* Projects Grid / Skeleton */}
+        {loading && filteredProjects.length === 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* 로딩 중일 때 스켈레톤 표시 */}
+            {Array.from({ length: size }).map((_, i) => (
+              <ProjectCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-16 text-center text-muted-foreground">
+            {error ?? "조건에 맞는 프로젝트가 없습니다."}
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {paginatedProjects.map((project) => (
+              <Card
+                key={project.projectId}
+                className={`card-hover ${(() => {
+                  const membershipState = getMembershipState(project);
+                  const isDisabled =
+                    userRole === "AGENCY" && membershipState !== "joined";
+                  if (isDisabled) return "cursor-not-allowed opacity-50";
+                  if (
+                    membershipState === "joined" ||
+                    userRole === "SYSTEM_ADMIN" ||
+                    userRole === "CLIENT"
+                  ) {
+                    return "cursor-pointer";
+                  }
+                  return "cursor-not-allowed opacity-75";
+                })()
+                  }`}
+                onClick={() => handleCardClick(project)}
+              >
+                <CardHeader>
+                  <div className="flex items-start gap-3 w-full justify-between">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-lg">{project.name}</CardTitle>
+                        <StatusBadge
+                          status={statusBadgeMap[project.status]}
+                          className="px-3.5 py-1.5 text-sm leading-none"
+                        >
+                          {statusLabelMap[project.status]}
+                        </StatusBadge>
+                      </div>
+                      <CardDescription>
+                        {(() => {
+                          if (userRole === "SYSTEM_ADMIN") return "";
+                          const membershipState = getMembershipState(project);
+                          if (membershipState === "joined") return "참여중";
+                          if (userRole === "AGENCY") {
+                            if (membershipState === "unknown") return "";
+                            return "참여하지 않음";
+                          }
+                          if (userRole === "CLIENT") return "참여중";
+                          return membershipState === "not-joined"
+                            ? "참여하지 않음"
+                            : "";
+                        })()}
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap items-start justify-end gap-2 ml-auto">
+                      {(() => {
+                        const phaseValue =
+                          (project.projectPhase ??
+                            project.phase) as ProjectPhase | undefined;
+                        if (!phaseValue) return null;
+                        const phaseLabel =
+                          projectPhaseLabelMap[phaseValue] ?? phaseValue;
+                        const phaseClass =
+                          projectPhaseBadgeMap[phaseValue] ??
+                          "bg-slate-100 text-slate-700 border-slate-200";
+                        return (
+                          <Badge
+                            className={`border ${phaseClass} px-3.5 py-1.5 text-sm leading-none`}
+                          >
+                            {phaseLabel}
+                          </Badge>
+                        );
+                      })()}
+                    </div>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all"
-                      style={{ width: `${project.progress}%` }}
-                    />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">고객사</span>
+                    <span className="font-medium">
+                      {project.customerCompanyName ?? "정보 없음"}
+                    </span>
                   </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">마감일</span>
-                  <span className="font-medium">{project.dueDate}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary">{project.team}명 참여</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">프로젝트 ID</span>
+                    <span className="font-medium">{project.projectId}</span>
+                  </div>
+                  {(() => {
+                    const membershipState = getMembershipState(project);
+                    const showDeadline = membershipState === "joined";
+                    if (!showDeadline) return null;
+                    return (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">마감일</span>
+                        <span className="font-medium">
+                          {formatDate(
+                            project.endDateExpected ??
+                            project.expectedEndDate ??
+                            project.expirationDate ??
+                            project.endDate
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {filteredProjects.length > 0 && (
+          <div className="flex items-center justify-between pt-0">
+            <div className="text-sm text-muted-foreground">
+              총 {totalCount.toLocaleString()}건 · {currentPage + 1} /{" "}
+              {totalPages} 페이지
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(size)}
+                onValueChange={(value) => {
+                  const newSize = Number(value);
+                  setSize(newSize);
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder="페이지 크기" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 20, 50, 100].map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}개
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage === 0}
+                  onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                >
+                  ‹
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={currentPage + 1 >= totalPages}
+                  onClick={() =>
+                    setPage((prev) => Math.min(totalPages - 1, prev + 1))
+                  }
+                >
+                  ›
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
